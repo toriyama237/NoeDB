@@ -14,6 +14,8 @@ env:
   RUSTFLAGS: "-D warnings"
   RUSTDOCFLAGS: "-D warnings"
   RUST_BACKTRACE: 1
+  # Opt in to Node.js 24 now; GitHub forces this on 2026-06-02 anyway.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
