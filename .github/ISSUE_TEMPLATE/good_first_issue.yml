@@ -1,0 +1,36 @@
+name: Good first issue (maintainers)
+description: Template for maintainers to file a well-scoped first-time contributor task.
+title: "good first issue: <short summary>"
+labels: ["good first issue", "help wanted"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: One paragraph explaining where in the codebase this lives and why it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: task
+    attributes:
+      label: The task
+      description: Concrete steps. "Open file X, do Y, add test Z."
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know it's done?
+      value: |
+        - [ ] Code change
+        - [ ] Test coverage
+        - [ ] `cargo fmt && cargo clippy -- -D warnings && cargo test` pass
+    validations:
+      required: true
+  - type: input
+    id: pointers
+    attributes:
+      label: Code pointers
+      description: File:line links into the repo.
+      placeholder: "src/lexer.rs:80-95"

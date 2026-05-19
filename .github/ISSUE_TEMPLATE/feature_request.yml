@@ -1,0 +1,45 @@
+name: Feature request
+description: Propose a new feature or behaviour change.
+title: "feat: <short summary>"
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Larger features should be discussed first in
+        [Discussions](https://github.com/toriyama237/NoeDB/discussions).
+        Use this form for concrete, well-scoped proposals.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the user-visible problem, not the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should NoeDB do? Be concrete - API sketches welcome.
+      render: rust
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Which sprint phase is this related to?
+      options:
+        - "1 - Lexer & Parser"
+        - "2 - Storage Engine (LSM)"
+        - "3 - Query Planner"
+        - "4 - Raft Consensus"
+        - "5 - Integration & launch"
+        - "Cross-cutting / unsure"
+    validations:
+      required: true

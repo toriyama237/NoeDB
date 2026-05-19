@@ -1,0 +1,8 @@
+# Default owner for everything in the repo.
+* @toriyama237
+
+# CI / release infra: protect aggressively.
+/.github/             @toriyama237
+/Cargo.toml           @toriyama237
+/rust-toolchain.toml  @toriyama237
+/deny.toml            @toriyama237
