@@ -1,0 +1,18 @@
+# Configuration for `typos` (https://github.com/crate-ci/typos).
+# Picked up by the CI workflow.
+
+[files]
+extend-exclude = [
+    "target/",
+    "CHANGELOG.md",
+    "*.lock",
+]
+
+[default]
+extend-ignore-re = [
+    "[0-9a-f]{7,40}",
+]
+
+[default.extend-words]
+# Add project-specific spellings here.
+crate = "crate"
