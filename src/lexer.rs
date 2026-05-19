@@ -99,10 +99,12 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
             while i < bytes.len() && bytes[i].is_ascii_digit() {
                 i += 1;
             }
-            let n: i64 = src[start..i].parse().map_err(|_| LexError::UnexpectedChar {
-                ch: char::from(bytes[start]),
-                offset: start,
-            })?;
+            let n: i64 = src[start..i]
+                .parse()
+                .map_err(|_| LexError::UnexpectedChar {
+                    ch: char::from(bytes[start]),
+                    offset: start,
+                })?;
             tokens.push(Token::Number(n));
             continue;
         }

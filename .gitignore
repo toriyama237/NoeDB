@@ -19,3 +19,14 @@ Thumbs.db
 .env.local
 /tmp/
 /scratch/
+
+# Benchmarks & coverage artifacts
+/criterion/
+*.profraw
+/coverage/
+lcov.info
+tarpaulin-report.html
+
+# Local secrets / playgrounds
+/.cargo/config.toml.local
+/playground/
