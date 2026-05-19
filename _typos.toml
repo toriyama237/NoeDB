@@ -16,3 +16,7 @@ extend-ignore-re = [
 [default.extend-words]
 # Add project-specific spellings here.
 crate = "crate"
+Noe = "Noe"
+NoeDB = "NoeDB"
+noe = "noe"
+noedb = "noedb"
