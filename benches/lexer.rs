@@ -8,7 +8,9 @@
 
 #![allow(missing_docs)]
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use noedb::lexer::tokenize;
 
 fn bench_tokenize_select_one(c: &mut Criterion) {
