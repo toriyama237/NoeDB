@@ -35,6 +35,15 @@ updates:
       github-actions-all:
         patterns:
           - "*"
+        # dtolnay/rust-toolchain uses Rust *compiler* versions as tags
+        # (e.g. @1.78.0). Dependabot misreads this as a regular semver
+        # action tag and tries to bump it to nonexistent versions
+        # (e.g. @1.100.0). MSRV bumps must be deliberate, so we manage
+        # this action by hand.
+        exclude-patterns:
+          - "dtolnay/rust-toolchain"
+    ignore:
+      - dependency-name: "dtolnay/rust-toolchain"
     labels:
       - "dependencies"
       - "github-actions"
