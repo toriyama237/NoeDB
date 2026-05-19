@@ -1,0 +1,54 @@
+[package]
+name = "noedb"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.75"
+description = "A distributed embedded SQL query engine in Rust - think SQLite meets CockroachDB."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rykielkameni/NoeDB"
+homepage = "https://github.com/rykielkameni/NoeDB"
+readme = "README.md"
+keywords = ["database", "sql", "distributed", "raft", "lsm-tree"]
+categories = ["database-implementations"]
+authors = ["Rykiel KAMENI YAMDJEU"]
+
+[lib]
+name = "noedb"
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
+strip = "symbols"
+panic = "unwind"
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = true
+
+[profile.dev]
+opt-level = 0
+debug = true
+overflow-checks = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unreachable_pub = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"

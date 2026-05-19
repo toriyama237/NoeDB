@@ -1,0 +1,21 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# IDE
+/.vscode/
+/.idea/
+*.iml
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local
+*.log
+.env
+.env.local
+/tmp/
+/scratch/
