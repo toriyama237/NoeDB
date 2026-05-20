@@ -33,7 +33,7 @@ use noedb_lexer::{LexError, Span};
 ///
 /// Will return a [`ParseError`] once Week 02 lands. For now it always
 /// returns [`ParseError::NotYetImplemented`].
-pub fn parse(src: &str) -> Result<Statement, ParseError> {
+pub const fn parse(src: &str) -> Result<Statement, ParseError> {
     let _ = src;
     Err(ParseError::NotYetImplemented)
 }

@@ -33,7 +33,7 @@ pub enum LogicalPlan {
 ///
 /// Reserved for the first planner pass; today this returns
 /// [`PlanError::NotYetImplemented`] for every input.
-pub fn plan(stmt: &Statement) -> Result<LogicalPlan, PlanError> {
+pub const fn plan(stmt: &Statement) -> Result<LogicalPlan, PlanError> {
     let _ = stmt;
     Err(PlanError::NotYetImplemented)
 }

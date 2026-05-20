@@ -20,6 +20,7 @@ Noe = "Noe"
 NoeDB = "NoeDB"
 noe = "noe"
 noedb = "noedb"
+arbo = "arbo"
 # Common DB terms that the default dict flags wrong.
 arbo = "arbo"
 hashmap = "hashmap"
