@@ -1,53 +1,77 @@
-[package]
-name = "noedb"
+# NoeDB - Cargo workspace.
+#
+# The crate layout mirrors the data flow of a SQL query:
+#
+#   noedb-lexer  -> noedb-parser -> noedb-ast
+#                                |
+#                                v
+#                       noedb-planner -> noedb-raft -> noedb-storage
+#
+# The meta-crate `noedb` re-exports the user-facing API and is the
+# only crate published on crates.io (today).
+#
+# Each crate inherits package metadata, MSRV, license, and lints from
+# this root via `package.workspace = true` and `[lints] workspace = true`.
+
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
 version = "0.0.1"
 edition = "2021"
 rust-version = "1.78"
-description = "A distributed embedded SQL query engine in Rust - think SQLite meets CockroachDB."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/toriyama237/NoeDB"
 homepage = "https://github.com/toriyama237/NoeDB"
-documentation = "https://docs.rs/noedb"
-readme = "README.md"
-keywords = ["database", "sql", "distributed", "raft", "lsm-tree"]
-categories = ["database-implementations"]
 authors = ["Rykiel KAMENI YAMDJEU"]
-exclude = [
-    ".github/",
-    "docs/",
-    "assets/",
-    "benches/",
-    "tests/",
-    ".gitignore",
-    ".editorconfig",
-    "deny.toml",
-    "cliff.toml",
-    "rust-toolchain.toml",
-    "rustfmt.toml",
-    "CHANGELOG.md",
-    "CONTRIBUTING.md",
-    "CODE_OF_CONDUCT.md",
-    "SECURITY.md",
-]
+categories = ["database-implementations"]
+keywords = ["database", "sql", "distributed", "raft", "lsm-tree"]
 
-[lib]
-name = "noedb"
-path = "src/lib.rs"
+[workspace.dependencies]
+# Internal crates - pinned via path so the workspace builds with a
+# single `cargo build --workspace`. Versions are kept in sync with
+# the workspace `version` above.
+noedb         = { path = "crates/noedb",          version = "=0.0.1" }
+noedb-lexer   = { path = "crates/noedb-lexer",    version = "=0.0.1" }
+noedb-ast     = { path = "crates/noedb-ast",      version = "=0.0.1" }
+noedb-parser  = { path = "crates/noedb-parser",   version = "=0.0.1" }
+noedb-planner = { path = "crates/noedb-planner",  version = "=0.0.1" }
+noedb-storage = { path = "crates/noedb-storage",  version = "=0.0.1" }
+noedb-raft    = { path = "crates/noedb-raft",     version = "=0.0.1" }
 
-[features]
-default = []
-# Reserved for upcoming phases. Kept empty today so that
-# `cargo build --all-features` stays meaningful from day 1.
-unstable = []
-
-[dependencies]
-
-[dev-dependencies]
+# External crates used by one or more workspace members.
 criterion = { version = "0.8", default-features = false, features = ["html_reports"] }
 
-[[bench]]
-name = "lexer"
-harness = false
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unreachable_pub = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+# Pedantic noise we explicitly accept:
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+doc_markdown = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+multiple_crate_versions = "allow"
+redundant_pub_crate = "allow"
 
 [profile.release]
 opt-level = 3
@@ -72,32 +96,3 @@ overflow-checks = true
 inherits = "dev"
 incremental = false
 debug = "line-tables-only"
-
-[lints.rust]
-unsafe_code = "forbid"
-missing_docs = "warn"
-unreachable_pub = "warn"
-unused_lifetimes = "warn"
-unused_qualifications = "warn"
-rust_2018_idioms = { level = "warn", priority = -1 }
-
-[lints.clippy]
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-nursery = { level = "warn", priority = -1 }
-unwrap_used = "warn"
-expect_used = "warn"
-panic = "warn"
-todo = "warn"
-unimplemented = "warn"
-dbg_macro = "warn"
-print_stdout = "warn"
-print_stderr = "warn"
-# Pedantic noise we explicitly accept:
-module_name_repetitions = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-doc_markdown = "allow"
-must_use_candidate = "allow"
-return_self_not_must_use = "allow"
-multiple_crate_versions = "allow"

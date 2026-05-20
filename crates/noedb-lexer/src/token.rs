@@ -1,0 +1,166 @@
+//! Token definitions.
+//!
+//! [`Token`] stays small on the stack: keywords are a dense `enum`,
+//! identifiers are zero-copy (recover the lexeme via [`Span::slice`]),
+//! and only string / quoted-identifier literals allocate.
+
+use crate::span::Span;
+
+/// A SQL-92 reserved keyword.
+///
+/// Grows through Week 04 as the lexer learns more of the grammar.
+/// Non-reserved words (table names, column names) become [`Token::Ident`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+#[allow(missing_docs)] // per-variant docs land in Week 04 with the full token set
+pub enum Keyword {
+    All,
+    And,
+    Any,
+    As,
+    Asc,
+    Authorization,
+    Between,
+    By,
+    Case,
+    Cast,
+    Check,
+    Collate,
+    Column,
+    Constraint,
+    Create,
+    Cross,
+    Current,
+    CurrentDate,
+    CurrentTime,
+    CurrentTimestamp,
+    CurrentUser,
+    Default,
+    Delete,
+    Desc,
+    Distinct,
+    Drop,
+    Else,
+    End,
+    Escape,
+    Except,
+    Exists,
+    False,
+    Fetch,
+    For,
+    Foreign,
+    From,
+    Full,
+    Grant,
+    Group,
+    Having,
+    In,
+    Inner,
+    Insert,
+    Intersect,
+    Into,
+    Is,
+    Join,
+    Key,
+    Left,
+    Like,
+    Limit,
+    Natural,
+    Not,
+    Null,
+    Nullif,
+    Of,
+    Offset,
+    On,
+    Or,
+    Order,
+    Outer,
+    Primary,
+    References,
+    Right,
+    Rollback,
+    Select,
+    Set,
+    Some,
+    Table,
+    Then,
+    To,
+    True,
+    Union,
+    Unique,
+    Update,
+    User,
+    Using,
+    Values,
+    View,
+    When,
+    Where,
+    With,
+}
+
+/// A SQL token.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum Token {
+    /// A reserved keyword.
+    Keyword(Keyword),
+    /// An ordinary identifier (`users`, `id`, …).
+    ///
+    /// The lexeme is **not** stored here — use [`Span::slice`] on the
+    /// paired [`SpannedToken`] to recover `&str` from the source without
+    /// allocation.
+    Ident,
+    /// A delimited identifier (`"weird name"`, SQL-92 double quotes).
+    ///
+    /// The unescaped name is stored because `""` folding cannot be
+    /// represented as a simple slice.
+    QuotedIdent(String),
+    /// A base-10 integer literal fitting in `i64`.
+    Integer(i64),
+    /// An approximate numeric literal (`1.5`, `.5`, `1e3`).
+    Float(f64),
+    /// A single-quoted character string literal (SQL escape: `''` → `'`).
+    String(String),
+    /// End of input. Always the last token in the stream.
+    Eof,
+}
+
+/// A [`Token`] paired with its position in the original source.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpannedToken {
+    /// The token itself.
+    pub kind: Token,
+    /// Where the token was found in the source, in byte offsets.
+    pub span: Span,
+}
+
+impl SpannedToken {
+    /// Construct a new `SpannedToken`.
+    #[inline]
+    #[must_use]
+    pub const fn new(kind: Token, span: Span) -> Self {
+        Self { kind, span }
+    }
+
+    /// Recover the source text for this token, if `src` is the original input.
+    #[inline]
+    #[must_use]
+    pub fn lexeme<'a>(&self, src: &'a str) -> Option<&'a str> {
+        self.span.slice(src)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spanned_token_is_equality_comparable() {
+        let a = SpannedToken::new(Token::Keyword(Keyword::Select), Span::new(0, 6));
+        let b = SpannedToken::new(Token::Keyword(Keyword::Select), Span::new(0, 6));
+        let c = SpannedToken::new(Token::Integer(1), Span::new(7, 8));
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+}

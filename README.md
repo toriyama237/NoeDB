@@ -33,10 +33,26 @@ Built from scratch over 52 weeks, brick by brick, in public.
                                                             └─────────────────────────────┘
 ```
 
+Each box above is its own Cargo crate inside this workspace. From day 2,
+the dependency graph is honest: the lexer cannot depend on the planner,
+the planner cannot depend on Raft, etc. This is the same shape Apache
+DataFusion uses.
+
+```text
+crates/
+├── noedb/            # meta-crate, re-exports the user-facing API
+├── noedb-lexer/      # tokens, spans, source map  (real code)
+├── noedb-ast/        # AST node types             (stub, grows in W02)
+├── noedb-parser/     # recursive-descent parser   (stub, grows in W05)
+├── noedb-planner/    # logical + physical plans   (stub, grows in W17)
+├── noedb-storage/    # LSM-tree engine            (stub, grows in W09)
+└── noedb-raft/       # consensus                  (stub, grows in W29)
+```
+
 - **No `sqlx`, no `sled`, no `tokio-postgres`** — just the standard library and a
   few deliberate dependencies introduced when the design forces them.
 - **Every commit is a step in a sprint.** The full plan is in
-  [`docs/sprint-plan.md`](docs/sprint-plan.md) (added in Week 02).
+  [`docs/sprint-plan.md`](docs/sprint-plan.md).
 - **CI is non-negotiable.** A red pipeline blocks merge. Always.
 
 ---
@@ -75,19 +91,23 @@ hide behind a framework.
 
 ## Status
 
-> **Day 1 / 260** — Week 01 of Phase 1 (Lexer & Parser).
+> **Day 2 / 260** — Week 02 of Phase 1 (Lexer & Parser).
 
-The only thing that works today is:
+The lexer tokenizes identifiers, 80+ SQL keywords, integers, floats,
+and single-quoted strings — zero-copy for identifiers, no `HashMap` on
+the hot path:
 
 ```rust
-use noedb::lexer::{tokenize, Token};
+use noedb::lexer::{tokenize, Keyword, Token};
 
-let toks = tokenize("SELECT 1")?;
-assert_eq!(toks, vec![Token::Select, Token::Number(1), Token::Eof]);
+let toks = tokenize("SELECT name FROM users WHERE id")?;
+assert_eq!(toks[0].kind, Token::Keyword(Keyword::Select));
+assert_eq!(toks[1].kind, Token::Ident); // lexeme via span.slice(src)
 # Ok::<_, noedb::lexer::LexError>(())
 ```
 
-That's it. On purpose. Watch the
+Operators (`=`, `!=`, …) and comments land in Week 03. The workspace
+is split into 7 crates with an honest dependency graph. Watch the
 [CHANGELOG](./CHANGELOG.md), [Releases](https://github.com/toriyama237/NoeDB/releases),
 or [Discussions](https://github.com/toriyama237/NoeDB/discussions) for weekly
 progress.

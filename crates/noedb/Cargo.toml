@@ -1,0 +1,35 @@
+[package]
+name = "noedb"
+description = "A distributed embedded SQL query engine in Rust - think SQLite meets CockroachDB."
+readme = "../../README.md"
+documentation = "https://docs.rs/noedb"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+categories.workspace = true
+keywords.workspace = true
+
+[lib]
+name = "noedb"
+path = "src/lib.rs"
+
+[features]
+default = []
+# Reserved opt-in for upcoming functionality. Kept empty today so
+# `--all-features` stays meaningful from day 1.
+unstable = []
+
+[dependencies]
+noedb-lexer   = { workspace = true }
+noedb-ast     = { workspace = true }
+noedb-parser  = { workspace = true }
+noedb-planner = { workspace = true }
+noedb-storage = { workspace = true }
+noedb-raft    = { workspace = true }
+
+[lints]
+workspace = true
