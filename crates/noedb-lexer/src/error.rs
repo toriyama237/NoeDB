@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use crate::span::Span;
+use crate::span::{LineColumn, SourceMap, Span};
 
 /// An error produced by the lexer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +19,22 @@ impl LexError {
     #[must_use]
     pub const fn new(kind: LexErrorKind, span: Span) -> Self {
         Self { kind, span }
+    }
+
+    /// Resolve `(line, column)` for this error against the original source.
+    #[must_use]
+    pub fn line_column(&self, src: &str) -> LineColumn {
+        SourceMap::new(src).line_column(self.span.start)
+    }
+
+    /// Format a human-readable diagnostic including line and column.
+    #[must_use]
+    pub fn format_with_source(&self, src: &str) -> String {
+        let lc = self.line_column(src);
+        format!(
+            "{} at {}:{} (bytes {}..{})",
+            self.kind, lc.line, lc.column, self.span.start, self.span.end
+        )
     }
 }
 
