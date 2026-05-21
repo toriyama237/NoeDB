@@ -17,3 +17,10 @@ path = "src/lib.rs"
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "lsm"
+harness = false
+
+[dev-dependencies]
+criterion = { workspace = true }
