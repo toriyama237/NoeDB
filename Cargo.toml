@@ -18,7 +18,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 rust-version = "1.78"
 license = "MIT OR Apache-2.0"
@@ -32,15 +32,15 @@ keywords = ["database", "sql", "distributed", "raft", "lsm-tree"]
 # Internal crates - pinned via path so the workspace builds with a
 # single `cargo build --workspace`. Versions are kept in sync with
 # the workspace `version` above.
-noedb         = { path = "crates/noedb",          version = "=1.0.0" }
-noedb-lexer   = { path = "crates/noedb-lexer",    version = "=1.0.0" }
-noedb-ast     = { path = "crates/noedb-ast",      version = "=1.0.0" }
-noedb-parser  = { path = "crates/noedb-parser",   version = "=1.0.0" }
-noedb-planner = { path = "crates/noedb-planner",  version = "=1.0.0" }
-noedb-storage = { path = "crates/noedb-storage",  version = "=1.0.0" }
-noedb-raft    = { path = "crates/noedb-raft",     version = "=1.0.0" }
-noedb-engine  = { path = "crates/noedb-engine",   version = "=1.0.0" }
-noedb-protocol = { path = "crates/noedb-protocol", version = "=1.0.0" }
+noedb         = { path = "crates/noedb",          version = "=1.0.1" }
+noedb-lexer   = { path = "crates/noedb-lexer",    version = "=1.0.1" }
+noedb-ast     = { path = "crates/noedb-ast",      version = "=1.0.1" }
+noedb-parser  = { path = "crates/noedb-parser",   version = "=1.0.1" }
+noedb-planner = { path = "crates/noedb-planner",  version = "=1.0.1" }
+noedb-storage = { path = "crates/noedb-storage",  version = "=1.0.1" }
+noedb-raft    = { path = "crates/noedb-raft",     version = "=1.0.1" }
+noedb-engine  = { path = "crates/noedb-engine",   version = "=1.0.1" }
+noedb-protocol = { path = "crates/noedb-protocol", version = "=1.0.1" }
 
 # Phase 4 Raft + networking
 tokio = { version = "1.43", features = ["sync", "time", "rt-multi-thread", "macros", "io-util", "net"] }

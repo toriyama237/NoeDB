@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-05-20
+
+### Performance
+- **Engine:** cache Raft leader; no `tick(80)` on every `SELECT` (~42% faster distributed SELECT bench).
+- **Raft sim:** `drive_quiescent` replaces heavy `run_rounds(40)` per propose; bench warmup 80 rounds not 400.
+- **Lexer benches:** all use `tokenize_into` (allocator-free); 1M-token path unchanged (~16–34 ms machine-dependent).
+
+### Fixed
+- **CLI:** clearer REPL banner; ignore `#` / `cargo` lines pasted by mistake.
+
 ## [1.0.0] - 2026-05-20
 
 ### Added

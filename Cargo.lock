@@ -249,7 +249,7 @@ dependencies = [
 
 [[package]]
 name = "noedb"
-version = "0.4.0"
+version = "1.0.1"
 dependencies = [
  "noedb-ast",
  "noedb-engine",
@@ -263,14 +263,14 @@ dependencies = [
 
 [[package]]
 name = "noedb-ast"
-version = "0.4.0"
+version = "1.0.1"
 dependencies = [
  "noedb-lexer",
 ]
 
 [[package]]
 name = "noedb-cli"
-version = "0.4.0"
+version = "1.0.1"
 dependencies = [
  "noedb-engine",
  "noedb-protocol",
@@ -281,7 +281,7 @@ dependencies = [
 
 [[package]]
 name = "noedb-engine"
-version = "0.4.0"
+version = "1.0.1"
 dependencies = [
  "bincode",
  "criterion",
@@ -296,14 +296,14 @@ dependencies = [
 
 [[package]]
 name = "noedb-lexer"
-version = "0.4.0"
+version = "1.0.1"
 dependencies = [
  "criterion",
 ]
 
 [[package]]
 name = "noedb-parser"
-version = "0.4.0"
+version = "1.0.1"
 dependencies = [
  "noedb-ast",
  "noedb-lexer",
@@ -311,7 +311,7 @@ dependencies = [
 
 [[package]]
 name = "noedb-planner"
-version = "0.4.0"
+version = "1.0.1"
 dependencies = [
  "criterion",
  "noedb-ast",
@@ -322,7 +322,7 @@ dependencies = [
 
 [[package]]
 name = "noedb-protocol"
-version = "0.4.0"
+version = "1.0.1"
 dependencies = [
  "bincode",
  "bytes",
@@ -333,7 +333,7 @@ dependencies = [
 
 [[package]]
 name = "noedb-raft"
-version = "0.4.0"
+version = "1.0.1"
 dependencies = [
  "bincode",
  "bytes",
@@ -348,7 +348,7 @@ dependencies = [
 
 [[package]]
 name = "noedb-storage"
-version = "0.4.0"
+version = "1.0.1"
 dependencies = [
  "criterion",
 ]
