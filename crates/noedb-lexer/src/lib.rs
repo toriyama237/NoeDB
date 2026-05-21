@@ -51,8 +51,11 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
+mod ascii_lut;
 mod cursor;
 mod error;
+mod fast;
+mod keyword_buckets;
 mod keywords;
 mod lexer;
 mod span;

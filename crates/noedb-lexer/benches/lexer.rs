@@ -67,6 +67,7 @@ fn bench_tokenize_one_million_tokens(c: &mut Criterion) {
     let input = "SELECT a, b FROM t WHERE x = 1 AND y = 2";
     #[allow(clippy::cast_possible_truncation)]
     group.throughput(Throughput::Elements(1_000_000));
+    group.sample_size(50);
     group.bench_function("one_million_tokens", |b| {
         b.iter(|| {
             for _ in 0..50_000 {

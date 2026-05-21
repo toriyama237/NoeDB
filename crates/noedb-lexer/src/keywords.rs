@@ -110,13 +110,43 @@ pub fn all_keywords() -> &'static [(&'static str, Keyword)] {
 /// Returns `None` for ordinary identifiers such as `users` or `id`.
 #[inline]
 pub(crate) fn lookup(word: &str) -> Option<Keyword> {
+    let table = crate::keyword_buckets::table_for_len(word.len());
+    if table.is_empty() {
+        return None;
+    }
+    let bytes = word.as_bytes();
+    if bytes.iter().all(|&b| b.is_ascii_uppercase() || b == b'_') {
+        lookup_in_table_upper(bytes, table)
+    } else {
+        lookup_in_table_ignore_case(word, table)
+    }
+}
+
+#[inline]
+fn lookup_in_table_upper(bytes: &[u8], table: &[(&str, Keyword)]) -> Option<Keyword> {
     let mut lo = 0usize;
-    let mut hi = KEYWORD_TABLE.len();
+    let mut hi = table.len();
     while lo < hi {
         let mid = lo + (hi - lo) / 2;
-        match cmp_ignore_ascii_case(word, KEYWORD_TABLE[mid].0) {
+        let entry = table[mid].0.as_bytes();
+        match bytes.cmp(entry) {
             Ordering::Less => hi = mid,
-            Ordering::Equal => return Some(KEYWORD_TABLE[mid].1),
+            Ordering::Equal => return Some(table[mid].1),
+            Ordering::Greater => lo = mid + 1,
+        }
+    }
+    None
+}
+
+#[inline]
+fn lookup_in_table_ignore_case(word: &str, table: &[(&str, Keyword)]) -> Option<Keyword> {
+    let mut lo = 0usize;
+    let mut hi = table.len();
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        match cmp_ignore_ascii_case(word, table[mid].0) {
+            Ordering::Less => hi = mid,
+            Ordering::Equal => return Some(table[mid].1),
             Ordering::Greater => lo = mid + 1,
         }
     }

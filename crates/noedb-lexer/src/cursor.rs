@@ -39,7 +39,7 @@ impl<'src> Cursor<'src> {
             return Ok(None);
         };
 
-        if b.is_ascii_alphabetic() || b == b'_' {
+        if crate::ascii_lut::is_ident_start(b) {
             return Ok(Some(self.lex_identifier_or_keyword()));
         }
 
@@ -110,9 +110,7 @@ impl<'src> Cursor<'src> {
     /// Skip whitespace and SQL comments (`--` line, `/* */` block).
     fn skip_trivia(&mut self) -> Result<(), LexError> {
         loop {
-            while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_whitespace() {
-                self.pos += 1;
-            }
+            self.pos = crate::fast::skip_whitespace(self.bytes, self.pos);
 
             if self.peek_byte() == Some(b'-') && self.peek_byte_at(1) == Some(b'-') {
                 self.pos += 2;
@@ -155,7 +153,7 @@ impl<'src> Cursor<'src> {
         self.bump();
 
         while self.pos < self.bytes.len()
-            && (self.bytes[self.pos].is_ascii_alphanumeric() || self.bytes[self.pos] == b'_')
+            && crate::ascii_lut::is_ident_continue(self.bytes[self.pos])
         {
             self.pos += 1;
         }
@@ -286,8 +284,8 @@ impl<'src> Cursor<'src> {
                 |f| Ok(SpannedToken::new(Token::Float(f), span)),
             )
         } else {
-            lit.parse::<i64>().map_or_else(
-                |_| {
+            parse_ascii_int(lit.as_bytes()).map_or_else(
+                || {
                     Err(LexError::new(
                         LexErrorKind::IntegerOutOfRange(lit.to_owned()),
                         span,
@@ -371,6 +369,19 @@ impl<'src> Cursor<'src> {
         #[allow(clippy::cast_possible_truncation)]
         Span::new(start as u32, end as u32)
     }
+}
+
+/// Parse a non-empty ASCII integer literal without allocating.
+#[inline]
+fn parse_ascii_int(bytes: &[u8]) -> Option<i64> {
+    let mut n: i64 = 0;
+    for &b in bytes {
+        if !b.is_ascii_digit() {
+            return None;
+        }
+        n = n.checked_mul(10)?.checked_add(i64::from(b - b'0'))?;
+    }
+    Some(n)
 }
 
 #[cfg(test)]

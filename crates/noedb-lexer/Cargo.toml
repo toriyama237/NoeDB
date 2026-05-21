@@ -18,9 +18,8 @@ path = "src/lib.rs"
 
 [features]
 default = []
-# Reserved for future opt-in functionality (e.g. unicode-XID identifiers,
-# extended dialect tokens). Kept empty today so `--all-features` is stable.
-unstable = []
+# Reserved: extended dialect / unicode identifiers.
+extended = []
 
 [dependencies]
 

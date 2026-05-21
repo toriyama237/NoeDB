@@ -36,8 +36,9 @@ impl<'src> Lexer<'src> {
     ///
     /// Convenience wrapper around [`Lexer::new`] + iteration.
     pub fn tokenize(src: &'src str) -> Result<Vec<SpannedToken>, LexError> {
+        let cap = (src.len() / 3).max(8);
         let mut lexer = Self::new(src);
-        let mut out = Vec::new();
+        let mut out = Vec::with_capacity(cap);
 
         for tok in &mut lexer {
             out.push(tok?);
