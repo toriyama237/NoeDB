@@ -39,8 +39,8 @@
 //!
 //! # Status
 //!
-//! **Week 08 / Phase 1** — `SELECT`, DML, and DDL with Pratt `WHERE`,
-//! `Display` round-trip, and error recovery. See `docs/sprint-plan.md`.
+//! **Week 16 / Phase 2** — `LsmTree` with WAL segments, SSTables, Bloom filters,
+//! and L0→L1 compaction. See `docs/sprint-plan.md`.
 //!
 //! [README]: https://github.com/toriyama237/NoeDB
 
@@ -76,9 +76,11 @@ pub mod planner {
 /// Storage engine (re-exported from [`noedb_storage`]).
 pub mod storage {
     pub use noedb_storage::{
-        replay_into_memtable, DurableStore, LogEntry, MemTable, MemTableIter, MemTableRangeIter,
-        OpType, StorageEngine, StorageError, Wal, DEFAULT_MAX_ENTRIES, DEFAULT_MAX_MEM_BYTES,
-        WAL_MAGIC, WAL_VERSION,
+        compact_level0_to_l1, replay_into_memtable, replay_wal_dir, BloomFilter, DurableStore,
+        LogEntry, LsmConfig, LsmTree, MemTable, MemTableIter, MemTableRangeIter, OpType, SstReader,
+        SstWriter, StorageEngine, StorageError, Wal, WalSegmentManager, DEFAULT_MAX_ENTRIES,
+        DEFAULT_MAX_MEM_BYTES, L0_COMPACTION_TRIGGER, SST_MAGIC, SST_VERSION, WAL_MAGIC,
+        WAL_VERSION,
     };
 }
 
