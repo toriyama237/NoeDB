@@ -18,7 +18,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.78"
 license = "MIT OR Apache-2.0"
@@ -32,13 +32,13 @@ keywords = ["database", "sql", "distributed", "raft", "lsm-tree"]
 # Internal crates - pinned via path so the workspace builds with a
 # single `cargo build --workspace`. Versions are kept in sync with
 # the workspace `version` above.
-noedb         = { path = "crates/noedb",          version = "=0.1.0" }
-noedb-lexer   = { path = "crates/noedb-lexer",    version = "=0.1.0" }
-noedb-ast     = { path = "crates/noedb-ast",      version = "=0.1.0" }
-noedb-parser  = { path = "crates/noedb-parser",   version = "=0.1.0" }
-noedb-planner = { path = "crates/noedb-planner",  version = "=0.1.0" }
-noedb-storage = { path = "crates/noedb-storage",  version = "=0.1.0" }
-noedb-raft    = { path = "crates/noedb-raft",     version = "=0.1.0" }
+noedb         = { path = "crates/noedb",          version = "=0.2.0" }
+noedb-lexer   = { path = "crates/noedb-lexer",    version = "=0.2.0" }
+noedb-ast     = { path = "crates/noedb-ast",      version = "=0.2.0" }
+noedb-parser  = { path = "crates/noedb-parser",   version = "=0.2.0" }
+noedb-planner = { path = "crates/noedb-planner",  version = "=0.2.0" }
+noedb-storage = { path = "crates/noedb-storage",  version = "=0.2.0" }
+noedb-raft    = { path = "crates/noedb-raft",     version = "=0.2.0" }
 
 # External crates used by one or more workspace members.
 criterion = { version = "0.8", default-features = false, features = ["html_reports"] }

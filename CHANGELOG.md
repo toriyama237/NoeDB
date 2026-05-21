@@ -6,12 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-20
+
 ### Added
-- **Week 10 storage:** CRC-32 checksums, append-only [`Wal`] with `sync_all`,
+- **Week 16 LSM engine:** [`LsmTree`] orchestrates WAL segments, MemTable flush,
+  L0/L1 SSTables, and L0→L1 compaction; Criterion bench (`cargo bench -p noedb-storage --bench lsm`).
+- **Week 15 compaction:** `compact_level0_to_l1` k-way merge of L0 SSTables into L1.
+- **Weeks 12–14 SSTable stack:** `SstWriter` / `SstReader` with 4 KiB blocks, sparse
+  block index, footer metadata, and embedded [`BloomFilter`] (double hashing + CRC32).
+- **Week 11 WAL segments:** [`WalSegmentManager`] with numbered `.wal` files, rotation,
+  replay on startup, and segment deletion after flush.
+- **Week 09–10 storage:** CRC-32 checksums, append-only [`Wal`] with `sync_all`,
   [`LogEntry`] (`Put`/`Delete` + CRC32), [`DurableStore`] (WAL-first writes,
   `max_mem_bytes` MemTable rotation with immutable swap).
 - **Week 09 storage:** `StorageEngine` trait, `MemTable` backed by `BTreeMap`,
   `get`/`put`/`delete`, sorted iterator, range scan, 1 000-entry integration test.
+
+### Fixed
+- SSTable header padding (`HEADER_LEN = 16`) so on-disk offsets match the writer's
+  tracked file position (fixes index/bloom read corruption).
+
+[`LsmTree`]: crates/noedb-storage/src/lsm.rs
+[`WalSegmentManager`]: crates/noedb-storage/src/wal/segments.rs
+[`BloomFilter`]: crates/noedb-storage/src/bloom.rs
 
 ## [0.1.0] - 2026-05-20
 
