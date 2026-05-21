@@ -7,7 +7,7 @@ use noedb_ast::Statement;
 use noedb_planner::{
     apply_statement, execute_sql, explain_sql, ExecError, PlanError, Record, Value,
 };
-use noedb_raft::{Cluster, NodeId, RaftError};
+use noedb_raft::{Cluster, NodeId, RaftError, Role};
 use noedb_storage::{LsmConfig, LsmTree};
 
 use crate::command::Command;
@@ -161,7 +161,9 @@ impl LocalEngine {
 pub struct DistributedEngine {
     cluster: Cluster,
     stores: HashMap<NodeId, LsmTree>,
+    voter_ids: Vec<NodeId>,
     applied_watermark: HashMap<NodeId, usize>,
+    cached_leader: Option<NodeId>,
 }
 
 impl DistributedEngine {
@@ -172,9 +174,10 @@ impl DistributedEngine {
     /// Raft or storage initialization failures.
     pub fn new_voters(n: u64) -> Result<Self, EngineError> {
         let cluster = Cluster::new_voters(n)?;
+        let voter_ids = cluster.voter_ids();
         let mut stores = HashMap::new();
         let mut applied_watermark = HashMap::new();
-        for id in cluster.voter_ids() {
+        for id in &voter_ids {
             let dir = std::env::temp_dir().join(format!(
                 "noedb-engine-{}-{}",
                 id.0,
@@ -183,13 +186,15 @@ impl DistributedEngine {
                     .map_or(0, |d| d.as_nanos())
             ));
             let tree = LsmTree::open(&dir, LsmConfig::default())?;
-            stores.insert(id, tree);
-            applied_watermark.insert(id, 0);
+            stores.insert(*id, tree);
+            applied_watermark.insert(*id, 0);
         }
         Ok(Self {
             cluster,
             stores,
+            voter_ids,
             applied_watermark,
+            cached_leader: None,
         })
     }
 
@@ -231,6 +236,32 @@ impl DistributedEngine {
         self.replicate(&cmd)
     }
 
+    /// Seed the leader's LSM directly (tests/benches — skips Raft for bulk load).
+    ///
+    /// # Errors
+    ///
+    /// Storage or planner errors.
+    pub fn seed_leader_row(
+        &mut self,
+        table: &str,
+        row: &str,
+        column: &str,
+        value: &[u8],
+    ) -> Result<(), EngineError> {
+        let leader = self.ensure_leader()?;
+        let cmd = Command::Put {
+            table: table.to_string(),
+            row: row.to_string(),
+            column: column.to_string(),
+            value: value.to_vec(),
+        };
+        let store = self.stores.get_mut(&leader).ok_or_else(|| {
+            EngineError::Raft(RaftError::internal("leader store missing"))
+        })?;
+        apply_command(store, &cmd)?;
+        Ok(())
+    }
+
     /// Parse and execute SQL on the cluster.
     ///
     /// # Errors
@@ -241,8 +272,7 @@ impl DistributedEngine {
         let stmt = noedb_parser::parse(sql)?;
         match &stmt {
             Statement::Select(_) => {
-                self.tick(80)?;
-                let leader = self.leader().ok_or(EngineError::NoLeader)?;
+                let leader = self.ensure_leader()?;
                 let store = self.stores.get(&leader).ok_or_else(|| {
                     EngineError::Raft(RaftError::internal("leader store missing"))
                 })?;
@@ -274,14 +304,29 @@ impl DistributedEngine {
     /// Validation, parse, or planner errors.
     pub fn explain(&mut self, sql: &str) -> Result<String, EngineError> {
         validate_sql(sql)?;
-        self.tick(80)?;
         let stmt = noedb_parser::parse(sql)?;
-        let leader = self.leader().ok_or(EngineError::NoLeader)?;
+        let leader = self.ensure_leader()?;
         let store = self
             .stores
             .get(&leader)
             .ok_or_else(|| EngineError::Raft(RaftError::internal("leader store missing")))?;
         explain_sql(&stmt, store).map_err(plan_err)
+    }
+
+    fn ensure_leader(&mut self) -> Result<NodeId, EngineError> {
+        if let Some(id) = self.cached_leader {
+            if self.cluster.raft_role(id) == Role::Leader {
+                return Ok(id);
+            }
+        }
+        if let Some(id) = self.cluster.leader() {
+            self.cached_leader = Some(id);
+            return Ok(id);
+        }
+        self.cluster.run_rounds(8)?;
+        let id = self.cluster.leader().ok_or(EngineError::NoLeader)?;
+        self.cached_leader = Some(id);
+        Ok(id)
     }
 
     fn replicate(&mut self, cmd: &Command) -> Result<(), EngineError> {
@@ -292,8 +337,8 @@ impl DistributedEngine {
     }
 
     fn sync_applied(&mut self) -> Result<(), EngineError> {
-        for id in self.cluster.voter_ids() {
-            let applied = self.cluster.applied_at(id).to_vec();
+        for &id in &self.voter_ids {
+            let applied = self.cluster.applied_at(id);
             let wm = self.applied_watermark.get(&id).copied().unwrap_or(0);
             let Some(store) = self.stores.get_mut(&id) else {
                 continue;
