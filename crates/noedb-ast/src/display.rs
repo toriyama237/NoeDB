@@ -59,6 +59,17 @@ fn keyword_display(kw: Keyword) -> &'static str {
         Keyword::Like => "LIKE",
         Keyword::True => "TRUE",
         Keyword::False => "FALSE",
+        Keyword::Alter => "ALTER",
+        Keyword::Enable => "ENABLE",
+        Keyword::Execute => "EXECUTE",
+        Keyword::Prepare => "PREPARE",
+        Keyword::Policy => "POLICY",
+        Keyword::Row => "ROW",
+        Keyword::Level => "LEVEL",
+        Keyword::Security => "SECURITY",
+        Keyword::Role => "ROLE",
+        Keyword::Using => "USING",
+        Keyword::CurrentUser => "CURRENT_USER",
         _ => "KEYWORD",
     }
 }
@@ -179,6 +190,8 @@ impl fmt::Display for Expr {
                 write!(f, " {high}")
             }
             Self::Paren(inner, _) => write!(f, "({inner})"),
+            Self::Parameter { index, .. } => write!(f, "${index}"),
+            Self::CurrentUser { .. } => write_keyword(f, Keyword::CurrentUser),
         }
     }
 }
@@ -431,6 +444,56 @@ impl fmt::Display for Statement {
             Self::CreateTable(s) => write!(f, "{s}"),
             Self::DropTable(s) => write!(f, "{s}"),
             Self::CreateIndex(s) => write!(f, "{s}"),
+            Self::Prepare(s) => {
+                write_keyword(f, Keyword::Prepare)?;
+                write!(f, " {} ", s.name)?;
+                write_keyword(f, Keyword::As)?;
+                write!(f, " {}", s.inner)
+            }
+            Self::Execute(s) => {
+                write_keyword(f, Keyword::Execute)?;
+                write!(f, " {}", s.name)?;
+                if !s.params.is_empty() {
+                    write!(f, " (")?;
+                    for (i, p) in s.params.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{p}")?;
+                    }
+                    write!(f, ")")?;
+                }
+                Ok(())
+            }
+            Self::SetRole(s) => {
+                write_keyword(f, Keyword::Set)?;
+                write!(f, " ")?;
+                write_keyword(f, Keyword::Role)?;
+                write!(f, " '{}'", s.role.replace('\'', "''"))
+            }
+            Self::EnableRls(s) => {
+                write_keyword(f, Keyword::Alter)?;
+                write!(f, " ")?;
+                write_keyword(f, Keyword::Table)?;
+                write!(f, " {} ", s.table)?;
+                write_keyword(f, Keyword::Enable)?;
+                write!(f, " ")?;
+                write_keyword(f, Keyword::Row)?;
+                write!(f, " ")?;
+                write_keyword(f, Keyword::Level)?;
+                write!(f, " ")?;
+                write_keyword(f, Keyword::Security)
+            }
+            Self::CreatePolicy(s) => {
+                write_keyword(f, Keyword::Create)?;
+                write!(f, " ")?;
+                write_keyword(f, Keyword::Policy)?;
+                write!(f, " {} ", s.name)?;
+                write_keyword(f, Keyword::On)?;
+                write!(f, " {} ", s.table)?;
+                write_keyword(f, Keyword::Using)?;
+                write!(f, " ({})", s.using_expr)
+            }
         }
     }
 }

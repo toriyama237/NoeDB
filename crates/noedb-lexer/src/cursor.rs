@@ -76,7 +76,7 @@ impl<'src> Cursor<'src> {
     const fn is_operator_or_punct_start(b: u8) -> bool {
         matches!(
             b,
-            b'(' | b')' | b',' | b';' | b'*' | b'.' | b'=' | b'!' | b'<' | b'>' | b'+' | b'-'
+            b'(' | b')' | b',' | b';' | b'*' | b'.' | b'=' | b'!' | b'<' | b'>' | b'+' | b'-' | b'$'
         )
     }
 
@@ -214,6 +214,7 @@ impl<'src> Cursor<'src> {
                 Token::Op(Operator::Ge)
             }
             b'>' => Token::Op(Operator::Gt),
+            b'$' => self.lex_parameter()?,
             _ => {
                 return Err(LexError::new(
                     LexErrorKind::UnexpectedChar(char::from(b)),
@@ -225,8 +226,6 @@ impl<'src> Cursor<'src> {
         Ok(SpannedToken::new(kind, Self::mk_span(start, self.pos)))
     }
 
-    /// Fast path for integers (single-digit literals avoid `lex_number` setup).
-    #[inline]
     fn lex_number_fast(&mut self, first: u8) -> Result<SpannedToken, LexError> {
         let start = self.pos;
         if !self
@@ -241,6 +240,30 @@ impl<'src> Cursor<'src> {
             ));
         }
         self.lex_number()
+    }
+
+    fn lex_parameter(&mut self) -> Result<Token, LexError> {
+        let start = self.pos;
+        let mut n: u32 = 0;
+        let mut digits = 0u32;
+        while let Some(d) = self.peek_byte().filter(|c| c.is_ascii_digit()) {
+            self.bump();
+            digits += 1;
+            n = n.saturating_mul(10).saturating_add(u32::from(d - b'0'));
+            if n > u16::MAX as u32 {
+                return Err(LexError::new(
+                    LexErrorKind::UnexpectedChar('$'),
+                    Self::mk_span(start, self.pos),
+                ));
+            }
+        }
+        if digits == 0 {
+            return Err(LexError::new(
+                LexErrorKind::UnexpectedChar('$'),
+                Self::mk_span(start, self.pos),
+            ));
+        }
+        Ok(Token::Parameter(u16::try_from(n).unwrap_or(u16::MAX)))
     }
 
     fn lex_number(&mut self) -> Result<SpannedToken, LexError> {

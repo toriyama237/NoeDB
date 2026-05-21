@@ -5,6 +5,7 @@
 //! - Cluster auth on `x-noedb-auth` metadata
 
 #![forbid(unsafe_code)]
+#![allow(clippy::unused_qualifications)] // tonic-build generated stubs
 
 pub mod auth;
 pub mod tls;

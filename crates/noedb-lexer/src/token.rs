@@ -15,6 +15,7 @@ use crate::span::Span;
 #[allow(missing_docs)] // per-variant docs land in Week 04 with the full token set
 pub enum Keyword {
     All,
+    Alter,
     And,
     Any,
     As,
@@ -41,9 +42,11 @@ pub enum Keyword {
     Distinct,
     Drop,
     Else,
+    Enable,
     End,
     Escape,
     Except,
+    Execute,
     Exists,
     False,
     Fetch,
@@ -64,6 +67,7 @@ pub enum Keyword {
     Join,
     Key,
     Left,
+    Level,
     Like,
     Limit,
     Natural,
@@ -77,10 +81,15 @@ pub enum Keyword {
     Order,
     Outer,
     Primary,
+    Policy,
+    Prepare,
     References,
     Right,
+    Role,
     Rollback,
+    Row,
     Select,
+    Security,
     Set,
     Some,
     Table,
@@ -165,6 +174,8 @@ pub enum Token {
     Punct(Punctuation),
     /// End of input. Always the last token in the stream.
     Eof,
+    /// Prepared-statement placeholder (`$1`, `$2`, …).
+    Parameter(u16),
 }
 
 /// A [`Token`] paired with its position in the original source.

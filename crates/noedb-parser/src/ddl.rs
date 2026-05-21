@@ -14,7 +14,46 @@ pub(crate) fn parse_create(p: &mut Parser<'_>) -> Result<Statement, ParseError> 
     if p.match_keyword(Keyword::Index) {
         return parse_create_index(p, start).map(Statement::CreateIndex);
     }
-    Err(p.unexpected("TABLE or INDEX after CREATE"))
+    if p.match_keyword(Keyword::Policy) {
+        return parse_create_policy(p, start).map(Statement::CreatePolicy);
+    }
+    Err(p.unexpected("TABLE, INDEX, or POLICY after CREATE"))
+}
+
+fn parse_create_policy(
+    p: &mut Parser<'_>,
+    start: noedb_lexer::Span,
+) -> Result<noedb_ast::CreatePolicyStmt, ParseError> {
+    let name = p.parse_ident()?;
+    p.expect_keyword(Keyword::On)?;
+    let table = p.parse_ident()?;
+    p.expect_keyword(Keyword::Using)?;
+    p.expect_punct(Punctuation::LParen)?;
+    let using_expr = crate::expr::parse_expr(p)?;
+    p.expect_punct(Punctuation::RParen)?;
+    p.expect_eof()?;
+    let end = p.tokens[p.pos.saturating_sub(1)].span;
+    Ok(noedb_ast::CreatePolicyStmt {
+        name,
+        table,
+        using_expr,
+        span: Parser::merge_span(start, end),
+    })
+}
+
+pub(crate) fn parse_alter_table_rls(p: &mut Parser<'_>) -> Result<Statement, ParseError> {
+    let start = p.expect_keyword(Keyword::Alter)?;
+    p.expect_keyword(Keyword::Table)?;
+    let table = p.parse_ident()?;
+    p.expect_keyword(Keyword::Enable)?;
+    p.expect_keyword(Keyword::Row)?;
+    p.expect_keyword(Keyword::Level)?;
+    p.expect_keyword(Keyword::Security)?;
+    p.expect_eof()?;
+    Ok(Statement::EnableRls(noedb_ast::EnableRlsStmt {
+        table,
+        span: Parser::merge_span(start, p.tokens[p.pos.saturating_sub(1)].span),
+    }))
 }
 
 fn parse_create_table(

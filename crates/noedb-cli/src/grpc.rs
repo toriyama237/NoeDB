@@ -48,7 +48,7 @@ impl Sql for SqlServiceImpl {
         verify_auth(&request, &self.auth)?;
         let query = request.into_inner().query;
         let resp = {
-            let mut eng = self.engine.lock().map_err(|_| Status::internal("engine lock"))?;
+            let eng = self.engine.lock().map_err(|_| Status::internal("engine lock"))?;
             match eng.explain(&query) {
                 Ok(text) => SqlResponse {
                     body: Some(noedb_grpc::generated::sql_response::Body::Explain(text)),

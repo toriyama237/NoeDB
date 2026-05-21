@@ -22,6 +22,7 @@ static KW_LEN_03: &[(&str, Keyword)] = &[
     ("FOR", Keyword::For),
     ("KEY", Keyword::Key),
     ("NOT", Keyword::Not),
+    ("ROW", Keyword::Row),
     ("SET", Keyword::Set),
 ];
 
@@ -38,6 +39,7 @@ static KW_LEN_04: &[(&str, Keyword)] = &[
     ("LEFT", Keyword::Left),
     ("LIKE", Keyword::Like),
     ("NULL", Keyword::Null),
+    ("ROLE", Keyword::Role),
     ("SOME", Keyword::Some),
     ("THEN", Keyword::Then),
     ("TRUE", Keyword::True),
@@ -48,6 +50,7 @@ static KW_LEN_04: &[(&str, Keyword)] = &[
 ];
 
 static KW_LEN_05: &[(&str, Keyword)] = &[
+    ("ALTER", Keyword::Alter),
     ("CHECK", Keyword::Check),
     ("CROSS", Keyword::Cross),
     ("FALSE", Keyword::False),
@@ -56,10 +59,12 @@ static KW_LEN_05: &[(&str, Keyword)] = &[
     ("GROUP", Keyword::Group),
     ("INDEX", Keyword::Index),
     ("INNER", Keyword::Inner),
+    ("LEVEL", Keyword::Level),
     ("LIMIT", Keyword::Limit),
     ("ORDER", Keyword::Order),
     ("OUTER", Keyword::Outer),
     ("RIGHT", Keyword::Right),
+    ("ROLE", Keyword::Role),
     ("TABLE", Keyword::Table),
     ("UNION", Keyword::Union),
     ("USING", Keyword::Using),
@@ -70,6 +75,7 @@ static KW_LEN_06: &[(&str, Keyword)] = &[
     ("COLUMN", Keyword::Column),
     ("CREATE", Keyword::Create),
     ("DELETE", Keyword::Delete),
+    ("ENABLE", Keyword::Enable),
     ("ESCAPE", Keyword::Escape),
     ("EXCEPT", Keyword::Except),
     ("EXISTS", Keyword::Exists),
@@ -77,6 +83,7 @@ static KW_LEN_06: &[(&str, Keyword)] = &[
     ("INSERT", Keyword::Insert),
     ("NULLIF", Keyword::Nullif),
     ("OFFSET", Keyword::Offset),
+    ("POLICY", Keyword::Policy),
     ("SELECT", Keyword::Select),
     ("UNIQUE", Keyword::Unique),
     ("UPDATE", Keyword::Update),
@@ -88,14 +95,17 @@ static KW_LEN_07: &[(&str, Keyword)] = &[
     ("COLLATE", Keyword::Collate),
     ("CURRENT", Keyword::Current),
     ("DEFAULT", Keyword::Default),
+    ("EXECUTE", Keyword::Execute),
     ("FOREIGN", Keyword::Foreign),
     ("NATURAL", Keyword::Natural),
+    ("PREPARE", Keyword::Prepare),
     ("PRIMARY", Keyword::Primary),
 ];
 
 static KW_LEN_08: &[(&str, Keyword)] = &[
     ("DISTINCT", Keyword::Distinct),
     ("ROLLBACK", Keyword::Rollback),
+    ("SECURITY", Keyword::Security),
 ];
 
 static KW_LEN_09: &[(&str, Keyword)] = &[

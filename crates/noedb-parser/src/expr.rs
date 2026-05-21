@@ -220,7 +220,33 @@ fn parse_prefix(p: &mut Parser<'_>) -> Result<Expr, ParseError> {
         return Ok(Expr::Paren(Box::new(inner), Parser::merge_span(start, end)));
     }
 
+    if p.match_keyword(Keyword::CurrentUser) {
+        let span = p.tokens[p.pos.saturating_sub(1)].span;
+        return Ok(Expr::CurrentUser { span });
+    }
+
+    if let Token::Parameter(index) = p.peek_kind().clone() {
+        let span = p.bump().span;
+        return Ok(Expr::Parameter { index, span });
+    }
+
     parse_atom(p)
+}
+
+pub(crate) fn parse_literal(p: &mut Parser<'_>) -> Result<Literal, ParseError> {
+    let tok = p.bump();
+    match tok.kind {
+        Token::Integer(v) => Ok(Literal::Integer(v, tok.span)),
+        Token::Float(v) => Ok(Literal::Float(v, tok.span)),
+        Token::String(s) => Ok(Literal::String(s, tok.span)),
+        Token::Keyword(Keyword::Null) => Ok(Literal::Null { span: tok.span }),
+        Token::Keyword(Keyword::True) => Ok(Literal::Boolean(true, tok.span)),
+        Token::Keyword(Keyword::False) => Ok(Literal::Boolean(false, tok.span)),
+        _ => Err(ParseError::UnexpectedToken {
+            span: tok.span,
+            context: "literal",
+        }),
+    }
 }
 
 fn parse_atom(p: &mut Parser<'_>) -> Result<Expr, ParseError> {

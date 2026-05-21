@@ -2,7 +2,7 @@
 
 use noedb_lexer::Span;
 
-use crate::expr::{Expr, SelectItem};
+use crate::expr::{Expr, Literal, SelectItem};
 use crate::name::{Ident, TableRef};
 
 /// Kind of SQL join.
@@ -145,6 +145,59 @@ pub struct CreateIndexStmt {
     pub span: Span,
 }
 
+/// `CREATE POLICY … ON … USING (…)`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreatePolicyStmt {
+    /// Policy name.
+    pub name: Ident,
+    /// Protected table.
+    pub table: Ident,
+    /// Row filter expression.
+    pub using_expr: Expr,
+    /// Span covering the statement.
+    pub span: Span,
+}
+
+/// `ALTER TABLE … ENABLE ROW LEVEL SECURITY`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnableRlsStmt {
+    /// Table name.
+    pub table: Ident,
+    /// Span covering the statement.
+    pub span: Span,
+}
+
+/// `PREPARE name AS …`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrepareStmt {
+    /// Statement name.
+    pub name: Ident,
+    /// Inner statement (typically `SELECT`).
+    pub inner: Box<Statement>,
+    /// Span covering the statement.
+    pub span: Span,
+}
+
+/// `EXECUTE name ($1, …)` with bound literals only.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExecuteStmt {
+    /// Prepared statement name.
+    pub name: Ident,
+    /// Bound parameter values (typed literals, never interpolated SQL).
+    pub params: Vec<Literal>,
+    /// Span covering the statement.
+    pub span: Span,
+}
+
+/// `SET ROLE 'user'`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetRoleStmt {
+    /// Role / tenant user id.
+    pub role: String,
+    /// Span covering the statement.
+    pub span: Span,
+}
+
 /// Top-level SQL statement.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -163,6 +216,16 @@ pub enum Statement {
     DropTable(DropTableStmt),
     /// `CREATE INDEX`.
     CreateIndex(CreateIndexStmt),
+    /// `PREPARE`.
+    Prepare(PrepareStmt),
+    /// `EXECUTE`.
+    Execute(ExecuteStmt),
+    /// `SET ROLE`.
+    SetRole(SetRoleStmt),
+    /// `ALTER TABLE … ENABLE ROW LEVEL SECURITY`.
+    EnableRls(EnableRlsStmt),
+    /// `CREATE POLICY`.
+    CreatePolicy(CreatePolicyStmt),
 }
 
 impl Statement {
@@ -177,6 +240,11 @@ impl Statement {
             Self::CreateTable(s) => s.span,
             Self::DropTable(s) => s.span,
             Self::CreateIndex(s) => s.span,
+            Self::Prepare(s) => s.span,
+            Self::Execute(s) => s.span,
+            Self::SetRole(s) => s.span,
+            Self::EnableRls(s) => s.span,
+            Self::CreatePolicy(s) => s.span,
         }
     }
 }

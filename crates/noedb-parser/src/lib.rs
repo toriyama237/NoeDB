@@ -20,7 +20,9 @@ mod dml;
 mod error;
 mod expr;
 mod parser;
+mod prepare;
 mod select;
+mod session;
 
 pub use crate::error::ParseError;
 pub use crate::parser::Parser;

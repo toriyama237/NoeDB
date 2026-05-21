@@ -700,6 +700,7 @@ dependencies = [
  "noedb-raft",
  "noedb-storage",
  "serde",
+ "serde_json",
  "thiserror",
 ]
 

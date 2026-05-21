@@ -18,6 +18,7 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
             Ok(Value::Bool(if *negated { !is_null } else { is_null }))
         }
         Expr::Between { .. } | Expr::In { .. } => Err(ExecError::UnsupportedExpr),
+        Expr::Parameter { .. } | Expr::CurrentUser { .. } => Err(ExecError::UnsupportedExpr),
         Expr::Paren(inner, _) => eval_expr(inner, row),
     }
 }

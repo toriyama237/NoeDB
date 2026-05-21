@@ -38,7 +38,7 @@ impl<'a> Parser<'a> {
         result
     }
 
-    fn dispatch_statement(&mut self) -> Result<Statement, ParseError> {
+    pub(crate) fn dispatch_statement(&mut self) -> Result<Statement, ParseError> {
         match self.peek_kind() {
             Token::Keyword(Keyword::Select) => {
                 crate::select::parse_select(self).map(Statement::Select)
@@ -56,6 +56,10 @@ impl<'a> Parser<'a> {
             Token::Keyword(Keyword::Drop) => {
                 crate::ddl::parse_drop_table(self).map(Statement::DropTable)
             }
+            Token::Keyword(Keyword::Alter) => crate::ddl::parse_alter_table_rls(self),
+            Token::Keyword(Keyword::Prepare) => crate::prepare::parse_prepare(self),
+            Token::Keyword(Keyword::Execute) => crate::prepare::parse_execute(self),
+            Token::Keyword(Keyword::Set) => crate::session::parse_set(self),
             _ => Err(self.unexpected("SQL statement")),
         }
     }

@@ -4,16 +4,16 @@
 
 PDF / DOCX détaillé : [`NoeDB_v2_Sprint_Plan.docx`](NoeDB_v2_Sprint_Plan.docx)
 
-## Phase 1 — Security & Protocol (S1–S6) 🟡
+## Phase 1 — Security & Protocol (S1–S6) ✅
 
 | Semaine | Statut | Livrable |
 |---------|--------|----------|
 | 01 | ✅ | TLS 1.3 actif (`noedb-tls`, serveur `--server`) |
 | 02 | ✅ | mTLS + SPIFFE CN + pin + reload + `TlsTcpTransport` |
 | 03 | ✅ | gRPC (tonic) + proto3, mTLS, `--legacy-tcp` |
-| 04 | ⏳ | Prepared statements |
-| 05 | ⏳ | Row Level Security |
-| 06 | ⏳ | Audit log, fuzz, SECURITY.md |
+| 04 | ✅ | Prepared statements (`PREPARE` / `EXECUTE`, bind typé) |
+| 05 | ✅ | Row Level Security (`ENABLE RLS`, `CREATE POLICY`, `SET ROLE`) |
+| 06 | ✅ | Audit log JSON, fuzz parser, `SECURITY.md`, `cargo audit` |
 
 ### Semaine 1 — ✅
 
@@ -33,6 +33,26 @@ PDF / DOCX détaillé : [`NoeDB_v2_Sprint_Plan.docx`](NoeDB_v2_Sprint_Plan.docx)
 - **`noedb-grpc`** : proto3 `Sql` (Execute / Explain / Ping), tonic + vendored `protoc`
 - **Sécu** : mTLS 1.3, auth cluster `x-noedb-auth`, cap 1 MiB
 - **CLI** : gRPC par défaut (`127.0.0.1:5434`), `--legacy-tcp` pour bincode `:5433`
+
+### Semaine 4 — ✅
+
+- **`PREPARE name AS SELECT … $1`** : cache `PrepareCache`, params `$n`
+- **`EXECUTE name (lit, …)`** : bind typé, jamais interpolé
+- **Sécu** : injection SQL structurellement impossible sur le chemin prepared
+
+### Semaine 5 — ✅
+
+- **`ALTER TABLE t ENABLE ROW LEVEL SECURITY`**
+- **`CREATE POLICY p ON t USING (owner = CURRENT_USER)`**
+- **`SET ROLE 'user'`** : filtre injecté dans `WHERE` au planificateur
+- **Tests** : user A ne voit jamais les rows de user B
+
+### Semaine 6 — ✅
+
+- **`AuditLog`** : append-only `data/audit/audit.log` (JSON lines)
+- **Fuzz** : `cargo fuzz run sql_parser`
+- **`SECURITY.md`** : TLS/mTLS/gRPC/RLS/prepared/audit + CVE policy
+- **`cargo audit`** : à lancer avant chaque release
 
 ## Phases suivantes
 

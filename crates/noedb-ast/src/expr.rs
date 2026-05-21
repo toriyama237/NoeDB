@@ -120,6 +120,18 @@ pub enum Expr {
     },
     /// Parenthesized sub-expression.
     Paren(Box<Expr>, Span),
+    /// Prepared-statement placeholder (`$1`, …).
+    Parameter {
+        /// 1-based index.
+        index: u16,
+        /// Source span.
+        span: Span,
+    },
+    /// `CURRENT_USER` session value (RLS policies).
+    CurrentUser {
+        /// Source span.
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -143,7 +155,9 @@ impl Expr {
             | Self::IsNull { span, .. }
             | Self::In { span, .. }
             | Self::Between { span, .. }
-            | Self::Paren(_, span) => *span,
+            | Self::Paren(_, span)
+            | Self::Parameter { span, .. }
+            | Self::CurrentUser { span } => *span,
         }
     }
 }

@@ -1,7 +1,7 @@
 //! Local and distributed SQL engines.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use noedb_ast::Statement;
 use noedb_planner::{
@@ -10,9 +10,13 @@ use noedb_planner::{
 use noedb_raft::{Cluster, NodeId, RaftError, Role};
 use noedb_storage::{LsmConfig, LsmTree};
 
+use crate::audit::AuditLog;
 use crate::command::Command;
 use crate::error::EngineError;
 use crate::machine::apply_command;
+use crate::prepared::{bind_parameters, PrepareCache};
+use crate::rls::{apply_rls, RlsCatalog};
+use crate::session::SessionContext;
 
 /// Maximum SQL text accepted by the engine (DoS bound).
 pub const MAX_SQL_BYTES: usize = 64 * 1024;
@@ -87,6 +91,11 @@ pub fn validate_sql(sql: &str) -> Result<(), EngineError> {
 /// Single-node engine (no Raft) — fast local development.
 pub struct LocalEngine {
     tree: LsmTree,
+    data_dir: PathBuf,
+    session: SessionContext,
+    prepare: PrepareCache,
+    rls: RlsCatalog,
+    audit: AuditLog,
 }
 
 impl LocalEngine {
@@ -96,8 +105,23 @@ impl LocalEngine {
     ///
     /// Storage initialization failures.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, EngineError> {
-        let tree = LsmTree::open(path, LsmConfig::default())?;
-        Ok(Self { tree })
+        let data_dir = path.as_ref().to_path_buf();
+        let tree = LsmTree::open(&data_dir, LsmConfig::default())?;
+        let audit = AuditLog::open(&data_dir)?;
+        Ok(Self {
+            tree,
+            data_dir,
+            session: SessionContext::dev(),
+            prepare: PrepareCache::default(),
+            rls: RlsCatalog::default(),
+            audit,
+        })
+    }
+
+    /// Current session role (`SET ROLE`).
+    #[must_use]
+    pub fn session_role(&self) -> &str {
+        &self.session.role
     }
 
     /// Underlying LSM (tests).
@@ -141,8 +165,60 @@ impl LocalEngine {
     pub fn execute(&mut self, sql: &str) -> Result<QueryResult, EngineError> {
         validate_sql(sql)?;
         let stmt = noedb_parser::parse(sql)?;
+        self.dispatch(stmt, sql)
+    }
+
+    fn dispatch(&mut self, stmt: Statement, sql: &str) -> Result<QueryResult, EngineError> {
+        match stmt {
+            Statement::Prepare(p) => {
+                if !matches!(*p.inner, Statement::Select(_)) {
+                    return Err(EngineError::InvalidSql("PREPARE only supports SELECT"));
+                }
+                self.prepare.insert(&p.name.value, *p.inner)?;
+                self.audit_record(sql, 0)?;
+                Ok(empty_ok())
+            }
+            Statement::Execute(e) => {
+                let prep = self
+                    .prepare
+                    .get(&e.name.value)
+                    .ok_or(EngineError::InvalidSql("unknown prepared statement"))?;
+                let bound = bind_parameters(&prep.stmt, &e.params)?;
+                let bound = apply_rls(bound, &self.rls, &self.session.role);
+                self.run_data_statement(bound, sql)
+            }
+            Statement::SetRole(s) => {
+                self.session.role = s.role;
+                self.audit_record(sql, 0)?;
+                Ok(empty_ok())
+            }
+            Statement::EnableRls(e) => {
+                self.rls.enable(&e.table.value);
+                self.audit_record(sql, 0)?;
+                Ok(empty_ok())
+            }
+            Statement::CreatePolicy(p) => {
+                self.rls.add_policy(&p);
+                self.audit_record(sql, 0)?;
+                Ok(empty_ok())
+            }
+            other => {
+                let other = apply_rls(other, &self.rls, &self.session.role);
+                self.run_data_statement(other, sql)
+            }
+        }
+    }
+
+    fn run_data_statement(&mut self, stmt: Statement, sql: &str) -> Result<QueryResult, EngineError> {
         let records = apply_statement(&stmt, &mut self.tree)?;
-        Ok(QueryResult::from_records(&records))
+        let result = QueryResult::from_records(&records);
+        self.audit_record(sql, u64::try_from(result.rows.len()).unwrap_or(0))?;
+        Ok(result)
+    }
+
+    fn audit_record(&self, sql: &str, rows: u64) -> Result<(), EngineError> {
+        self.audit
+            .record(&self.session.tenant, &self.session.role, sql, rows)
     }
 
     /// `EXPLAIN` for a `SELECT`.
@@ -153,7 +229,15 @@ impl LocalEngine {
     pub fn explain(&self, sql: &str) -> Result<String, EngineError> {
         validate_sql(sql)?;
         let stmt = noedb_parser::parse(sql)?;
+        let stmt = apply_rls(stmt, &self.rls, &self.session.role);
         explain_sql(&stmt, &self.tree).map_err(plan_err)
+    }
+}
+
+fn empty_ok() -> QueryResult {
+    QueryResult {
+        columns: vec![],
+        rows: vec![],
     }
 }
 
