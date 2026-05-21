@@ -45,8 +45,11 @@ crates/
 ├── noedb-ast/        # AST node types             (Phase 1 ✅)
 ├── noedb-parser/     # recursive-descent parser   (Phase 1 ✅)
 ├── noedb-planner/    # logical + physical plans   (Phase 3 ✅ W28)
-├── noedb-storage/    # LSM-tree engine            (LsmTree + SST ✅ W16)
-└── noedb-raft/       # Raft consensus           (Phase 4 ✅ W44)
+├── noedb-storage/    # LSM-tree engine            (Phase 2 ✅)
+├── noedb-raft/       # Raft consensus           (Phase 4 ✅)
+├── noedb-engine/     # SQL → Raft → LSM         (Phase 5 ✅)
+├── noedb-protocol/   # framed TCP RPC           (Phase 5 ✅)
+└── noedb-cli/        # REPL + server binary     (Phase 5 ✅)
 ```
 
 - **No `sqlx`, no `sled`, no `tokio-postgres`** — just the standard library and a
@@ -95,14 +98,17 @@ hide behind a framework.
   transport. Hardest surprise: AppendEntries ping-pong when every response
   triggered a full broadcast — fixed by only replicating when `next_index` lags.
   Membership / `madsim` / production failover still open (W38–43).
-- **Integration & launch (Phase 5)** — *coming Week 52.*
+- **Integration & launch (Phase 5)** — shipped Week 52 as **v1.0.0**. Full SQL
+  pipeline (`noedb-engine`), framed wire protocol, `noedb` REPL + TCP server.
+  Security: bounded SQL/commands, cluster auth on the wire. YCSB / mdbook still
+  on the roadmap post-1.0.
 
 ---
 
 ## Status
 
-> **Week 44 / Phase 4 complete** — Raft consensus shipped as `v0.4.0`
-> (query engine: `v0.3.0`).
+> **v1.0.0** — distributed SQL engine from lexer to Raft-backed storage.
+> Run `cargo run -p noedb-cli` for the REPL, or `cargo run -p noedb-cli -- --cluster`.
 
 Phase 1 parses `SELECT` (with `JOIN` / `WHERE`), DML (`INSERT`, `UPDATE`,
 `DELETE`), and core DDL (`CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`):
@@ -153,6 +159,30 @@ assert!(cluster.applied_count() >= 1);
 # Ok::<_, noedb::raft::RaftError>(())
 ```
 
+Phase 5 runs the full stack (local or 3-node Raft cluster):
+
+```rust
+use noedb::engine::{DistributedEngine, LocalEngine};
+
+// Local: one LSM
+let mut eng = LocalEngine::open("/tmp/noedb-data")?;
+eng.put_row("users", "1", "name", b"ada")?;
+let rows = eng.execute("SELECT name FROM users")?;
+
+// Distributed: parser → planner → Raft → LSM on each replica
+let mut cluster = DistributedEngine::new_voters(3)?;
+cluster.tick(80)?;
+cluster.put_row("users", "1", "name", b"ada")?;
+let rows = cluster.execute("SELECT name FROM users")?;
+# Ok::<_, noedb::engine::EngineError>(())
+```
+
+```bash
+cargo run -p noedb-cli              # REPL (local LSM)
+cargo run -p noedb-cli -- --cluster # REPL over 3-node Raft sim
+cargo run -p noedb-cli -- --server --listen 127.0.0.1:5433
+```
+
 The lexer tokenizes ~95 % of SQL surface syntax. **200+ tests**, a
 **1M-token Criterion bench**, and a **`cargo-fuzz`** target ship with
 Phase 1. See [`crates/noedb-lexer/README.md`](crates/noedb-lexer/README.md)
@@ -179,7 +209,7 @@ for lexer details.
 | 2     | 09 – 16 | Storage Engine (LSM) | `v0.2.0-storage`       | ✅ shipped     |
 | 3     | 17 – 28 | Query Planner        | `v0.3.0-query-engine`  | ✅ shipped     |
 | 4     | 29 – 44 | Raft Consensus       | `v0.4.0-raft`          | ✅ shipped     |
-| 5     | 45 – 52 | Integration & launch | `v1.0.0`               | ⏳ planned     |
+| 5     | 45 – 52 | Integration & launch | `v1.0.0`               | ✅ shipped     |
 
 **Start:** 2026-05-20 · **Launch day:** 2027-05-14.
 

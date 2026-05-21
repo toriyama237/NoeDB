@@ -252,9 +252,11 @@ name = "noedb"
 version = "0.4.0"
 dependencies = [
  "noedb-ast",
+ "noedb-engine",
  "noedb-lexer",
  "noedb-parser",
  "noedb-planner",
+ "noedb-protocol",
  "noedb-raft",
  "noedb-storage",
 ]
@@ -264,6 +266,32 @@ name = "noedb-ast"
 version = "0.4.0"
 dependencies = [
  "noedb-lexer",
+]
+
+[[package]]
+name = "noedb-cli"
+version = "0.4.0"
+dependencies = [
+ "noedb-engine",
+ "noedb-protocol",
+ "noedb-raft",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "noedb-engine"
+version = "0.4.0"
+dependencies = [
+ "bincode",
+ "criterion",
+ "noedb-ast",
+ "noedb-parser",
+ "noedb-planner",
+ "noedb-raft",
+ "noedb-storage",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]
@@ -290,6 +318,17 @@ dependencies = [
  "noedb-lexer",
  "noedb-parser",
  "noedb-storage",
+]
+
+[[package]]
+name = "noedb-protocol"
+version = "0.4.0"
+dependencies = [
+ "bincode",
+ "bytes",
+ "noedb-raft",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]

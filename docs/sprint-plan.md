@@ -89,18 +89,20 @@ Every commit should be traceable to a line below.
 
 ---
 
-## Phase 5 — Integration & launch (Weeks 45-52)
+## Phase 5 — Integration & launch (Weeks 45-52) ✅
 
-| Week | Theme |
-|------|-------|
-| 45 | Brancher Parser → Planner → Storage → Raft de bout en bout |
-| 46 | CLI `noedb` interactif |
-| 47 | Driver wire-protocol minimal (Postgres-like) |
-| 48 | Stress tests : YCSB workload A/B |
-| 49 | Documentation: book mdbook |
-| 50 | Rédiger "Why I built this" + "What was technically hard" du README |
-| 51 | Préparer Show HN + thread Twitter/LinkedIn |
-| 52 | **v1.0.0** publiée + post LinkedIn long + Show HN |
+**Tag:** `v1.0.0` — shipped 2026-05-20.
+
+| Week | Theme | Status |
+|------|-------|--------|
+| 45 | Brancher Parser → Planner → Storage → Raft de bout en bout | ✅ `noedb-engine` |
+| 46 | CLI `noedb` interactif | ✅ REPL + `--cluster` |
+| 47 | Driver wire-protocol minimal (Postgres-like) | ✅ `noedb-protocol` + TCP server |
+| 48 | Stress tests : YCSB workload A/B | 🟡 bench pipeline (YCSB ⏳) |
+| 49 | Documentation: book mdbook | ⏳ |
+| 50 | Rédiger "Why I built this" + README | ✅ |
+| 51 | Préparer Show HN + thread Twitter/LinkedIn | ⏳ |
+| 52 | **v1.0.0** publiée + post LinkedIn long + Show HN | ✅ tag `v1.0.0` |
 
 ---
 

@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-20
+
+### Added
+- **Phase 5 integration (Weeks 45–52):** [`noedb-engine`] wires parser → planner →
+  Raft → LSM with bounded SQL input, [`LocalEngine`] and [`DistributedEngine`]
+  (3-node in-process cluster).
+- [`noedb-protocol`]: authenticated bincode frames (`ClusterAuth`, 1 MiB cap).
+- **`noedb` CLI** (`cargo run -p noedb-cli`): interactive REPL, `--cluster` mode,
+  TCP server (`--server --listen 127.0.0.1:5433`).
+- 20-query E2E corpus and `cargo bench -p noedb-engine --bench pipeline`.
+
+### Security
+- `MAX_SQL_BYTES` (64 KiB) and NUL rejection on all engine entry points.
+- `MAX_COMMAND_BYTES` (64 KiB) on replicated log payloads.
+- Wire protocol reuses Raft envelope verification.
+
+[`noedb-engine`]: crates/noedb-engine/src/lib.rs
+[`LocalEngine`]: crates/noedb-engine/src/engine.rs
+[`DistributedEngine`]: crates/noedb-engine/src/engine.rs
+[`noedb-protocol`]: crates/noedb-protocol/src/lib.rs
+
 ## [0.4.0] - 2026-05-20
 
 ### Added
