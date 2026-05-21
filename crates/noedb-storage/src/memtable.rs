@@ -10,14 +10,19 @@ use std::collections::BTreeMap;
 use crate::error::StorageError;
 use crate::StorageEngine;
 
+/// Default maximum in-memory bytes before rotating the active MemTable.
+pub const DEFAULT_MAX_MEM_BYTES: usize = 4 * 1024 * 1024;
+
 /// Default maximum number of entries before the engine should rotate the
-/// MemTable (Week 10 will wire this to flush + WAL).
+/// MemTable (superseded by [`DEFAULT_MAX_MEM_BYTES`] in Week 10).
 pub const DEFAULT_MAX_ENTRIES: usize = 10_000;
 
 /// An in-memory sorted map backing the LSM write path.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MemTable {
     map: BTreeMap<Vec<u8>, Vec<u8>>,
+    /// Approximate byte footprint (sum of key + value lengths).
+    bytes: usize,
 }
 
 impl MemTable {
@@ -46,10 +51,26 @@ impl MemTable {
         Ok(())
     }
 
+    /// Approximate bytes stored (keys + values).
+    #[must_use]
+    pub fn approx_bytes(&self) -> usize {
+        self.bytes
+    }
+
+    const fn entry_bytes(key: &[u8], value: &[u8]) -> usize {
+        key.len() + value.len()
+    }
+
     /// Insert or overwrite `key` → `value`.
     pub fn put(&mut self, key: &[u8], value: &[u8]) -> Result<(), StorageError> {
         Self::validate_key(key)?;
-        self.map.insert(key.to_vec(), value.to_vec());
+        let key_vec = key.to_vec();
+        let val_vec = value.to_vec();
+        if let Some(old) = self.map.insert(key_vec, val_vec) {
+            self.bytes = self.bytes - Self::entry_bytes(key, &old) + Self::entry_bytes(key, value);
+        } else {
+            self.bytes += Self::entry_bytes(key, value);
+        }
         Ok(())
     }
 
@@ -62,7 +83,12 @@ impl MemTable {
     /// Remove `key` if present. Returns whether a value was removed.
     pub fn delete(&mut self, key: &[u8]) -> Result<bool, StorageError> {
         Self::validate_key(key)?;
-        Ok(self.map.remove(key).is_some())
+        if let Some(old) = self.map.remove(key) {
+            self.bytes -= Self::entry_bytes(key, &old);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     /// Iterate all entries in ascending key order.
