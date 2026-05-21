@@ -2,61 +2,63 @@
 //!
 //! This crate owns the typed shape of every SQL statement NoeDB knows
 //! how to parse. It is intentionally **dependency-light** (only
-//! `noedb-lexer` for [`Span`]) so that consumers - parser, planner,
-//! optimizer - can match on AST nodes without dragging in heavy
+//! `noedb-lexer` for [`Span`]) so that consumers — parser, planner,
+//! optimizer — can match on AST nodes without dragging in heavy
 //! transitive deps.
 //!
 //! # Status
 //!
-//! **Day 2 / 260** — placeholder. The AST will be defined in Week 02 of
-//! the sprint, when the parser starts emitting real nodes. The skeleton
-//! below exists so that downstream crates can already depend on
-//! `noedb-ast` and document the contract.
+//! **Week 08 / Phase 1** — `SELECT`, DML, and DDL AST nodes with
+//! [`Display`] round-trip support. See `docs/sprint-plan.md`.
 //!
 //! [`Span`]: noedb_lexer::Span
 
 #![forbid(unsafe_code)]
+#![allow(
+    clippy::derive_partial_eq_without_eq,
+    clippy::missing_const_for_fn,
+    clippy::use_self
+)]
 
-use noedb_lexer::Span;
+mod display;
+mod expr;
+mod name;
+mod stmt;
 
-/// A SQL statement.
-///
-/// This enum is `#[non_exhaustive]` so that new variants can be added
-/// without it being a breaking change for downstream pattern matches.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Statement {
-    /// Reserved for the first real variant, landing in Week 02.
-    Placeholder {
-        /// Source position of this node, propagated from the lexer.
-        span: Span,
-    },
-}
-
-impl Statement {
-    /// Source span of the statement.
-    ///
-    /// Every AST node tracks the original source location so that the
-    /// planner and the diagnostics layer can produce rustc-quality
-    /// error messages.
-    #[must_use]
-    pub const fn span(&self) -> Span {
-        match self {
-            Self::Placeholder { span } => *span,
-        }
-    }
-}
+pub use crate::expr::{BinaryOp, Expr, Literal, SelectItem, UnaryOp};
+pub use crate::name::{ColumnRef, Ident, TableRef};
+pub use crate::stmt::{
+    ColumnDef, CreateIndexStmt, CreateTableStmt, DeleteStmt, DropTableStmt, InsertStmt, Join,
+    JoinKind, SelectStmt, SqlType, Statement, UpdateStmt,
+};
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use noedb_lexer::Span;
 
     #[test]
-    fn placeholder_returns_its_span() {
-        let s = Statement::Placeholder {
-            span: Span::new(0, 6),
-        };
-        assert_eq!(s.span(), Span::new(0, 6));
+    fn select_stmt_span_round_trips() {
+        let stmt = Statement::Select(SelectStmt {
+            distinct: false,
+            items: vec![SelectItem {
+                expr: Expr::Column(ColumnRef::Named {
+                    table: None,
+                    column: Ident::new("a".into(), Span::new(7, 8)),
+                }),
+                alias: None,
+            }],
+            from: Some(TableRef {
+                name: Ident::new("t".into(), Span::new(14, 15)),
+                alias: None,
+                span: Span::new(14, 15),
+            }),
+            joins: vec![],
+            where_clause: None,
+            span: Span::new(0, 15),
+        });
+        assert_eq!(stmt.span(), Span::new(0, 15));
+        assert!(format!("{stmt}").contains("SELECT"));
     }
 }
