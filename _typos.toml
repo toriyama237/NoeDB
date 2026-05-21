@@ -6,6 +6,7 @@ extend-exclude = [
     "target/",
     "CHANGELOG.md",
     "*.lock",
+    "docs/**",
 ]
 
 [default]
@@ -14,13 +15,13 @@ extend-ignore-re = [
 ]
 
 [default.extend-words]
-# Add project-specific spellings here.
+# Project-specific spellings.
 crate = "crate"
 Noe = "Noe"
 NoeDB = "NoeDB"
 noe = "noe"
 noedb = "noedb"
 arbo = "arbo"
-# Common DB terms that the default dict flags wrong.
-arbo = "arbo"
 hashmap = "hashmap"
+tokeniser = "tokeniser"
+tokenise = "tokenise"

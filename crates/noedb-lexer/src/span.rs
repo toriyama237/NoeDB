@@ -204,7 +204,8 @@ mod tests {
         let s = Span::new(3, 9);
         assert_eq!(s.len(), 6);
         assert!(!s.is_empty());
-        assert_eq!(s.slice("SELECT 99"), Some("ECT 99"));
+        let src = "0123456789";
+        assert_eq!(s.slice(src), Some("345678"));
         assert!(Span::empty_at(3).is_empty());
     }
 
