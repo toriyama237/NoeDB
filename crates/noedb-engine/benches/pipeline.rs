@@ -1,0 +1,28 @@
+//! End-to-end pipeline benchmark (Phase 5, Week 48).
+
+#![allow(missing_docs, clippy::unwrap_used, clippy::expect_used)]
+
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, Criterion};
+use noedb_engine::DistributedEngine;
+
+fn bench_distributed_select(c: &mut Criterion) {
+    let mut eng = DistributedEngine::new_voters(3).expect("cluster");
+    eng.tick(80).expect("tick");
+    for i in 0..100u64 {
+        eng.put_row("users", &i.to_string(), "name", b"x")
+            .expect("put");
+    }
+    c.bench_function("engine/distributed_select_100_rows", |b| {
+        b.iter(|| {
+            let out = eng
+                .execute("SELECT name FROM users")
+                .expect("select");
+            black_box(out.rows.len());
+        });
+    });
+}
+
+criterion_group!(benches, bench_distributed_select);
+criterion_main!(benches);
