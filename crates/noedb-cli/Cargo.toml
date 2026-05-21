@@ -1,0 +1,25 @@
+[package]
+name = "noedb-cli"
+description = "Interactive NoeDB SQL shell and TCP server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "noedb"
+path = "src/main.rs"
+
+[dependencies]
+noedb-engine = { workspace = true }
+noedb-protocol = { workspace = true }
+noedb-raft = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
