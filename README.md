@@ -46,7 +46,7 @@ crates/
 ├── noedb-parser/     # recursive-descent parser   (Phase 1 ✅)
 ├── noedb-planner/    # logical + physical plans   (Phase 3 ✅ W28)
 ├── noedb-storage/    # LSM-tree engine            (LsmTree + SST ✅ W16)
-└── noedb-raft/       # consensus                  (stub, grows in W29)
+└── noedb-raft/       # Raft consensus           (Phase 4 ✅ W44)
 ```
 
 - **No `sqlx`, no `sled`, no `tokio-postgres`** — just the standard library and a
@@ -90,15 +90,19 @@ hide behind a framework.
   executors through `HashJoin`, predicate/projection pushdown, and `EXPLAIN`.
   Hardest surprise: projection pushdown silently dropped join keys until the
   optimizer merged required columns from the whole plan tree.
-- **Raft Consensus (Phase 4)** — *coming Week 44.* If history is any guide,
-  this is where my unit tests stop being enough.
+- **Raft Consensus (Phase 4)** — shipped Week 44. Pure core FSM, 3-node
+  in-process simulator, `FileStorage` + CRC, auth-framed bincode RPC, Tokio TCP
+  transport. Hardest surprise: AppendEntries ping-pong when every response
+  triggered a full broadcast — fixed by only replicating when `next_index` lags.
+  Membership / `madsim` / production failover still open (W38–43).
 - **Integration & launch (Phase 5)** — *coming Week 52.*
 
 ---
 
 ## Status
 
-> **Week 28 / Phase 3 complete** — query planner shipped as `v0.3.0`.
+> **Week 44 / Phase 4 complete** — Raft consensus shipped as `v0.4.0`
+> (query engine: `v0.3.0`).
 
 Phase 1 parses `SELECT` (with `JOIN` / `WHERE`), DML (`INSERT`, `UPDATE`,
 `DELETE`), and core DDL (`CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`):
@@ -137,6 +141,18 @@ println!("{}", explain_sql(&parse("SELECT name FROM users WHERE id = '42'")?, &t
 # Ok::<_, Box<dyn std::error::Error>>(())
 ```
 
+Phase 4 adds Raft consensus (election, replication, in-process 3-node cluster):
+
+```rust
+use noedb::raft::Cluster;
+
+let mut cluster = Cluster::new_voters(3)?;
+cluster.run_rounds(80)?;
+cluster.propose_on_leader(b"SET x 1".to_vec())?;
+assert!(cluster.applied_count() >= 1);
+# Ok::<_, noedb::raft::RaftError>(())
+```
+
 The lexer tokenizes ~95 % of SQL surface syntax. **200+ tests**, a
 **1M-token Criterion bench**, and a **`cargo-fuzz`** target ship with
 Phase 1. See [`crates/noedb-lexer/README.md`](crates/noedb-lexer/README.md)
@@ -161,8 +177,8 @@ for lexer details.
 |-------|---------|----------------------|------------------------|---------------|
 | 1     | 01 – 08 | Lexer & Parser       | `v0.1.0-lexer-parser`  | ✅ shipped     |
 | 2     | 09 – 16 | Storage Engine (LSM) | `v0.2.0-storage`       | ✅ shipped     |
-| 3     | 17 – 28 | Query Planner        | `v0.3.0-query-engine`  | 🟡 in progress |
-| 4     | 29 – 44 | Raft Consensus       | `v0.4.0-raft`          | ⏳ planned     |
+| 3     | 17 – 28 | Query Planner        | `v0.3.0-query-engine`  | ✅ shipped     |
+| 4     | 29 – 44 | Raft Consensus       | `v0.4.0-raft`          | ✅ shipped     |
 | 5     | 45 – 52 | Integration & launch | `v1.0.0`               | ⏳ planned     |
 
 **Start:** 2026-05-20 · **Launch day:** 2027-05-14.

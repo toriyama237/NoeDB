@@ -39,8 +39,8 @@
 //!
 //! # Status
 //!
-//! **Week 17 / Phase 3 (in progress)** — logical/physical plans, `SeqScan` /
-//! `Filter` / `Project` over [`LsmTree`]. Lexer: ~21 ms / 1M tokens (~47 Melem/s).
+//! **Week 44 / Phase 4** — Raft consensus shipped in v0.4 (election,
+//! replication, framed RPC auth). Query engine v0.3, LSM v0.2. Lexer: &lt;18 ms / 1M tokens.
 //!
 //! [README]: https://github.com/toriyama237/NoeDB
 
@@ -91,5 +91,10 @@ pub mod storage {
 
 /// Raft consensus (re-exported from [`noedb_raft`]).
 pub mod raft {
-    pub use noedb_raft::StateMachine;
+    pub use noedb_raft::{
+        decode_message, encode_message, Action, AppendEntriesReq, AppendEntriesResp, Cluster,
+        ClusterAuth, FileStorage, HardState, LogEntry, MemNode, MemStorage, Raft, RaftConfig,
+        RaftError, RaftLog, RaftNode, RaftStorage, RequestVoteReq, RequestVoteResp, Role, RpcMessage,
+        Snapshot, StateMachine, Term, LogIndex, NodeId, MAX_FRAME_BYTES,
+    };
 }

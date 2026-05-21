@@ -67,23 +67,25 @@ Every commit should be traceable to a line below.
 
 ---
 
-## Phase 4 — Raft Consensus (Weeks 29-44)
+## Phase 4 — Raft Consensus (Weeks 29-44) ✅
 
-| Week | Theme |
-|------|-------|
-| 29-30 | Lire le paper Raft (Ongaro & Ousterhout, 2014) ligne par ligne |
-| 31 | États : Follower, Candidate, Leader |
-| 32 | Élection : RequestVote RPC |
-| 33 | Réplication : AppendEntries RPC |
-| 34 | Persistence : term, votedFor, log |
-| 35-36 | Networking : `tokio` + bincode |
-| 37 | Cluster 3 nœuds : élection + replication OK |
-| 38 | Tolérance aux pannes : kill leader, nouveau leader élu < 1 s |
-| 39 | Membership changes (joint consensus) |
-| 40 | Log compaction + snapshots |
-| 41-42 | Linearizable reads + leases |
-| 43 | Fuzz cluster avec `madsim` |
-| 44 | Benchmark Raft : 10k writes/s @ N=3 nœuds, tag `v0.4.0-raft`, post LinkedIn #4 |
+**Tag:** `v0.4.0-raft` — shipped 2026-05-20 (core + bench; W38–43 follow in Phase 5).
+
+| Week | Theme | Status |
+|------|-------|--------|
+| 29-30 | Lire le paper Raft (Ongaro & Ousterhout, 2014) ligne par ligne | ✅ |
+| 31 | États : Follower, Candidate, Leader | ✅ |
+| 32 | Élection : RequestVote RPC | ✅ |
+| 33 | Réplication : AppendEntries RPC | ✅ |
+| 34 | Persistence : term, votedFor, log | ✅ |
+| 35-36 | Networking : `tokio` + bincode | ✅ |
+| 37 | Cluster 3 nœuds : élection + replication OK | ✅ |
+| 38 | Tolérance aux pannes : kill leader, nouveau leader élu < 1 s | ⏳ sim only |
+| 39 | Membership changes (joint consensus) | ⏳ |
+| 40 | Log compaction + snapshots | 🟡 RPC + stub |
+| 41-42 | Linearizable reads + leases | 🟡 ReadIndex RPC |
+| 43 | Fuzz cluster avec `madsim` | ⏳ |
+| 44 | Benchmark Raft : 10k writes/s @ N=3 nœuds, tag `v0.4.0-raft` | ✅ ~37k cmd/s sim |
 
 ---
 

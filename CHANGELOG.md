@@ -6,14 +6,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- Lexer 1M-token benchmark regression (~30 ms → ~16 ms): bench now reuses a buffer via
-  [`tokenize_into`], whitespace skip tuned for single-space SQL, single-digit integer fast path,
-  and `[profile.bench] debug = false`.
+## [0.4.0] - 2026-05-20
 
 ### Added
-- [`tokenize_into`] for allocation-free hot loops (parser can adopt later).
+- **Phase 4 Raft (Weeks 31–37, 44):** [`noedb-raft`] with pure core FSM
+  (`Raft`), election (`RequestVote`), log replication (`AppendEntries`),
+  `InstallSnapshot` / `ReadIndex` RPCs, `RaftStorage` (`MemStorage`,
+  `FileStorage` with CRC-32), `RaftNode` runtime, bincode wire codec with
+  [`ClusterAuth`] + bounded frames, in-process [`Cluster`] simulator, and
+  Tokio length-prefixed TCP transport.
+- Criterion bench `cargo bench -p noedb-raft --bench raft` (~37k commands/s
+  on 3-node in-process cluster for 1k proposals).
 
+### Not in this release (planned W38–43)
+- Joint-consensus membership changes, `madsim` fuzz, TLS, full linearizable
+  read integration, production failover tests.
+
+### Fixed
+- Lexer 1M-token benchmark regression (~30 ms → ~16 ms): [`tokenize_into`],
+  whitespace skip, single-digit integer fast path, `[profile.bench] debug = false`.
+- Raft replication ping-pong: leader only re-sends `AppendEntries` when
+  `next_index <= last_index` (heartbeats on tick only).
+
+[`noedb-raft`]: crates/noedb-raft/src/lib.rs
+[`ClusterAuth`]: crates/noedb-raft/src/security.rs
+[`Cluster`]: crates/noedb-raft/src/sim.rs
 [`tokenize_into`]: crates/noedb-lexer/src/lib.rs
 
 ## [0.3.0] - 2026-05-20

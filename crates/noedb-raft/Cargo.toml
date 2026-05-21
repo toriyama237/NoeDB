@@ -1,6 +1,6 @@
 [package]
 name = "noedb-raft"
-description = "Raft consensus implementation for NoeDB (Ongaro & Ousterhout, 2014)."
+description = "Raft consensus for NoeDB (Ongaro & Ousterhout, 2014) — performance-hardened."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,6 +14,28 @@ keywords.workspace = true
 [lib]
 name = "noedb_raft"
 path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+bincode = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+crc32fast = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+
+[[bench]]
+name = "raft"
+harness = false
+
+[[test]]
+name = "cluster"
+path = "tests/cluster.rs"
 
 [lints]
 workspace = true
