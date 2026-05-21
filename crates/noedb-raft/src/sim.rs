@@ -127,4 +127,16 @@ impl Cluster {
     pub fn raft_role(&self, id: NodeId) -> Role {
         self.nodes.get(&id).expect("node").raft().role()
     }
+
+    /// Voter ids in this cluster.
+    #[must_use]
+    pub fn voter_ids(&self) -> Vec<NodeId> {
+        self.nodes.keys().copied().collect()
+    }
+
+    /// Committed-applied command log for a node.
+    #[must_use]
+    pub fn applied_at(&self, id: NodeId) -> &[Vec<u8>] {
+        self.nodes.get(&id).expect("node").applied()
+    }
 }
