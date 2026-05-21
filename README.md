@@ -145,7 +145,7 @@ for lexer details.
 |-------|---------|----------------------|------------------------|---------------|
 | 1     | 01 – 08 | Lexer & Parser       | `v0.1.0-lexer-parser`  | ✅ shipped     |
 | 2     | 09 – 16 | Storage Engine (LSM) | `v0.2.0-storage`       | ✅ shipped     |
-| 3     | 17 – 28 | Query Planner        | `v0.3.0-query-engine`  | ⏳ planned     |
+| 3     | 17 – 28 | Query Planner        | `v0.3.0-query-engine`  | 🟡 in progress |
 | 4     | 29 – 44 | Raft Consensus       | `v0.4.0-raft`          | ⏳ planned     |
 | 5     | 45 – 52 | Integration & launch | `v1.0.0`               | ⏳ planned     |
 
@@ -192,9 +192,8 @@ cargo bench -p noedb-lexer --bench lexer
 open target/criterion/report/index.html
 ```
 
-The `one_million_tokens` bench targets ~1M tokens per run (debug builds are
-slower; use `--release` for representative numbers). Comparative benchmarks
-against SQLite land in Phase 2.
+The `one_million_tokens` bench targets ~1M tokens per run (~**21 ms** / ~47 Melem/s
+on release builds as of v0.2). LSM benches: `cargo bench -p noedb-storage --bench lsm`.
 
 ---
 

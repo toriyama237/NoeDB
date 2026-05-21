@@ -1,60 +1,146 @@
-//! Query planner for NoeDB.
+//! Query planner and executor for NoeDB (Phase 3).
 //!
-//! Turns a [`Statement`] (from `noedb-ast`) into a logical plan, then a
-//! physical plan that the executor walks. The planner is Volcano-style
-//! (Graefe, 1994) with a cost model that the sprint plan exposes to the
-//! reader piece by piece in Phase 3.
-//!
-//! # Status
-//!
-//! **Day 2 / 260** — placeholder. Real work starts in Week 17.
-//!
-//! [`Statement`]: noedb_ast::Statement
+//! Week 17–20: logical/physical plans, naive lowering, `SeqScan` / `Filter` /
+//! `Project` executors over [`LsmTree`].
 
 #![forbid(unsafe_code)]
+#![allow(unreachable_pub)] // API surface re-exported by the `noedb` meta-crate.
+
+mod build;
+mod eval;
+mod executor;
+mod lower;
+mod logical;
+mod physical;
+mod value;
+
+pub use build::build;
+pub use executor::{execute, ExecutionContext, Executor};
+pub use logical::LogicalPlan;
+pub use lower::lower;
+pub use physical::PhysicalPlan;
+pub use value::{Record, Value};
 
 use noedb_ast::Statement;
-
-/// A logical plan node.
-///
-/// Will mirror the relational algebra (Scan / Filter / Project / Join /
-/// Aggregate / Sort / Limit) as soon as the AST stops being a
-/// placeholder.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum LogicalPlan {
-    /// Reserved for the first real variant.
-    Placeholder,
-}
 
 /// Turn a [`Statement`] into a [`LogicalPlan`].
 ///
 /// # Errors
 ///
-/// Reserved for the first planner pass; today this returns
-/// [`PlanError::NotYetImplemented`] for every input.
-pub const fn plan(stmt: &Statement) -> Result<LogicalPlan, PlanError> {
-    let _ = stmt;
-    Err(PlanError::NotYetImplemented)
+/// Returns [`PlanError::UnsupportedStatement`] for non-`SELECT` statements.
+pub fn plan(stmt: &Statement) -> Result<LogicalPlan, PlanError> {
+    build(stmt)
+}
+
+/// Plan, lower, and execute a `SELECT` against storage.
+///
+/// # Errors
+///
+/// Planner or executor errors.
+pub fn execute_sql(stmt: &Statement, store: &noedb_storage::LsmTree) -> Result<Vec<Record>, ExecError> {
+    let logical = plan(stmt)?;
+    let physical = lower(logical);
+    let ctx = ExecutionContext { store };
+    execute(physical, &ctx)
 }
 
 /// An error produced by the planner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PlanError {
-    /// Reserved: surfaced when the planner has not yet learnt the rule
-    /// being requested.
-    NotYetImplemented,
+    /// Statement kind not implemented yet.
+    UnsupportedStatement,
+}
+
+/// An error produced at execution time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ExecError {
+    /// Expression form not supported yet.
+    UnsupportedExpr,
+    /// Physical operator not implemented yet.
+    UnsupportedOperator,
+    /// Column not found in row.
+    UnknownColumn {
+        /// Column name.
+        name: String,
+    },
+    /// Type mismatch during evaluation.
+    TypeMismatch {
+        /// Human-readable detail.
+        message: String,
+    },
+    /// Planner failure.
+    Plan(PlanError),
+    /// Storage layer failure.
+    Storage(noedb_storage::StorageError),
+}
+
+impl From<PlanError> for ExecError {
+    fn from(e: PlanError) -> Self {
+        Self::Plan(e)
+    }
+}
+
+impl From<noedb_storage::StorageError> for ExecError {
+    fn from(e: noedb_storage::StorageError) -> Self {
+        Self::Storage(e)
+    }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use noedb_storage::{LsmConfig, LsmTree};
+
+    fn temp_tree() -> (LsmTree, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "noedb-planner-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let tree = LsmTree::open(&dir, LsmConfig::default()).unwrap();
+        (tree, dir)
+    }
+
+    fn put_row(tree: &mut LsmTree, table: &str, row: &str, col: &str, val: &[u8]) {
+        let mut key = table.as_bytes().to_vec();
+        key.push(0);
+        key.extend_from_slice(row.as_bytes());
+        key.push(0);
+        key.extend_from_slice(col.as_bytes());
+        tree.put(&key, val).unwrap();
+    }
 
     #[test]
-    fn plan_is_not_yet_implemented() {
-        let stmt = noedb_parser::parse("SELECT 1").expect("parse");
-        assert_eq!(plan(&stmt), Err(PlanError::NotYetImplemented));
+    fn plan_select_one_literal() {
+        let stmt = noedb_parser::parse("SELECT 1").unwrap();
+        let logical = plan(&stmt).unwrap();
+        let physical = lower(logical);
+        assert!(matches!(physical, PhysicalPlan::Project { .. }));
+    }
+
+    #[test]
+    fn execute_select_literal() {
+        let stmt = noedb_parser::parse("SELECT 1").unwrap();
+        let (tree, dir) = temp_tree();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields[0].1, Value::Integer(1));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn execute_select_from_table() {
+        let stmt = noedb_parser::parse("SELECT name FROM users").unwrap();
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "name", b"ada");
+        put_row(&mut tree, "users", "2", "name", b"bob");
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 2);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

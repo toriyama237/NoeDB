@@ -39,8 +39,8 @@
 //!
 //! # Status
 //!
-//! **Week 16 / Phase 2** — `LsmTree` with WAL segments, SSTables, Bloom filters,
-//! and L0→L1 compaction. See `docs/sprint-plan.md`.
+//! **Week 17 / Phase 3 (in progress)** — logical/physical plans, `SeqScan` /
+//! `Filter` / `Project` over [`LsmTree`]. Lexer: ~21 ms / 1M tokens (~47 Melem/s).
 //!
 //! [README]: https://github.com/toriyama237/NoeDB
 
@@ -70,7 +70,10 @@ pub mod parser {
 
 /// Query planner (re-exported from [`noedb_planner`]).
 pub mod planner {
-    pub use noedb_planner::{plan, LogicalPlan, PlanError};
+    pub use noedb_planner::{
+        build, execute, execute_sql, lower, plan, ExecutionContext, ExecError, Executor,
+        LogicalPlan, PhysicalPlan, PlanError, Record, Value,
+    };
 }
 
 /// Storage engine (re-exported from [`noedb_storage`]).
