@@ -39,7 +39,7 @@
 //!
 //! # Status
 //!
-//! **Day 2 / 260** — Week 02 of Phase 1 (Lexer & Parser). See the full
+//! **Day 3 / 260** — Week 03 of Phase 1 (Lexer & Parser). See the full
 //! roadmap in the project [README] and in `docs/sprint-plan.md`.
 //!
 //! [README]: https://github.com/toriyama237/NoeDB
@@ -49,8 +49,8 @@
 /// Lexer (re-exported from [`noedb_lexer`]).
 pub mod lexer {
     pub use noedb_lexer::{
-        tokenize, Keyword, LexError, LexErrorKind, Lexer, LineColumn, SourceMap, Span,
-        SpannedToken, Token, KEYWORD_COUNT,
+        tokenize, Keyword, LexError, LexErrorKind, Lexer, LineColumn, Operator, Punctuation,
+        SourceMap, Span, SpannedToken, Token, KEYWORD_COUNT,
     };
 }
 

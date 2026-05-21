@@ -34,16 +34,18 @@
 //!
 //! # What works today
 //!
-//! **Day 2 / 260** — Week 02 deliverable (identifiers, keywords, numbers,
-//! strings). The lexer recognizes:
+//! **Day 3 / 260** — Week 03 deliverable. The lexer recognizes:
 //!
 //! - 80+ SQL-92 reserved keywords (case-insensitive).
-//! - Ordinary and delimited identifiers.
-//! - Integer and floating-point literals (including `1e-3`, `.5`).
+//! - Ordinary and delimited identifiers (zero-copy).
+//! - Integer and floating-point literals.
 //! - Single-quoted string literals (`''` escape).
-//! - ASCII whitespace as separators.
+//! - Comparison operators: `=`, `!=`, `<>`, `<`, `>`, `<=`, `>=`.
+//! - Punctuation: `(`, `)`, `,`, `;`, `.`, `*`.
+//! - Comments: `--` line and `/* */` block.
 //!
-//! Operators (`=`, `!=`, …) and comments land in Week 03.
+//! Compound predicates (`IS NULL`, `LIKE`, `IN`, `BETWEEN`) are separate
+//! keyword tokens — the parser combines them in Week 05+.
 
 #![forbid(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
@@ -59,7 +61,7 @@ pub use crate::error::{LexError, LexErrorKind};
 pub use crate::keywords::KEYWORD_COUNT;
 pub use crate::lexer::Lexer;
 pub use crate::span::{LineColumn, SourceMap, Span};
-pub use crate::token::{Keyword, SpannedToken, Token};
+pub use crate::token::{Keyword, Operator, Punctuation, SpannedToken, Token};
 
 /// Tokenize a SQL source string.
 ///
@@ -77,6 +79,7 @@ pub fn tokenize(src: &str) -> Result<Vec<SpannedToken>, LexError> {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::{Operator, Punctuation};
 
     fn kinds(src: &str) -> Vec<Token> {
         tokenize(src).unwrap().into_iter().map(|t| t.kind).collect()
@@ -174,6 +177,27 @@ mod tests {
             }))
             .collect();
         assert_eq!(from_fn, from_iter);
+    }
+
+    #[test]
+    fn tokenize_where_with_operators() {
+        let toks = tokenize("SELECT * FROM t WHERE id = 42 AND x <> 0").unwrap();
+        assert_eq!(toks[1].kind, Token::Punct(Punctuation::Star));
+        assert_eq!(toks[6].kind, Token::Op(Operator::Eq));
+        assert_eq!(toks[8].kind, Token::Keyword(Keyword::And));
+        assert_eq!(toks[10].kind, Token::Op(Operator::Ne));
+    }
+
+    #[test]
+    fn tokenize_skips_comments() {
+        assert_eq!(
+            kinds("/* init */ SELECT 1 -- done"),
+            vec![
+                Token::Keyword(Keyword::Select),
+                Token::Integer(1),
+                Token::Eof
+            ]
+        );
     }
 
     #[test]

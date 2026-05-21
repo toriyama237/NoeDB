@@ -48,6 +48,8 @@ pub enum LexErrorKind {
     UnterminatedString,
     /// A double-quoted identifier without a closing `"`.
     UnterminatedQuotedIdent,
+    /// A block comment `/*` without a closing `*/`.
+    UnterminatedBlockComment,
 }
 
 impl fmt::Display for LexErrorKind {
@@ -60,6 +62,7 @@ impl fmt::Display for LexErrorKind {
             Self::InvalidFloat(lit) => write!(f, "invalid floating-point literal {lit:?}"),
             Self::UnterminatedString => write!(f, "unterminated string literal"),
             Self::UnterminatedQuotedIdent => write!(f, "unterminated quoted identifier"),
+            Self::UnterminatedBlockComment => write!(f, "unterminated block comment"),
         }
     }
 }

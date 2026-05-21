@@ -10,7 +10,7 @@ Every commit should be traceable to a line below.
 - Each phase ends with a tagged release (`vX.Y.Z`) and a LinkedIn post.
 - "✅" = shipped, "🟡" = in progress, "⏳" = planned.
 - Day numbers are 1-indexed (Day 1 = 2026-05-20, the day the repo went
-  public). **Day 2 = 2026-05-21.**
+  public). **Day 2 = 2026-05-21.** **Day 3 = 2026-05-22.**
 
 ---
 
@@ -20,7 +20,7 @@ Every commit should be traceable to a line below.
 |------|-------|-------|----------|-------|----------|----------|
 | 01 | Setup repo, Cargo.toml, CI ✅ | Workspace + arbo lexer/parser/ast/storage/planner/raft ✅ | Lire spec SQL-92 (SELECT / INSERT / CREATE) | Définir enum Token avec 40+ variantes | Premier test lexer : tokeniser `SELECT 1` ✅ | Repo public, CI verte, Token enum compilé |
 | 02 | Lexer: chars peekable iterator ✅ | Méthode `next_token()`: switch sur char courant ✅ | Identifiants + mots-clés (table statique triée) ✅ | Entiers et flottants ✅ | Chaînes `'` + identifiants `"` ✅ | Lexer tokenise identifiants, nombres, chaînes ✅ |
-| 03 | Opérateurs simples: `=`, `!=`, `<`, `>`, `<=`, `>=`, `AND`, `OR` | Opérateurs composés: `IS NULL`, `LIKE`, `IN`, `BETWEEN`, `IS NULL` | Ponctuation: `(`, `)`, `,`, `;`, `.`, `*` | Gestion whitespace + commentaires `--` et `/* */` | Mots-clés réservés (50+ keywords) | Lexer 95 % des tokens SQL couverts |
+| 03 | Opérateurs simples: `=`, `!=`, `<`, `>`, `<=`, `>=`, `AND`, `OR` ✅ | Opérateurs composés: `IS NULL`, `LIKE`, `IN`, `BETWEEN` (keywords séparés) ✅ | Ponctuation: `(`, `)`, `,`, `;`, `.`, `*` ✅ | Commentaires `--` et `/* */` ✅ | Mots-clés réservés (80+) ✅ | Lexer 95 % des tokens SQL couverts ✅ |
 | 04 | Tests unitaires exhaustifs: 200+ cas | Error recovery: `LexError` position ligne/col | Benchmark: tokenise 1M tokens en < 50 ms | Documentation rustdoc sur chaque méthode | 100 % tests passants, benchmark publié sur README | Tests, fuzz `cargo-fuzz`, benchmark publié |
 | 05 | Design AST: `SelectStmt`, `InsertStmt`, `CreateTable` | Types expr: `BinaryExpr`, `UnaryExpr`, `Literal`, `Column` | Parser struct + méthode `parse()` entrypoint | `parse_select()` recursive descent SELECT basique | Test: parser `SELECT a, b FROM t`  → AST correct | Types AST définis, `parse_select()` opérationnel |
 | 06 | `parse_where()` — expressions booléennes imbriquées | Gestion précédence opérateurs (Pratt parsing) | `parse_from()` — tables simples et alias | `parse_join()` — INNER JOIN, LEFT JOIN | Tests intégration SELECT complet avec JOIN+WHERE | SELECT complet avec JOIN, WHERE, alias parsé |

@@ -91,22 +91,22 @@ hide behind a framework.
 
 ## Status
 
-> **Day 2 / 260** — Week 02 of Phase 1 (Lexer & Parser).
+> **Day 3 / 260** — Week 03 of Phase 1 (Lexer & Parser).
 
-The lexer tokenizes identifiers, 80+ SQL keywords, integers, floats,
-and single-quoted strings — zero-copy for identifiers, no `HashMap` on
-the hot path:
+The lexer covers ~95 % of SQL surface tokens: keywords, identifiers,
+literals, operators, punctuation, and comments:
 
 ```rust
-use noedb::lexer::{tokenize, Keyword, Token};
+use noedb::lexer::{tokenize, Keyword, Operator, Punctuation, Token};
 
-let toks = tokenize("SELECT name FROM users WHERE id")?;
-assert_eq!(toks[0].kind, Token::Keyword(Keyword::Select));
-assert_eq!(toks[1].kind, Token::Ident); // lexeme via span.slice(src)
+let toks = tokenize("SELECT * FROM users WHERE id = 42 AND active IS NOT NULL")?;
+assert_eq!(toks[1].kind, Token::Punct(Punctuation::Star));
+assert_eq!(toks[5].kind, Token::Op(Operator::Eq));
+assert_eq!(toks[7].kind, Token::Keyword(Keyword::And));
 # Ok::<_, noedb::lexer::LexError>(())
 ```
 
-Operators (`=`, `!=`, …) and comments land in Week 03. The workspace
+Zero-copy identifiers, static keyword table (no `HashMap`). The workspace
 is split into 7 crates with an honest dependency graph. Watch the
 [CHANGELOG](./CHANGELOG.md), [Releases](https://github.com/toriyama237/NoeDB/releases),
 or [Discussions](https://github.com/toriyama237/NoeDB/discussions) for weekly

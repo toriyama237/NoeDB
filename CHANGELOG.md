@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Day 3 lexer (Week 03):** `Token::Op` (`=`, `!=`, `<>`, `<`, `>`, `<=`, `>=`, `+`, `-`), `Token::Punct` (`(`, `)`, `,`, `;`, `.`, `*`), `--` line comments and `/* */` block comments in `skip_trivia`.
 - **Day 2 lexer (Week 02 deliverable):** peekable `Cursor`, public `Lexer` iterator API, 80+ SQL-92 keywords via sorted static table (zero-allocation lookup), `Token::Ident` (zero-copy lexeme), `Token::Integer` / `Token::Float`, `Token::String` with `''` escape, `Token::QuotedIdent` with `""` escape.
 - **Workspace layout.** 7 crates under `crates/`: `noedb`, `noedb-lexer`, `noedb-ast`, `noedb-parser`, `noedb-planner`, `noedb-storage`, `noedb-raft`. The meta-crate `noedb` re-exports the user-facing API.
 - **Byte-precise `Span` everywhere.** `SourceMap` resolves byte offsets to `(line, column)` in `O(log n)`.

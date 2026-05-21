@@ -98,6 +98,46 @@ pub enum Keyword {
     With,
 }
 
+/// A SQL comparison or arithmetic operator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Operator {
+    /// `=`
+    Eq,
+    /// `!=` or `<>` (both spellings produce the same token).
+    Ne,
+    /// `<`
+    Lt,
+    /// `>`
+    Gt,
+    /// `<=`
+    Le,
+    /// `>=`
+    Ge,
+    /// `-` (unary or binary — disambiguation is the parser's job).
+    Minus,
+    /// `+`
+    Plus,
+}
+
+/// SQL punctuation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Punctuation {
+    /// `(`
+    LParen,
+    /// `)`
+    RParen,
+    /// `,`
+    Comma,
+    /// `;`
+    Semicolon,
+    /// `.` (table.column — not part of a numeric literal).
+    Dot,
+    /// `*`
+    Star,
+}
+
 /// A SQL token.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -111,9 +151,6 @@ pub enum Token {
     /// allocation.
     Ident,
     /// A delimited identifier (`"weird name"`, SQL-92 double quotes).
-    ///
-    /// The unescaped name is stored because `""` folding cannot be
-    /// represented as a simple slice.
     QuotedIdent(String),
     /// A base-10 integer literal fitting in `i64`.
     Integer(i64),
@@ -121,6 +158,10 @@ pub enum Token {
     Float(f64),
     /// A single-quoted character string literal (SQL escape: `''` → `'`).
     String(String),
+    /// A comparison or arithmetic operator.
+    Op(Operator),
+    /// Parentheses, commas, semicolons, etc.
+    Punct(Punctuation),
     /// End of input. Always the last token in the stream.
     Eof,
 }

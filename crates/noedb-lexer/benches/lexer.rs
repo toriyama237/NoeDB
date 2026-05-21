@@ -48,10 +48,24 @@ fn bench_tokenize_string_heavy(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_tokenize_where_clause(c: &mut Criterion) {
+    let mut group = c.benchmark_group("lexer");
+    let input = "SELECT * FROM users WHERE id = 42 AND active IS NOT NULL";
+    #[allow(clippy::cast_possible_truncation)]
+    group.throughput(Throughput::Bytes(input.len() as u64));
+    group.bench_function("select_where", |b| {
+        b.iter(|| {
+            let _ = tokenize(black_box(input));
+        });
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_tokenize_select_one,
     bench_tokenize_full_statement,
-    bench_tokenize_string_heavy
+    bench_tokenize_string_heavy,
+    bench_tokenize_where_clause
 );
 criterion_main!(benches);

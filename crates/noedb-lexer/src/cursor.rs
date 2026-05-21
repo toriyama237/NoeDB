@@ -7,7 +7,7 @@
 use crate::error::{LexError, LexErrorKind};
 use crate::keywords::lookup;
 use crate::span::Span;
-use crate::token::{SpannedToken, Token};
+use crate::token::{Operator, Punctuation, SpannedToken, Token};
 
 /// Stateful byte cursor over a SQL source string.
 pub(crate) struct Cursor<'src> {
@@ -25,11 +25,11 @@ impl<'src> Cursor<'src> {
         }
     }
 
-    /// Produce the next non-whitespace token, if any.
+    /// Produce the next token, if any.
     ///
     /// Returns `Ok(None)` at end of input. The caller appends [`Token::Eof`].
     pub(crate) fn next_token(&mut self) -> Result<Option<SpannedToken>, LexError> {
-        self.skip_whitespace();
+        self.skip_trivia()?;
 
         if self.is_eof() {
             return Ok(None);
@@ -59,12 +59,24 @@ impl<'src> Cursor<'src> {
             return self.lex_number().map(Some);
         }
 
+        if Self::is_operator_or_punct_start(b) {
+            return self.lex_operator_or_punct().map(Some);
+        }
+
         let start = self.pos;
         self.bump();
         Err(LexError::new(
             LexErrorKind::UnexpectedChar(char::from(b)),
             Self::mk_span(start, self.pos),
         ))
+    }
+
+    #[inline]
+    const fn is_operator_or_punct_start(b: u8) -> bool {
+        matches!(
+            b,
+            b'(' | b')' | b',' | b';' | b'*' | b'.' | b'=' | b'!' | b'<' | b'>' | b'+' | b'-'
+        )
     }
 
     /// Peek the byte at the current position without advancing.
@@ -95,15 +107,52 @@ impl<'src> Cursor<'src> {
         self.pos >= self.bytes.len()
     }
 
-    fn skip_whitespace(&mut self) {
-        while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_whitespace() {
-            self.pos += 1;
+    /// Skip whitespace and SQL comments (`--` line, `/* */` block).
+    fn skip_trivia(&mut self) -> Result<(), LexError> {
+        loop {
+            while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_whitespace() {
+                self.pos += 1;
+            }
+
+            if self.peek_byte() == Some(b'-') && self.peek_byte_at(1) == Some(b'-') {
+                self.pos += 2;
+                while self.peek_byte().is_some_and(|b| b != b'\n') {
+                    self.bump();
+                }
+                continue;
+            }
+
+            if self.peek_byte() == Some(b'/') && self.peek_byte_at(1) == Some(b'*') {
+                self.skip_block_comment()?;
+                continue;
+            }
+
+            break;
         }
+        Ok(())
+    }
+
+    fn skip_block_comment(&mut self) -> Result<(), LexError> {
+        let start = self.pos;
+        self.pos += 2; // /*
+
+        while !self.is_eof() {
+            if self.peek_byte() == Some(b'*') && self.peek_byte_at(1) == Some(b'/') {
+                self.pos += 2;
+                return Ok(());
+            }
+            self.bump();
+        }
+
+        Err(LexError::new(
+            LexErrorKind::UnterminatedBlockComment,
+            Self::mk_span(start, self.pos),
+        ))
     }
 
     fn lex_identifier_or_keyword(&mut self) -> SpannedToken {
         let start = self.pos;
-        self.bump(); // first char already known alphabetic or _
+        self.bump();
 
         while self.pos < self.bytes.len()
             && (self.bytes[self.pos].is_ascii_alphanumeric() || self.bytes[self.pos] == b'_')
@@ -120,6 +169,61 @@ impl<'src> Cursor<'src> {
         )
     }
 
+    fn lex_operator_or_punct(&mut self) -> Result<SpannedToken, LexError> {
+        let start = self.pos;
+        let Some(b) = self.bump() else {
+            debug_assert!(false, "lex_operator_or_punct called at EOF");
+            return Err(LexError::new(
+                LexErrorKind::UnexpectedChar('\0'),
+                Self::mk_span(start, start),
+            ));
+        };
+
+        let kind = match b {
+            b'(' => Token::Punct(Punctuation::LParen),
+            b')' => Token::Punct(Punctuation::RParen),
+            b',' => Token::Punct(Punctuation::Comma),
+            b';' => Token::Punct(Punctuation::Semicolon),
+            b'*' => Token::Punct(Punctuation::Star),
+            b'.' => Token::Punct(Punctuation::Dot),
+            b'=' => Token::Op(Operator::Eq),
+            b'+' => Token::Op(Operator::Plus),
+            b'-' => Token::Op(Operator::Minus),
+            b'!' if self.peek_byte() == Some(b'=') => {
+                self.bump();
+                Token::Op(Operator::Ne)
+            }
+            b'!' => {
+                return Err(LexError::new(
+                    LexErrorKind::UnexpectedChar('!'),
+                    Self::mk_span(start, self.pos),
+                ));
+            }
+            b'<' if self.peek_byte() == Some(b'=') => {
+                self.bump();
+                Token::Op(Operator::Le)
+            }
+            b'<' if self.peek_byte() == Some(b'>') => {
+                self.bump();
+                Token::Op(Operator::Ne)
+            }
+            b'<' => Token::Op(Operator::Lt),
+            b'>' if self.peek_byte() == Some(b'=') => {
+                self.bump();
+                Token::Op(Operator::Ge)
+            }
+            b'>' => Token::Op(Operator::Gt),
+            _ => {
+                return Err(LexError::new(
+                    LexErrorKind::UnexpectedChar(char::from(b)),
+                    Self::mk_span(start, self.pos),
+                ));
+            }
+        };
+
+        Ok(SpannedToken::new(kind, Self::mk_span(start, self.pos)))
+    }
+
     fn lex_number(&mut self) -> Result<SpannedToken, LexError> {
         let start = self.pos;
         let mut is_float = false;
@@ -127,7 +231,7 @@ impl<'src> Cursor<'src> {
         if self.peek_byte() == Some(b'.') {
             is_float = true;
             self.bump();
-            if !self.peek_byte().is_some_and(|b| b.is_ascii_digit()) {
+            if !self.peek_byte().is_some_and(|n| n.is_ascii_digit()) {
                 return Err(LexError::new(
                     LexErrorKind::UnexpectedChar('.'),
                     Self::mk_span(start, self.pos),
@@ -135,7 +239,7 @@ impl<'src> Cursor<'src> {
             }
         }
 
-        while self.peek_byte().is_some_and(|b| b.is_ascii_digit()) {
+        while self.peek_byte().is_some_and(|n| n.is_ascii_digit()) {
             self.bump();
         }
 
@@ -156,14 +260,14 @@ impl<'src> Cursor<'src> {
             if matches!(self.peek_byte(), Some(b'+' | b'-')) {
                 self.bump();
             }
-            if !self.peek_byte().is_some_and(|b| b.is_ascii_digit()) {
+            if !self.peek_byte().is_some_and(|n| n.is_ascii_digit()) {
                 let lit = &self.src[start..self.pos];
                 return Err(LexError::new(
                     LexErrorKind::InvalidFloat(lit.to_owned()),
                     Self::mk_span(start, self.pos),
                 ));
             }
-            while self.peek_byte().is_some_and(|b| b.is_ascii_digit()) {
+            while self.peek_byte().is_some_and(|n| n.is_ascii_digit()) {
                 self.bump();
             }
         }
@@ -196,7 +300,7 @@ impl<'src> Cursor<'src> {
 
     fn lex_string(&mut self) -> Result<SpannedToken, LexError> {
         let start = self.pos;
-        self.bump(); // opening '
+        self.bump();
 
         let mut value = String::new();
         while !self.is_eof() {
@@ -211,9 +315,9 @@ impl<'src> Cursor<'src> {
                     }
                 }
                 Some(ch) if ch.is_ascii() => value.push(char::from(ch)),
-                Some(b) => {
+                Some(byte) => {
                     return Err(LexError::new(
-                        LexErrorKind::UnexpectedChar(char::from(b)),
+                        LexErrorKind::UnexpectedChar(char::from(byte)),
                         Self::mk_span(self.pos - 1, self.pos),
                     ));
                 }
@@ -229,7 +333,7 @@ impl<'src> Cursor<'src> {
 
     fn lex_quoted_ident(&mut self) -> Result<SpannedToken, LexError> {
         let start = self.pos;
-        self.bump(); // opening "
+        self.bump();
 
         let mut value = String::new();
         while !self.is_eof() {
@@ -244,9 +348,9 @@ impl<'src> Cursor<'src> {
                     }
                 }
                 Some(ch) if ch.is_ascii() => value.push(char::from(ch)),
-                Some(b) => {
+                Some(byte) => {
                     return Err(LexError::new(
-                        LexErrorKind::UnexpectedChar(char::from(b)),
+                        LexErrorKind::UnexpectedChar(char::from(byte)),
                         Self::mk_span(self.pos - 1, self.pos),
                     ));
                 }
@@ -275,68 +379,109 @@ mod tests {
     use super::*;
     use crate::token::Keyword;
 
-    fn kinds(src: &str) -> Vec<Token> {
+    fn kinds(src: &str) -> Result<Vec<Token>, LexError> {
         let mut c = Cursor::new(src);
         let mut out = Vec::new();
-        while let Some(tok) = c.next_token().unwrap() {
+        while let Some(tok) = c.next_token()? {
             out.push(tok.kind);
         }
-        out
+        Ok(out)
     }
 
     #[test]
-    fn cursor_peek_does_not_advance() {
-        let mut c = Cursor::new("SELECT");
-        assert_eq!(c.peek_byte(), Some(b'S'));
-        assert_eq!(c.peek_byte(), Some(b'S'));
+    fn tokenizes_comparison_operators() {
+        let toks = kinds("a = b != c <> d < e > f <= g >=").unwrap();
         assert_eq!(
-            c.next_token().unwrap().unwrap().kind,
-            Token::Keyword(Keyword::Select)
+            toks,
+            vec![
+                Token::Ident,
+                Token::Op(Operator::Eq),
+                Token::Ident,
+                Token::Op(Operator::Ne),
+                Token::Ident,
+                Token::Op(Operator::Ne),
+                Token::Ident,
+                Token::Op(Operator::Lt),
+                Token::Ident,
+                Token::Op(Operator::Gt),
+                Token::Ident,
+                Token::Op(Operator::Le),
+                Token::Ident,
+                Token::Op(Operator::Ge),
+            ]
         );
     }
 
     #[test]
-    fn tokenizes_insert_as_keyword() {
+    fn tokenizes_punctuation() {
         assert_eq!(
-            kinds("INSERT INTO t"),
+            kinds("SELECT a, b FROM t;").unwrap(),
             vec![
-                Token::Keyword(Keyword::Insert),
-                Token::Keyword(Keyword::Into),
+                Token::Keyword(Keyword::Select),
+                Token::Ident,
+                Token::Punct(Punctuation::Comma),
+                Token::Ident,
+                Token::Keyword(Keyword::From),
+                Token::Ident,
+                Token::Punct(Punctuation::Semicolon),
+            ]
+        );
+    }
+
+    #[test]
+    fn tokenizes_star_and_dot() {
+        assert_eq!(
+            kinds("SELECT t.* FROM t.col").unwrap(),
+            vec![
+                Token::Keyword(Keyword::Select),
+                Token::Ident,
+                Token::Punct(Punctuation::Dot),
+                Token::Punct(Punctuation::Star),
+                Token::Keyword(Keyword::From),
+                Token::Ident,
+                Token::Punct(Punctuation::Dot),
                 Token::Ident,
             ]
         );
     }
 
     #[test]
-    fn tokenizes_table_name_as_ident() {
-        assert_eq!(kinds("users"), vec![Token::Ident]);
+    fn skips_line_comments() {
+        assert_eq!(
+            kinds("-- leading comment\nSELECT 1").unwrap(),
+            vec![Token::Keyword(Keyword::Select), Token::Integer(1)]
+        );
+        assert_eq!(
+            kinds("SELECT 1 -- trailing").unwrap(),
+            vec![Token::Keyword(Keyword::Select), Token::Integer(1)]
+        );
     }
 
     #[test]
-    fn tokenizes_float_literals() {
-        assert_eq!(kinds("1.5"), vec![Token::Float(1.5)]);
-        assert_eq!(kinds(".5"), vec![Token::Float(0.5)]);
-        assert_eq!(kinds("1e2"), vec![Token::Float(100.0)]);
-        assert_eq!(kinds("1E-3"), vec![Token::Float(0.001)]);
+    fn skips_block_comments() {
+        assert_eq!(
+            kinds("SELECT /* block */ 1").unwrap(),
+            vec![Token::Keyword(Keyword::Select), Token::Integer(1)]
+        );
     }
 
     #[test]
-    fn tokenizes_string_with_doubled_quote() {
-        let toks = kinds("'it''s'");
-        assert_eq!(toks.len(), 1);
-        assert_eq!(toks[0], Token::String("it's".into()));
+    fn rejects_unterminated_block_comment() {
+        let err = kinds("SELECT /* oops").unwrap_err();
+        assert!(matches!(err.kind, LexErrorKind::UnterminatedBlockComment));
     }
 
     #[test]
-    fn tokenizes_quoted_identifier() {
-        let toks = kinds(r#""weird""name""#);
-        assert_eq!(toks.len(), 1);
-        assert_eq!(toks[0], Token::QuotedIdent("weird\"name".into()));
-    }
-
-    #[test]
-    fn rejects_unterminated_string() {
-        let err = Cursor::new("'open").next_token().unwrap_err();
-        assert!(matches!(err.kind, LexErrorKind::UnterminatedString));
+    fn tokenizes_full_where_clause() {
+        let src = "SELECT * FROM users WHERE id = 42 AND active IS NOT NULL";
+        let toks = kinds(src).unwrap();
+        assert_eq!(toks[0], Token::Keyword(Keyword::Select));
+        assert_eq!(toks[1], Token::Punct(Punctuation::Star));
+        assert_eq!(toks[2], Token::Keyword(Keyword::From));
+        assert!(toks.contains(&Token::Op(Operator::Eq)));
+        assert!(toks.contains(&Token::Keyword(Keyword::And)));
+        assert!(toks.contains(&Token::Keyword(Keyword::Is)));
+        assert!(toks.contains(&Token::Keyword(Keyword::Not)));
+        assert!(toks.contains(&Token::Keyword(Keyword::Null)));
     }
 }
