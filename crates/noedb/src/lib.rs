@@ -39,8 +39,8 @@
 //!
 //! # Status
 //!
-//! **Week 44 / Phase 4** — Raft consensus shipped in v0.4 (election,
-//! replication, framed RPC auth). Query engine v0.3, LSM v0.2. Lexer: &lt;18 ms / 1M tokens.
+//! **v1.0.0** — Full pipeline: SQL → planner → Raft → LSM, CLI + wire protocol.
+//! Lexer: &lt;18 ms / 1M tokens.
 //!
 //! [README]: https://github.com/toriyama237/NoeDB
 
@@ -86,6 +86,22 @@ pub mod storage {
         SstWriter, StorageEngine, StorageError, Wal, WalSegmentManager, WalSyncMode,
         DEFAULT_MAX_ENTRIES, DEFAULT_MAX_MEM_BYTES, L0_COMPACTION_TRIGGER, SST_MAGIC, SST_VERSION, WAL_MAGIC,
         WAL_VERSION,
+    };
+}
+
+/// Integrated SQL engine (re-exported from [`noedb_engine`]).
+pub mod engine {
+    pub use noedb_engine::{
+        apply_command, validate_sql, Command, DistributedEngine, EngineError, LocalEngine,
+        QueryResult, MAX_COMMAND_BYTES, MAX_SQL_BYTES,
+    };
+}
+
+/// Client wire protocol (re-exported from [`noedb_protocol`]).
+pub mod protocol {
+    pub use noedb_protocol::{
+        decode_request, decode_response, encode_request, encode_response, ProtocolError,
+        Request, Response, PROTOCOL_VERSION,
     };
 }
 

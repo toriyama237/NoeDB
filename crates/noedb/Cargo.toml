@@ -30,6 +30,8 @@ noedb-parser  = { workspace = true }
 noedb-planner = { workspace = true }
 noedb-storage = { workspace = true }
 noedb-raft    = { workspace = true }
+noedb-engine  = { workspace = true }
+noedb-protocol = { workspace = true }
 
 [lints]
 workspace = true
