@@ -1,6 +1,8 @@
-//! Physical operators (Week 19–20).
+//! Physical operators (Week 19–22).
 
 use noedb_ast::{Expr, SelectItem};
+
+use crate::logical::AggFunc;
 
 /// Executable physical plan.
 #[derive(Debug, Clone, PartialEq)]
@@ -9,6 +11,19 @@ pub enum PhysicalPlan {
     SeqScan {
         /// Table name.
         table: String,
+        /// Column pruning (Week 26); `None` = all columns.
+        columns: Option<Vec<String>>,
+    },
+    /// B-tree index point/range scan (Week 20).
+    IndexScan {
+        /// Table name.
+        table: String,
+        /// Indexed column.
+        column: String,
+        /// Equality lookup key (`WHERE col = ?`).
+        point_key: Option<Vec<u8>>,
+        /// Columns to load for matching rows.
+        columns: Option<Vec<String>>,
     },
     /// Predicate filter.
     Filter {
@@ -24,7 +39,7 @@ pub enum PhysicalPlan {
         /// Projection items.
         items: Vec<SelectItem>,
     },
-    /// Hash join (Week 21+).
+    /// Hash join build/probe (Week 21).
     HashJoin {
         /// Left child.
         left: Box<Self>,
@@ -32,5 +47,56 @@ pub enum PhysicalPlan {
         right: Box<Self>,
         /// Join predicate.
         on: Expr,
+        /// Left join key column.
+        left_key: String,
+        /// Right join key column.
+        right_key: String,
+    },
+    /// Nested-loop join (Week 22).
+    NestedLoopJoin {
+        /// Left child.
+        left: Box<Self>,
+        /// Right child.
+        right: Box<Self>,
+        /// Join predicate.
+        on: Expr,
+    },
+    /// Merge join on sorted inputs (Week 22).
+    MergeJoin {
+        /// Left child.
+        left: Box<Self>,
+        /// Right child.
+        right: Box<Self>,
+        /// Join predicate.
+        on: Expr,
+        /// Left join key column.
+        left_key: String,
+        /// Right join key column.
+        right_key: String,
+    },
+    /// Hash-based aggregate (Week 23).
+    Aggregate {
+        /// Child operator.
+        input: Box<Self>,
+        /// Grouping columns.
+        group_by: Vec<String>,
+        /// `(output_name, function)`.
+        aggs: Vec<(String, AggFunc)>,
+    },
+    /// In-memory sort.
+    Sort {
+        /// Child operator.
+        input: Box<Self>,
+        /// `(column, ascending)`.
+        keys: Vec<(String, bool)>,
+    },
+    /// Row cap.
+    Limit {
+        /// Child operator.
+        input: Box<Self>,
+        /// Max rows.
+        limit: u64,
+        /// Skip rows.
+        offset: u64,
     },
 }

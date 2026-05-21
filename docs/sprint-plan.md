@@ -46,7 +46,9 @@ Every commit should be traceable to a line below.
 
 ---
 
-## Phase 3 — Query Planner (Weeks 17-28)
+## Phase 3 — Query Planner (Weeks 17-28) ✅
+
+**Tag:** `v0.3.0-query-engine` — shipped 2026-05-20.
 
 | Week | Theme |
 |------|-------|

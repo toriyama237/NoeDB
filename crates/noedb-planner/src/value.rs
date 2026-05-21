@@ -16,6 +16,18 @@ pub enum Value {
 }
 
 impl Value {
+    /// Canonical byte representation for index keys / joins.
+    #[must_use]
+    pub fn as_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Null => Vec::new(),
+            Self::Integer(n) => n.to_be_bytes().to_vec(),
+            Self::Float(f) => f.to_be_bytes().to_vec(),
+            Self::Bool(b) => vec![u8::from(*b)],
+            Self::Bytes(b) => b.clone(),
+        }
+    }
+
     /// Compare for equality with SQL `NULL` semantics (only `Null` equals `Null`).
     #[must_use]
     pub fn sql_eq(&self, other: &Self) -> Option<bool> {

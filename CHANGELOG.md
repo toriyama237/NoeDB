@@ -6,6 +6,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-20
+
+### Added
+- **Phase 3 query engine (Weeks 17–28):** [`noedb-planner`] with logical plans
+  (`Scan`, `Filter`, `Project`, `Join`, `Aggregate`, `Sort`, `Limit`),
+  physical operators (`SeqScan`, `IndexScan`, `HashJoin`, `NestedLoopJoin`,
+  `MergeJoin`, hash `Aggregate`, `Sort`, `Limit`), and Volcano executors over
+  [`LsmTree`].
+- **B-tree secondary indexes** persisted in the LSM (`SecondaryIndex`, point
+  lookup via `LsmTree::get`).
+- **Cost model v1** and cost-based optimizer: predicate pushdown, projection /
+  column pruning, join algorithm pick, index selection (`EXPLAIN` output).
+- **`explain_sql`**, **`apply_statement`** (`CREATE INDEX`), Criterion bench
+  `cargo bench -p noedb-planner --bench query` (SeqScan vs IndexScan on 100k rows).
+
+### Changed
+- Workspace version bumped to `0.3.0`.
+- `execute_sql` runs the optimizer (was naive `lower()` only).
+
+[`noedb-planner`]: crates/noedb-planner/src/lib.rs
+[`LsmTree`]: crates/noedb-storage/src/lsm.rs
+
 ## [0.2.0] - 2026-05-20
 
 ### Added

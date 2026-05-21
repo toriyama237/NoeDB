@@ -44,7 +44,7 @@ crates/
 ├── noedb-lexer/      # tokens, spans, source map  (real code)
 ├── noedb-ast/        # AST node types             (Phase 1 ✅)
 ├── noedb-parser/     # recursive-descent parser   (Phase 1 ✅)
-├── noedb-planner/    # logical + physical plans   (stub, grows in W17)
+├── noedb-planner/    # logical + physical plans   (Phase 3 ✅ W28)
 ├── noedb-storage/    # LSM-tree engine            (LsmTree + SST ✅ W16)
 └── noedb-raft/       # consensus                  (stub, grows in W29)
 ```
@@ -85,8 +85,11 @@ hide behind a framework.
   the SSTable writer's tracked byte offset aligned with the on-disk header size
   (a 2-byte padding bug broke every footer read). WAL segment replay and k-way
   L0 compaction were straightforward once the on-disk format was honest.
-- **Query Planner (Phase 3)** — *coming Week 28.* The cost model will lie to me
-  at least once.
+- **Query Planner (Phase 3)** — shipped Week 28. Cost-based index selection
+  (`SeqScan` vs `IndexScan`), B-tree secondary indexes over the LSM, Volcano
+  executors through `HashJoin`, predicate/projection pushdown, and `EXPLAIN`.
+  Hardest surprise: projection pushdown silently dropped join keys until the
+  optimizer merged required columns from the whole plan tree.
 - **Raft Consensus (Phase 4)** — *coming Week 44.* If history is any guide,
   this is where my unit tests stop being enough.
 - **Integration & launch (Phase 5)** — *coming Week 52.*
@@ -95,7 +98,7 @@ hide behind a framework.
 
 ## Status
 
-> **Week 16 / Phase 2 complete** — LSM storage engine shipped as `v0.2.0`.
+> **Week 28 / Phase 3 complete** — query planner shipped as `v0.3.0`.
 
 Phase 1 parses `SELECT` (with `JOIN` / `WHERE`), DML (`INSERT`, `UPDATE`,
 `DELETE`), and core DDL (`CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`):
@@ -119,6 +122,19 @@ let mut tree = LsmTree::open("/tmp/noedb-data", LsmConfig::default())?;
 tree.put(b"user:42", b"alice")?;
 assert_eq!(tree.get(b"user:42")?, Some(b"alice".to_vec()));
 # Ok::<_, noedb::storage::StorageError>(())
+```
+
+Phase 3 adds a Volcano-style query planner with a cost-based optimizer:
+
+```rust
+use noedb::parser::parse;
+use noedb::planner::{apply_statement, explain_sql, execute_sql};
+
+let mut tree = noedb::storage::LsmTree::open("/tmp/noedb-data", noedb::storage::LsmConfig::default())?;
+apply_statement(&parse("CREATE INDEX idx ON users (id)")?, &mut tree)?;
+let rows = execute_sql(&parse("SELECT name FROM users WHERE id = '42'")?, &tree)?;
+println!("{}", explain_sql(&parse("SELECT name FROM users WHERE id = '42'")?, &tree)?);
+# Ok::<_, Box<dyn std::error::Error>>(())
 ```
 
 The lexer tokenizes ~95 % of SQL surface syntax. **200+ tests**, a

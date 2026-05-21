@@ -71,8 +71,10 @@ pub mod parser {
 /// Query planner (re-exported from [`noedb_planner`]).
 pub mod planner {
     pub use noedb_planner::{
-        build, execute, execute_sql, lower, plan, ExecutionContext, ExecError, Executor,
-        LogicalPlan, PhysicalPlan, PlanError, Record, Value,
+        apply_statement, build, create_index, estimate, execute, execute_sql, explain,
+        explain_sql, index_wins, lower, optimize, plan, AggFunc, BTreeIndex, ExecutionContext,
+        ExecError, Executor, LogicalPlan, PhysicalPlan, PlanContext, PlanError, PlanStats,
+        Record, SecondaryIndex, Value, INDEX_LOOKUP_COST, SEQ_SCAN_ROW_COST,
     };
 }
 

@@ -22,6 +22,11 @@ noedb-storage = { workspace = true }
 
 [dev-dependencies]
 noedb-parser = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "query"
+harness = false
 
 [lints]
 workspace = true

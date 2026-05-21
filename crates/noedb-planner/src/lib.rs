@@ -1,27 +1,37 @@
 //! Query planner and executor for NoeDB (Phase 3).
 //!
-//! Week 17–20: logical/physical plans, naive lowering, `SeqScan` / `Filter` /
-//! `Project` executors over [`LsmTree`].
+//! Weeks 17–28: logical/physical plans, cost-based optimizer, B-tree indexes,
+//! Volcano executors (`SeqScan`, `IndexScan`, `HashJoin`, …), and `EXPLAIN`.
 
 #![forbid(unsafe_code)]
 #![allow(unreachable_pub)] // API surface re-exported by the `noedb` meta-crate.
 
 mod build;
+mod cost;
 mod eval;
 mod executor;
-mod lower;
+mod explain;
+mod index;
+mod join;
 mod logical;
+mod lower;
+mod optimize;
 mod physical;
 mod value;
 
 pub use build::build;
+pub use cost::{estimate, PlanStats, INDEX_LOOKUP_COST, SEQ_SCAN_ROW_COST};
 pub use executor::{execute, ExecutionContext, Executor};
-pub use logical::LogicalPlan;
+pub use explain::explain;
+pub use index::{BTreeIndex, SecondaryIndex};
+pub use logical::{AggFunc, LogicalPlan};
 pub use lower::lower;
+pub use optimize::{index_wins, optimize, PlanContext};
 pub use physical::PhysicalPlan;
 pub use value::{Record, Value};
 
 use noedb_ast::Statement;
+use noedb_storage::LsmTree;
 
 /// Turn a [`Statement`] into a [`LogicalPlan`].
 ///
@@ -32,16 +42,59 @@ pub fn plan(stmt: &Statement) -> Result<LogicalPlan, PlanError> {
     build(stmt)
 }
 
-/// Plan, lower, and execute a `SELECT` against storage.
+/// Plan, optimize, and execute a `SELECT` against storage.
 ///
 /// # Errors
 ///
 /// Planner or executor errors.
-pub fn execute_sql(stmt: &Statement, store: &noedb_storage::LsmTree) -> Result<Vec<Record>, ExecError> {
+pub fn execute_sql(stmt: &Statement, store: &LsmTree) -> Result<Vec<Record>, ExecError> {
     let logical = plan(stmt)?;
-    let physical = lower(logical);
-    let ctx = ExecutionContext { store };
-    execute(physical, &ctx)
+    let ctx = PlanContext::new(store);
+    let physical = optimize(logical, &ctx);
+    execute(physical, &ExecutionContext { store })
+}
+
+/// Return an `EXPLAIN` plan for a `SELECT` (optimized physical plan + cost).
+///
+/// # Errors
+///
+/// Planner errors for unsupported statements.
+pub fn explain_sql(stmt: &Statement, store: &LsmTree) -> Result<String, PlanError> {
+    let logical = plan(stmt)?;
+    let ctx = PlanContext::new(store);
+    let physical = optimize(logical, &ctx);
+    Ok(explain(&physical))
+}
+
+/// Apply DDL (`CREATE INDEX`) or run DML/query statements.
+///
+/// # Errors
+///
+/// Planner, executor, or storage errors.
+pub fn apply_statement(stmt: &Statement, store: &mut LsmTree) -> Result<Vec<Record>, ExecError> {
+    match stmt {
+        Statement::CreateIndex(idx) => {
+            if idx.columns.len() != 1 {
+                return Err(ExecError::UnsupportedExpr);
+            }
+            SecondaryIndex::build(store, &idx.table.value, &idx.columns[0].value)?;
+            Ok(vec![])
+        }
+        _ => execute_sql(stmt, store),
+    }
+}
+
+/// Build a secondary index on `(table, column)`.
+///
+/// # Errors
+///
+/// Storage write failures.
+pub fn create_index(
+    store: &mut LsmTree,
+    table: &str,
+    column: &str,
+) -> Result<(), noedb_storage::StorageError> {
+    SecondaryIndex::build(store, table, column)
 }
 
 /// An error produced by the planner.
@@ -141,6 +194,44 @@ mod tests {
         put_row(&mut tree, "users", "2", "name", b"bob");
         let rows = execute_sql(&stmt, &tree).unwrap();
         assert_eq!(rows.len(), 2);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn explain_uses_index_scan() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "id", b"7");
+        put_row(&mut tree, "users", "1", "name", b"ada");
+        create_index(&mut tree, "users", "id").unwrap();
+        let stmt = noedb_parser::parse("SELECT name FROM users WHERE id = '7'").unwrap();
+        let text = explain_sql(&stmt, &tree).unwrap();
+        assert!(text.contains("IndexScan"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn execute_join() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "id", b"1");
+        put_row(&mut tree, "users", "1", "name", b"ada");
+        put_row(&mut tree, "orders", "9", "user_id", b"1");
+        put_row(&mut tree, "orders", "9", "sku", b"book");
+        let stmt = noedb_parser::parse(
+            "SELECT name FROM users INNER JOIN orders ON users.id = orders.user_id",
+        )
+        .unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn create_index_via_ddl() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "id", b"1");
+        let stmt = noedb_parser::parse("CREATE INDEX idx_users_id ON users (id)").unwrap();
+        apply_statement(&stmt, &mut tree).unwrap();
+        assert!(SecondaryIndex::exists(&tree, "users", "id"));
         let _ = std::fs::remove_dir_all(dir);
     }
 }
