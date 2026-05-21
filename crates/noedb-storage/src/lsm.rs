@@ -48,10 +48,10 @@ impl LsmConfig {
 /// Complete LSM storage engine: WAL + MemTable + SSTables + compaction.
 pub struct LsmTree {
     dir: PathBuf,
-    wal: WalSegmentManager,
-    active: MemTable,
-    level0: Vec<PathBuf>,
-    level1: Vec<PathBuf>,
+    pub(crate) wal: WalSegmentManager,
+    pub(crate) active: MemTable,
+    pub(crate) level0: Vec<PathBuf>,
+    pub(crate) level1: Vec<PathBuf>,
     config: LsmConfig,
     flushed_wal_segment: u64,
     sst_cache: RefCell<HashMap<PathBuf, SstReader>>,
@@ -129,10 +129,10 @@ impl LsmTree {
     }
 
     /// Read path: active MemTable → L0 (newest first) → L1.
+    ///
+    /// For user keys written via [`put_version`](crate::lsm_mvcc::LsmTree::put_version),
+    /// use [`get_latest`](crate::lsm_mvcc::LsmTree::get_latest) instead.
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
-        if let Some(v) = self.active.get(key)? {
-            return Ok(Some(v));
-        }
         for path in self.level0.iter().rev() {
             if let Some(v) = self.get_from_sst(path, key)? {
                 return Ok(Some(v));
@@ -143,7 +143,18 @@ impl LsmTree {
                 return Ok(Some(v));
             }
         }
-        Ok(None)
+        if let Some(raw) = self.active.get(key)? {
+            if raw.starts_with(b"MVCC") {
+                if let Ok(ver) = crate::mvcc::decode_or_legacy(&raw) {
+                    if !ver.deleted {
+                        return Ok(Some(ver.value));
+                    }
+                }
+            } else {
+                return Ok(Some(raw));
+            }
+        }
+        self.get_latest(key)
     }
 
     /// Number of L0 SSTable files.
@@ -165,7 +176,7 @@ impl LsmTree {
         self.sst_cache.borrow_mut().clear();
     }
 
-    fn maybe_flush_and_compact(&mut self) -> Result<(), StorageError> {
+    pub(crate) fn maybe_flush_and_compact(&mut self) -> Result<(), StorageError> {
         if self.active.approx_bytes() < self.config.max_mem_bytes {
             return Ok(());
         }
@@ -221,20 +232,58 @@ impl StorageEngine for LsmTree {
     }
 
     fn iter(&self) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
-        let mut merged = std::collections::BTreeMap::new();
+        let view = crate::mvcc::ReadView::new(0, u64::MAX, Default::default());
+        let mut latest: std::collections::BTreeMap<Vec<u8>, crate::mvcc::Version> =
+            std::collections::BTreeMap::new();
+
+        let mut ingest = |ik: Vec<u8>, raw: Vec<u8>| {
+            let is_mvcc = raw.starts_with(b"MVCC") && ik.len() > 8;
+            let ver = if is_mvcc {
+                match crate::mvcc::decode_or_legacy(&raw) {
+                    Ok(v) => v,
+                    Err(_) => return,
+                }
+            } else {
+                crate::mvcc::Version::put(1, raw)
+            };
+            let user = if is_mvcc {
+                crate::mvcc::decode_user_key(&ik).to_vec()
+            } else {
+                ik
+            };
+            if !view.is_visible(&ver, None) {
+                return;
+            }
+            if latest
+                .get(&user)
+                .is_none_or(|prev| ver.commit_ts > prev.commit_ts)
+            {
+                latest.insert(user, ver);
+            }
+        };
+
         for path in self.level1.iter().chain(self.level0.iter()) {
             if let Ok(reader) = SstReader::open(path) {
-                if let Ok(iter) = reader.scan() {
-                    for item in iter.flatten() {
-                        merged.insert(item.0, item.1);
+                if let Ok(scan) = reader.scan() {
+                    for item in scan.flatten() {
+                        ingest(item.0, item.1);
                     }
                 }
             }
         }
         for (k, v) in self.active.iter() {
-            merged.insert(k, v);
+            ingest(k, v);
         }
-        merged.into_iter()
+
+        latest
+            .into_iter()
+            .filter_map(|(k, ver)| {
+                if ver.deleted {
+                    None
+                } else {
+                    Some((k, ver.value))
+                }
+            })
     }
 }
 

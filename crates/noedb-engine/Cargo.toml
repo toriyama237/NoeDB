@@ -17,6 +17,7 @@ noedb-planner = { workspace = true }
 noedb-storage = { workspace = true }
 noedb-raft = { workspace = true }
 noedb-ast = { workspace = true }
+noedb-txn = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 bincode = { workspace = true }
@@ -28,6 +29,10 @@ criterion = { workspace = true }
 
 [[bench]]
 name = "pipeline"
+harness = false
+
+[[bench]]
+name = "oltp_mvcc"
 harness = false
 
 [lints]

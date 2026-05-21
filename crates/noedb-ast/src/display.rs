@@ -494,6 +494,9 @@ impl fmt::Display for Statement {
                 write_keyword(f, Keyword::Using)?;
                 write!(f, " ({})", s.using_expr)
             }
+            Self::BeginTxn(_) => write_keyword(f, Keyword::Begin),
+            Self::CommitTxn(_) => write_keyword(f, Keyword::Commit),
+            Self::RollbackTxn(_) => write_keyword(f, Keyword::Rollback),
         }
     }
 }

@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use noedb_ast::{Expr, SelectItem};
-use noedb_storage::{LsmTree, StorageEngine};
+use noedb_storage::{LsmTree, StorageEngine, StorageError};
 
 use crate::eval::{eval_expr, eval_predicate};
 use crate::index::SecondaryIndex;
@@ -21,9 +21,22 @@ use crate::value::{Record, Value};
 use crate::ExecError;
 
 /// Storage-backed execution context.
-pub struct ExecutionContext<'a> {
-    /// LSM engine to read from.
-    pub store: &'a LsmTree,
+pub struct ExecutionContext<'a, S: StorageEngine<Error = StorageError> = LsmTree> {
+    /// Row/cell reads (may be MVCC snapshot store).
+    pub store: &'a S,
+    /// Base LSM for secondary index catalog lookups.
+    pub index_catalog: &'a LsmTree,
+}
+
+impl<'a> ExecutionContext<'a, LsmTree> {
+    /// Single-tree context (default path).
+    #[must_use]
+    pub fn single(store: &'a LsmTree) -> Self {
+        Self {
+            store,
+            index_catalog: store,
+        }
+    }
 }
 
 /// Pull-based row iterator over a physical plan.
@@ -81,7 +94,10 @@ type RowMap = Vec<(String, Value)>;
 impl Executor {
     /// Build an executor for `plan`.
     #[allow(clippy::unnecessary_wraps)]
-    pub fn new(plan: PhysicalPlan, ctx: &ExecutionContext<'_>) -> Result<Self, ExecError> {
+    pub fn new<S: StorageEngine<Error = StorageError>>(
+        plan: PhysicalPlan,
+        ctx: &ExecutionContext<'_, S>,
+    ) -> Result<Self, ExecError> {
         let state = build_state(plan, ctx)?;
         Ok(Self { state })
     }
@@ -207,7 +223,10 @@ impl Executor {
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn build_state(plan: PhysicalPlan, ctx: &ExecutionContext<'_>) -> Result<ExecState, ExecError> {
+fn build_state<S: StorageEngine<Error = StorageError>>(
+    plan: PhysicalPlan,
+    ctx: &ExecutionContext<'_, S>,
+) -> Result<ExecState, ExecError> {
     match plan {
         PhysicalPlan::SeqScan { table, columns: _ } if table.is_empty() => {
             Ok(ExecState::LiteralProject {
@@ -228,8 +247,10 @@ fn build_state(plan: PhysicalPlan, ctx: &ExecutionContext<'_>) -> Result<ExecSta
             columns,
         } => {
             let row_ids = match point_key {
-                Some(key) => SecondaryIndex::lookup(ctx.store, &table, &column, &key),
-                None => SecondaryIndex::load(ctx.store, &table, &column)
+                Some(key) => {
+                    SecondaryIndex::lookup(ctx.index_catalog, &table, &column, &key)
+                }
+                None => SecondaryIndex::load(ctx.index_catalog, &table, &column)
                     .iter()
                     .flat_map(|(_, ids)| ids.clone())
                     .collect(),
@@ -431,7 +452,10 @@ fn build_state(plan: PhysicalPlan, ctx: &ExecutionContext<'_>) -> Result<ExecSta
     }
 }
 
-fn execute_to_rows(plan: PhysicalPlan, ctx: &ExecutionContext<'_>) -> Result<Vec<RowMap>, ExecError> {
+fn execute_to_rows<S: StorageEngine<Error = StorageError>>(
+    plan: PhysicalPlan,
+    ctx: &ExecutionContext<'_, S>,
+) -> Result<Vec<RowMap>, ExecError> {
     Executor::new(plan, ctx)?.collect().map(|recs| {
         recs.into_iter()
             .map(|r| r.fields)
@@ -478,7 +502,11 @@ fn compare_rows(a: &RowMap, b: &RowMap, keys: &[(String, bool)]) -> std::cmp::Or
 
 /// Row keys: `table\0row_id\0column` → cell value; collapsed to one row per `row_id`.
 #[allow(clippy::option_if_let_else)]
-fn load_table_rows(store: &LsmTree, table: &str, columns: Option<&[String]>) -> Vec<RowMap> {
+fn load_table_rows<S: StorageEngine<Error = StorageError>>(
+    store: &S,
+    table: &str,
+    columns: Option<&[String]>,
+) -> Vec<RowMap> {
     let mut prefix = table.as_bytes().to_vec();
     prefix.push(0);
 
@@ -510,8 +538,8 @@ fn load_table_rows(store: &LsmTree, table: &str, columns: Option<&[String]>) -> 
     grouped.into_values().collect()
 }
 
-fn load_row_by_id(
-    store: &LsmTree,
+fn load_row_by_id<S: StorageEngine<Error = StorageError>>(
+    store: &S,
     table: &str,
     row_id: &[u8],
     columns: Option<&[String]>,
@@ -557,7 +585,10 @@ fn table_cell_key(table: &str, row_id: &[u8], column: &[u8]) -> Vec<u8> {
 }
 
 /// Execute a physical plan and return all rows.
-pub fn execute(plan: PhysicalPlan, ctx: &ExecutionContext<'_>) -> Result<Vec<Record>, ExecError> {
+pub fn execute<S: StorageEngine<Error = StorageError>>(
+    plan: PhysicalPlan,
+    ctx: &ExecutionContext<'_, S>,
+) -> Result<Vec<Record>, ExecError> {
     Executor::new(plan, ctx)?.collect()
 }
 
@@ -602,7 +633,7 @@ mod join_tests {
             _ => panic!("select"),
         };
         let keys = crate::join::extract_equi_join(&on_expr).unwrap();
-        let ctx = ExecutionContext { store: &tree };
+        let ctx = ExecutionContext::single(&tree);
         let plan = PhysicalPlan::HashJoin {
             left: Box::new(PhysicalPlan::SeqScan {
                 table: "users".into(),

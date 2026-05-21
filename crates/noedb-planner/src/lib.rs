@@ -31,7 +31,7 @@ pub use physical::PhysicalPlan;
 pub use value::{Record, Value};
 
 use noedb_ast::Statement;
-use noedb_storage::LsmTree;
+use noedb_storage::{LsmTree, StorageEngine, StorageError};
 
 /// Turn a [`Statement`] into a [`LogicalPlan`].
 ///
@@ -48,10 +48,26 @@ pub fn plan(stmt: &Statement) -> Result<LogicalPlan, PlanError> {
 ///
 /// Planner or executor errors.
 pub fn execute_sql(stmt: &Statement, store: &LsmTree) -> Result<Vec<Record>, ExecError> {
+    execute_sql_on(stmt, store, store)
+}
+
+/// Execute with separate read store (MVCC snapshot) and index catalog store.
+///
+/// # Errors
+///
+/// Planner or executor errors.
+pub fn execute_sql_on<S: StorageEngine<Error = StorageError>>(
+    stmt: &Statement,
+    exec_store: &S,
+    index_store: &LsmTree,
+) -> Result<Vec<Record>, ExecError> {
     let logical = plan(stmt)?;
-    let ctx = PlanContext::new(store);
+    let ctx = PlanContext::new(index_store);
     let physical = optimize(logical, &ctx);
-    execute(physical, &ExecutionContext { store })
+    execute(physical, &ExecutionContext {
+        store: exec_store,
+        index_catalog: index_store,
+    })
 }
 
 /// Return an `EXPLAIN` plan for a `SELECT` (optimized physical plan + cost).

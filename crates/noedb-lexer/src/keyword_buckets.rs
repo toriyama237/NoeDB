@@ -51,6 +51,7 @@ static KW_LEN_04: &[(&str, Keyword)] = &[
 
 static KW_LEN_05: &[(&str, Keyword)] = &[
     ("ALTER", Keyword::Alter),
+    ("BEGIN", Keyword::Begin),
     ("CHECK", Keyword::Check),
     ("CROSS", Keyword::Cross),
     ("FALSE", Keyword::False),
@@ -73,6 +74,7 @@ static KW_LEN_05: &[(&str, Keyword)] = &[
 
 static KW_LEN_06: &[(&str, Keyword)] = &[
     ("COLUMN", Keyword::Column),
+    ("COMMIT", Keyword::Commit),
     ("CREATE", Keyword::Create),
     ("DELETE", Keyword::Delete),
     ("ENABLE", Keyword::Enable),

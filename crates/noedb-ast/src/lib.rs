@@ -30,7 +30,7 @@ pub use crate::name::{ColumnRef, Ident, TableRef};
 pub use crate::stmt::{
     ColumnDef, CreateIndexStmt, CreatePolicyStmt, CreateTableStmt, DeleteStmt, DropTableStmt,
     EnableRlsStmt, ExecuteStmt, InsertStmt, Join, JoinKind, PrepareStmt, SelectStmt, SetRoleStmt,
-    SqlType, Statement, UpdateStmt,
+    SqlType, Statement, UpdateStmt, BeginTxnStmt, CommitTxnStmt, RollbackTxnStmt,
 };
 
 #[cfg(test)]

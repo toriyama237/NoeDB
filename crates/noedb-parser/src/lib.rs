@@ -23,6 +23,7 @@ mod parser;
 mod prepare;
 mod select;
 mod session;
+mod txn;
 
 pub use crate::error::ParseError;
 pub use crate::parser::Parser;

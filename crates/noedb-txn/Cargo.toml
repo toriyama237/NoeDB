@@ -1,6 +1,6 @@
 [package]
-name = "noedb-storage"
-description = "LSM-tree storage engine for NoeDB (MemTable, WAL, SSTable, compaction)."
+name = "noedb-txn"
+description = "MVCC transaction manager: BEGIN/COMMIT/ROLLBACK, Snapshot Isolation, SSI"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,19 +11,12 @@ authors.workspace = true
 categories.workspace = true
 keywords.workspace = true
 
-[lib]
-name = "noedb_storage"
-path = "src/lib.rs"
-
 [dependencies]
+noedb-storage = { workspace = true }
+thiserror = { workspace = true }
 parking_lot = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true }
-
-[[bench]]
-name = "lsm"
-harness = false
 
 [lints]
 workspace = true

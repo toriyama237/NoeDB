@@ -54,11 +54,43 @@ PDF / DOCX détaillé : [`NoeDB_v2_Sprint_Plan.docx`](NoeDB_v2_Sprint_Plan.docx)
 - **`SECURITY.md`** : TLS/mTLS/gRPC/RLS/prepared/audit + CVE policy
 - **`cargo audit`** : à lancer avant chaque release
 
+## Phase 2 — MVCC & Transactions (S7–S14) 🟡
+
+| Semaine | Statut | Livrable |
+|---------|--------|----------|
+| 07 | ✅ | `Version`, `TimestampOracle`, `MvccMemTable`, clés internes LSM, `get_at_ts` |
+| 08 | ✅ | `TxnManager`, `BEGIN`/`COMMIT`/`ROLLBACK`, read-your-writes |
+| 09 | ✅ | `ReadView`, `SnapshotStore`, tests 100 txns concurrentes |
+| 10 | 🟡 | `SsiChecker` + `record_read` (détection overlap au commit) |
+| 11 | 🟡 | `DeadlockGuard` wait-for + timeout 5s |
+| 12 | 🟡 | `SchemaCatalog` (version_ts) — DDL transactionnel SQL à suivre |
+| 13 | 🟡 | `gc_versions` memtable + `gc_mvcc_active` LSM |
+| 14 | 🟡 | Bench `oltp_mvcc` — tag `v1.1.0-mvcc` à publier |
+
+### Semaine 7 — ✅
+
+- Module **`noedb-storage::mvcc`** : multi-version memtable, oracle, codec disque
+- **`LsmTree::put_version`** : WAL + SST avec clés internes (durable)
+- Tests : `mvcc_smoke`, `lsm_mvcc_durable`
+
+### Semaine 8–9 — ✅
+
+- Crate **`noedb-txn`** : coordinator, write/read sets
+- SQL : `BEGIN` / `COMMIT` / `ROLLBACK`
+- **`SnapshotStore`** : SI + overlay txn pour `SELECT`
+- Tests : `phase2_mvcc`, `concurrent` (100 sessions)
+
+### Semaines 10–14 — en cours
+
+- SSI / deadlock : structures actives, wiring partiel
+- Schema : `SchemaCatalog` in-memory
+- GC : memtable + active LSM
+- Bench : `cargo bench -p noedb-engine --bench oltp_mvcc`
+
 ## Phases suivantes
 
 | Phase | Semaines | Thème |
 |-------|----------|-------|
-| 2 | 7–14 | MVCC & Transactions |
 | 3 | 15–24 | Performance extrême |
 | 4 | 25–36 | Distributed elite |
 | 5 | 37–44 | Query engine v2 |

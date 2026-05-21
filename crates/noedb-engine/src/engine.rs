@@ -1,7 +1,7 @@
 //! Local and distributed SQL engines.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use noedb_ast::Statement;
 use noedb_planner::{
@@ -17,6 +17,7 @@ use crate::machine::apply_command;
 use crate::prepared::{bind_parameters, PrepareCache};
 use crate::rls::{apply_rls, RlsCatalog};
 use crate::session::SessionContext;
+use crate::txn::TxnState;
 
 /// Maximum SQL text accepted by the engine (DoS bound).
 pub const MAX_SQL_BYTES: usize = 64 * 1024;
@@ -91,11 +92,11 @@ pub fn validate_sql(sql: &str) -> Result<(), EngineError> {
 /// Single-node engine (no Raft) — fast local development.
 pub struct LocalEngine {
     tree: LsmTree,
-    data_dir: PathBuf,
     session: SessionContext,
     prepare: PrepareCache,
     rls: RlsCatalog,
     audit: AuditLog,
+    txn: TxnState,
 }
 
 impl LocalEngine {
@@ -110,11 +111,11 @@ impl LocalEngine {
         let audit = AuditLog::open(&data_dir)?;
         Ok(Self {
             tree,
-            data_dir,
             session: SessionContext::dev(),
             prepare: PrepareCache::default(),
             rls: RlsCatalog::default(),
             audit,
+            txn: TxnState::new(1),
         })
     }
 
@@ -122,6 +123,12 @@ impl LocalEngine {
     #[must_use]
     pub fn session_role(&self) -> &str {
         &self.session.role
+    }
+
+    /// Transaction manager (MVCC).
+    #[must_use]
+    pub const fn txn(&self) -> &TxnState {
+        &self.txn
     }
 
     /// Underlying LSM (tests).
@@ -147,6 +154,9 @@ impl LocalEngine {
         column: &str,
         value: &[u8],
     ) -> Result<(), EngineError> {
+        if self.txn.in_txn() {
+            return self.txn.put_row(table, row, column, value);
+        }
         let cmd = Command::Put {
             table: table.to_string(),
             row: row.to_string(),
@@ -202,6 +212,21 @@ impl LocalEngine {
                 self.audit_record(sql, 0)?;
                 Ok(empty_ok())
             }
+            Statement::BeginTxn(_) => {
+                self.txn.begin()?;
+                self.audit_record(sql, 0)?;
+                Ok(empty_ok())
+            }
+            Statement::CommitTxn(_) => {
+                self.txn.commit(&mut self.tree)?;
+                self.audit_record(sql, 0)?;
+                Ok(empty_ok())
+            }
+            Statement::RollbackTxn(_) => {
+                self.txn.rollback()?;
+                self.audit_record(sql, 0)?;
+                Ok(empty_ok())
+            }
             other => {
                 let other = apply_rls(other, &self.rls, &self.session.role);
                 self.run_data_statement(other, sql)
@@ -210,8 +235,12 @@ impl LocalEngine {
     }
 
     fn run_data_statement(&mut self, stmt: Statement, sql: &str) -> Result<QueryResult, EngineError> {
-        let records = apply_statement(&stmt, &mut self.tree)?;
-        let result = QueryResult::from_records(&records);
+        let result = if self.txn.in_txn() && matches!(stmt, Statement::Select(_)) {
+            self.txn.execute_select(&stmt, &self.tree)?
+        } else {
+            let records = apply_statement(&stmt, &mut self.tree)?;
+            QueryResult::from_records(&records)
+        };
         self.audit_record(sql, u64::try_from(result.rows.len()).unwrap_or(0))?;
         Ok(result)
     }

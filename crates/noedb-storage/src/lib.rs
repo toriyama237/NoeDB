@@ -26,7 +26,9 @@ mod durable;
 mod engine;
 mod error;
 mod lsm;
+mod lsm_mvcc;
 mod memtable;
+pub mod mvcc;
 mod sstable;
 mod wal;
 
@@ -40,6 +42,10 @@ pub use crate::memtable::{
     MemTable, MemTableIter, MemTableRangeIter, DEFAULT_MAX_ENTRIES, DEFAULT_MAX_MEM_BYTES,
 };
 pub use crate::sstable::{SstReader, SstWriter, SST_MAGIC, SST_VERSION};
+pub use crate::mvcc::{
+    gc_versions, encode_internal_key, CommitTs, GcStats, MvccMemTable, ReadView, SnapshotStore,
+    TimestampOracle, TxnId, Version,
+};
 pub use crate::wal::{
     replay_into_memtable, replay_wal_dir, LogEntry, OpType, Wal, WalSegmentManager, WalSyncMode,
     WAL_MAGIC, WAL_VERSION,

@@ -60,6 +60,9 @@ impl<'a> Parser<'a> {
             Token::Keyword(Keyword::Prepare) => crate::prepare::parse_prepare(self),
             Token::Keyword(Keyword::Execute) => crate::prepare::parse_execute(self),
             Token::Keyword(Keyword::Set) => crate::session::parse_set(self),
+            Token::Keyword(Keyword::Begin) => crate::txn::parse_begin(self),
+            Token::Keyword(Keyword::Commit) => crate::txn::parse_commit(self),
+            Token::Keyword(Keyword::Rollback) => crate::txn::parse_rollback(self),
             _ => Err(self.unexpected("SQL statement")),
         }
     }

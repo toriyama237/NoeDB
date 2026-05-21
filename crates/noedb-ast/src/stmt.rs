@@ -198,6 +198,27 @@ pub struct SetRoleStmt {
     pub span: Span,
 }
 
+/// `BEGIN` / `START TRANSACTION`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BeginTxnStmt {
+    /// Span covering the statement.
+    pub span: Span,
+}
+
+/// `COMMIT`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitTxnStmt {
+    /// Span covering the statement.
+    pub span: Span,
+}
+
+/// `ROLLBACK`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RollbackTxnStmt {
+    /// Span covering the statement.
+    pub span: Span,
+}
+
 /// Top-level SQL statement.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -226,6 +247,12 @@ pub enum Statement {
     EnableRls(EnableRlsStmt),
     /// `CREATE POLICY`.
     CreatePolicy(CreatePolicyStmt),
+    /// `BEGIN` transaction.
+    BeginTxn(BeginTxnStmt),
+    /// `COMMIT` transaction.
+    CommitTxn(CommitTxnStmt),
+    /// `ROLLBACK` transaction.
+    RollbackTxn(RollbackTxnStmt),
 }
 
 impl Statement {
@@ -245,6 +272,9 @@ impl Statement {
             Self::SetRole(s) => s.span,
             Self::EnableRls(s) => s.span,
             Self::CreatePolicy(s) => s.span,
+            Self::BeginTxn(s) => s.span,
+            Self::CommitTxn(s) => s.span,
+            Self::RollbackTxn(s) => s.span,
         }
     }
 }

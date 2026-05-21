@@ -43,6 +43,7 @@ noedb-engine  = { path = "crates/noedb-engine",   version = "=1.0.1" }
 noedb-protocol = { path = "crates/noedb-protocol", version = "=1.0.1" }
 noedb-tls     = { path = "crates/noedb-tls",      version = "=1.0.1" }
 noedb-grpc    = { path = "crates/noedb-grpc",     version = "=1.0.1" }
+noedb-txn     = { path = "crates/noedb-txn",      version = "=1.0.1" }
 
 tonic = { version = "0.13", default-features = false, features = ["transport", "codegen", "tls-ring", "prost", "router", "server"] }
 prost = "0.13"
@@ -66,6 +67,8 @@ crc32fast = "1.4"
 tracing = "0.1"
 rand = "0.8"
 criterion = { version = "0.8", default-features = false, features = ["html_reports"] }
+parking_lot = "0.12"
+rayon = "1.10"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

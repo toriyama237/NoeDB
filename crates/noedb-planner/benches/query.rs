@@ -62,7 +62,7 @@ fn bench_seq_scan(c: &mut Criterion) {
         }),
         predicate,
     });
-    let ctx = ExecutionContext { store: &tree };
+    let ctx = ExecutionContext::single(&tree);
 
     let mut group = c.benchmark_group("query");
     group.throughput(Throughput::Elements(1));
@@ -80,7 +80,7 @@ fn bench_index_scan(c: &mut Criterion) {
     let physical = optimize(logical, &pctx);
     let text = explain(&physical);
     assert!(text.contains("IndexScan"));
-    let ctx = ExecutionContext { store: &tree };
+    let ctx = ExecutionContext::single(&tree);
 
     let mut group = c.benchmark_group("query");
     group.throughput(Throughput::Elements(1));
