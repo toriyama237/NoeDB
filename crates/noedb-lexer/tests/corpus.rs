@@ -115,7 +115,7 @@ fn corpus_float_literals() {
         ("1E2", 100.0),
         ("1e-2", 0.01),
         ("1E+3", 1000.0),
-        ("3.14", 3.14),
+        ("12.5", 12.5),
         ("0.001", 0.001),
     ];
     for (src, expected) in cases {
@@ -138,7 +138,7 @@ fn corpus_string_literals() {
     ];
     for (src, expected) in cases {
         let toks = kinds(src);
-        assert_eq!(toks[0], Token::String(expected.to_string()), "src={src}");
+        assert_eq!(toks[0], Token::String((*expected).to_string()), "src={src}");
     }
 }
 
@@ -180,6 +180,7 @@ fn corpus_punctuation() {
 // --- 6 error cases ---
 
 #[test]
+#[allow(clippy::type_complexity)]
 fn corpus_errors() {
     let cases: &[(&str, fn(&LexErrorKind) -> bool)] = &[
         ("@", |k| matches!(k, LexErrorKind::UnexpectedChar('@'))),
