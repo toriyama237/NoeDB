@@ -289,6 +289,7 @@ version = "0.0.1"
 dependencies = [
  "noedb-ast",
  "noedb-lexer",
+ "noedb-parser",
  "noedb-storage",
 ]
 
