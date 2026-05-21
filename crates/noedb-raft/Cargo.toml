@@ -24,6 +24,9 @@ crc32fast = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true }
+noedb-tls = { workspace = true }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

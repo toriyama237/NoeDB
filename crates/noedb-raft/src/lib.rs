@@ -46,7 +46,7 @@ pub use security::{checksum, ClusterAuth, WireEnvelope, MAX_FRAME_BYTES, WIRE_MA
 pub use sim::Cluster;
 pub use state::{HardState, Progress, SoftState};
 pub use storage::{FileStorage, MemStorage, RaftStorage, Snapshot};
-pub use transport::{MemoryTransport, TcpTransport, Transport};
+pub use transport::{MemoryTransport, TcpTransport, TlsTcpTransport, Transport};
 pub use types::{LogIndex, NodeId, Role, Term};
 
 /// State machine applied after commit (Week 45 integration).

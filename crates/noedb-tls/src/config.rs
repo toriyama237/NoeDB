@@ -1,11 +1,11 @@
-//! Rustls server and client configuration (TLS 1.3).
+//! Rustls server and client configuration (TLS 1.3 + mTLS).
 
 use std::sync::Arc;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{ClientConfig, DigitallySignedStruct, RootCertStore, ServerConfig, SignatureScheme};
-use rustls::{ClientConnection, ServerConnection};
+use rustls::server::WebPkiClientVerifier;
+use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, ServerConfig, ServerConnection, SignatureScheme};
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
 use crate::dev_certs::DevCertPem;
@@ -16,41 +16,93 @@ pub fn install_crypto_provider() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
-/// Build a TLS 1.3 server acceptor from dev certificates.
-///
-/// # Errors
-///
-/// Rustls configuration errors.
-pub fn server_acceptor_dev(certs: &DevCertPem) -> Result<TlsAcceptor, TlsError> {
-    install_crypto_provider();
-    let (chain, key) = certs.server_identity()?;
-    let config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(chain, key)?;
-    Ok(TlsAcceptor::from(Arc::new(config)))
-}
-
-/// Build a TLS client connector trusting the dev CA only.
-///
-/// # Errors
-///
-/// Rustls configuration errors.
-pub fn client_connector_dev(certs: &DevCertPem) -> Result<TlsConnector, TlsError> {
-    install_crypto_provider();
+fn ca_root_store(certs: &DevCertPem) -> Result<RootCertStore, TlsError> {
     let ca = certs.ca_cert()?;
     let mut roots = RootCertStore::empty();
     roots.add(ca)?;
-    let config = ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    Ok(TlsConnector::from(Arc::new(config)))
+    Ok(roots)
 }
 
-/// Connector that rejects unknown CAs (for negative tests).
+/// Build mTLS [`ServerConfig`] (requires client certs signed by dev CA).
 ///
 /// # Errors
 ///
 /// Rustls configuration errors.
+pub fn build_server_config_mtls(certs: &DevCertPem) -> Result<ServerConfig, TlsError> {
+    install_crypto_provider();
+    let roots = ca_root_store(certs)?;
+    let client_verifier = WebPkiClientVerifier::builder(roots.into())
+        .build()
+        .map_err(|e| TlsError::Handshake(e.to_string()))?;
+    let (chain, key) = certs.server_identity()?;
+    ServerConfig::builder()
+        .with_client_cert_verifier(client_verifier)
+        .with_single_cert(chain, key)
+        .map_err(Into::into)
+}
+
+/// Build one-way TLS server (Week 1 compat tests).
+///
+/// # Errors
+///
+/// Rustls configuration errors.
+pub fn build_server_config_tls(certs: &DevCertPem) -> Result<ServerConfig, TlsError> {
+    install_crypto_provider();
+    let (chain, key) = certs.server_identity()?;
+    ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(chain, key)
+        .map_err(Into::into)
+}
+
+/// Build mTLS [`ClientConfig`] (presents client identity, trusts dev CA).
+///
+/// # Errors
+///
+/// Rustls configuration errors.
+pub fn build_client_config_mtls(certs: &DevCertPem) -> Result<ClientConfig, TlsError> {
+    install_crypto_provider();
+    let roots = ca_root_store(certs)?;
+    let (client_chain, client_key) = certs.client_identity()?;
+    Ok(ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_client_auth_cert(client_chain, client_key)?)
+}
+
+/// Build TLS client trusting dev CA only (no client cert).
+///
+/// # Errors
+///
+/// Rustls configuration errors.
+pub fn build_client_config_tls(certs: &DevCertPem) -> Result<ClientConfig, TlsError> {
+    install_crypto_provider();
+    let roots = ca_root_store(certs)?;
+    Ok(ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth())
+}
+
+/// Build a TLS 1.3 server acceptor (one-way TLS).
+pub fn server_acceptor_dev(certs: &DevCertPem) -> Result<TlsAcceptor, TlsError> {
+    Ok(TlsAcceptor::from(Arc::new(build_server_config_tls(certs)?)))
+}
+
+/// Build an mTLS server acceptor (client cert required).
+pub fn server_acceptor_mtls_dev(certs: &DevCertPem) -> Result<TlsAcceptor, TlsError> {
+    Ok(TlsAcceptor::from(Arc::new(build_server_config_mtls(certs)?)))
+}
+
+/// Build a TLS client connector (one-way).
+pub fn client_connector_dev(certs: &DevCertPem) -> Result<TlsConnector, TlsError> {
+    Ok(TlsConnector::from(Arc::new(build_client_config_tls(certs)?)))
+}
+
+/// Build an mTLS client connector.
+pub fn client_connector_mtls_dev(certs: &DevCertPem) -> Result<TlsConnector, TlsError> {
+    Ok(TlsConnector::from(Arc::new(build_client_config_mtls(certs)?)))
+}
+
+/// Connector that rejects unknown CAs (for negative tests).
 pub fn client_connector_untrusted() -> Result<TlsConnector, TlsError> {
     install_crypto_provider();
     let config = ClientConfig::builder()

@@ -20,4 +20,10 @@ pub enum TlsError {
     /// Handshake or verification failure.
     #[error("handshake: {0}")]
     Handshake(String),
+    /// SPIFFE / identity parsing failure.
+    #[error("identity: {0}")]
+    Identity(String),
+    /// Certificate pinning mismatch.
+    #[error("pin mismatch")]
+    PinMismatch,
 }

@@ -8,18 +8,25 @@ PDF / DOCX détaillé : [`NoeDB_v2_Sprint_Plan.docx`](NoeDB_v2_Sprint_Plan.docx)
 
 | Semaine | Statut | Livrable |
 |---------|--------|----------|
-| 01 | 🟡 en cours | TLS 1.3 actif (`noedb-tls`, serveur `--server` TLS par défaut) |
-| 02 | ⏳ | mTLS cluster Raft |
+| 01 | ✅ | TLS 1.3 actif (`noedb-tls`, serveur `--server`) |
+| 02 | 🟡 en cours | mTLS + SPIFFE CN + pin + reload + `TlsTcpTransport` |
 | 03 | ⏳ | gRPC (tonic) remplace TCP custom |
 | 04 | ⏳ | Prepared statements |
 | 05 | ⏳ | Row Level Security |
 | 06 | ⏳ | Audit log, fuzz, SECURITY.md |
 
-### Semaine 1 — fait / en cours
+### Semaine 1 — ✅
 
 - Crate **`noedb-tls`** : certs dev `rcgen`, `rustls` 1.3, tests handshake
-- **`noedb-cli --server`** : TLS par défaut (`--no-tls` pour debug)
-- **`noedb-cli --ping`** : client TLS + requête `Ping`
+- **`noedb-cli --server`** : TLS (`--no-mtls`) ou mTLS par défaut
+- **`noedb-cli --ping`** : client TLS/mTLS + `Ping`
+
+### Semaine 2 — en cours
+
+- **mTLS** : client cert SPIFFE `spiffe://noedb/cluster/node/{id}`
+- **Pinning** : `--pin-server` (trust leaf only)
+- **Reload** : `ReloadingAcceptor` pour rotation certs
+- **Raft** : `TlsTcpTransport` (mTLS + pin)
 
 ## Phases suivantes
 

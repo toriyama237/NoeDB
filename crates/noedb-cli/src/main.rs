@@ -134,6 +134,18 @@ fn use_tls(args: &[String]) -> bool {
     !args.iter().any(|a| a == "--no-tls")
 }
 
+fn use_mtls(args: &[String]) -> bool {
+    use_tls(args) && !args.iter().any(|a| a == "--no-mtls")
+}
+
+fn node_id_arg(args: &[String]) -> u64 {
+    args.iter()
+        .position(|a| a == "--node-id")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1)
+}
+
 fn run_server(args: &[String]) -> Result<(), String> {
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     rt.block_on(async {
@@ -147,10 +159,32 @@ fn run_server(args: &[String]) -> Result<(), String> {
             .await
             .map_err(|e| format!("bind {addr}: {e}"))?;
 
-        if use_tls(args) {
-            let certs = tls::load_or_create_dev_certs(&dir)?;
+        if use_mtls(args) {
+            let node_id = node_id_arg(args);
+            let certs = tls::load_or_create_dev_certs(&dir, node_id)?;
+            let acceptor = tls::reloading_acceptor(&certs)?;
+            println!("noedb listening on {addr} (mTLS 1.3, SPIFFE cn: {})", certs.client_spiffe_cn);
+            println!("  CA: {}", tls::ca_path(&dir).display());
+            loop {
+                let (tcp, peer) = listener.accept().await.map_err(|e| e.to_string())?;
+                let auth = auth.clone();
+                let engine = Arc::clone(&engine);
+                let acceptor = acceptor.clone();
+                tokio::spawn(async move {
+                    match acceptor.accept(tcp).await {
+                        Ok(stream) => {
+                            if let Err(e) = handle_connection(stream, auth, engine).await {
+                                eprintln!("client {peer}: {e}");
+                            }
+                        }
+                        Err(e) => eprintln!("mtls handshake {peer}: {e}"),
+                    }
+                });
+            }
+        } else if use_tls(args) {
+            let certs = tls::load_or_create_dev_certs(&dir, 1)?;
             let acceptor = tls::server_acceptor(&certs)?;
-            println!("noedb listening on {addr} (TLS 1.3, auth: noedb-dev)");
+            println!("noedb listening on {addr} (TLS 1.3 one-way, auth: noedb-dev)");
             println!("  CA: {}", tls::ca_path(&dir).display());
             loop {
                 let (tcp, peer) = listener.accept().await.map_err(|e| e.to_string())?;
@@ -191,15 +225,30 @@ fn run_ping(args: &[String]) -> Result<(), String> {
         let dir = data_dir(args);
         let auth = ClusterAuth::from_passphrase("noedb-dev");
 
-        if use_tls(args) {
-            let certs = tls::load_or_create_dev_certs(&dir)?;
-            let connector = tls::client_connector(&certs)?;
+        if use_mtls(args) {
+            let certs = tls::load_or_create_dev_certs(&dir, node_id_arg(args))?;
+            let connector = if args.iter().any(|a| a == "--pin-server") {
+                tls::client_connector_pinned(&certs)?
+            } else {
+                tls::client_connector(&certs)?
+            };
             let tcp = tokio::net::TcpStream::connect(&addr)
                 .await
                 .map_err(|e| e.to_string())?;
-            let server_name = "localhost"
-                .try_into()
-                .map_err(|e: rustls::pki_types::InvalidDnsNameError| e.to_string())?;
+            let server_name = localhost_name()?;
+            let mut stream = connector
+                .connect(server_name, tcp)
+                .await
+                .map_err(|e| e.to_string())?;
+            ping_over_connection(&mut stream, &auth).await?;
+            println!("pong (mTLS 1.3)");
+        } else if use_tls(args) {
+            let certs = tls::load_or_create_dev_certs(&dir, 1)?;
+            let connector = noedb_tls::client_connector_dev(&certs).map_err(|e| e.to_string())?;
+            let tcp = tokio::net::TcpStream::connect(&addr)
+                .await
+                .map_err(|e| e.to_string())?;
+            let server_name = localhost_name()?;
             let mut stream = connector
                 .connect(server_name, tcp)
                 .await
@@ -342,6 +391,12 @@ fn data_dir(args: &[String]) -> PathBuf {
             || std::env::temp_dir().join("noedb-data"),
             PathBuf::from,
         )
+}
+
+fn localhost_name() -> Result<rustls::pki_types::ServerName<'static>, String> {
+    "localhost"
+        .try_into()
+        .map_err(|e: rustls::pki_types::InvalidDnsNameError| e.to_string())
 }
 
 fn server_addr(args: &[String]) -> String {

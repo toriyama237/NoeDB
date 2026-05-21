@@ -430,10 +430,13 @@ dependencies = [
  "bytes",
  "crc32fast",
  "criterion",
+ "noedb-tls",
  "rand",
+ "rustls",
  "serde",
  "thiserror",
  "tokio",
+ "tokio-rustls",
  "tracing",
 ]
 

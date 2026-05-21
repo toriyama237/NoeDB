@@ -2,9 +2,11 @@
 
 mod memory;
 mod tcp;
+mod tls_tcp;
 
 pub use memory::MemoryTransport;
 pub use tcp::TcpTransport;
+pub use tls_tcp::TlsTcpTransport;
 
 use std::future::Future;
 use std::pin::Pin;
