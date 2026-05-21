@@ -61,11 +61,28 @@ fn bench_tokenize_where_clause(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_tokenize_one_million_tokens(c: &mut Criterion) {
+    let mut group = c.benchmark_group("lexer");
+    // ~20 tokens per statement × 50_000 iterations ≈ 1M tokens
+    let input = "SELECT a, b FROM t WHERE x = 1 AND y = 2";
+    #[allow(clippy::cast_possible_truncation)]
+    group.throughput(Throughput::Elements(1_000_000));
+    group.bench_function("one_million_tokens", |b| {
+        b.iter(|| {
+            for _ in 0..50_000 {
+                let _ = tokenize(black_box(input));
+            }
+        });
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_tokenize_select_one,
     bench_tokenize_full_statement,
     bench_tokenize_string_heavy,
-    bench_tokenize_where_clause
+    bench_tokenize_where_clause,
+    bench_tokenize_one_million_tokens
 );
 criterion_main!(benches);
