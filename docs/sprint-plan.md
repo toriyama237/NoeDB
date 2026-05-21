@@ -36,7 +36,7 @@ Every commit should be traceable to a line below.
 | Week | Theme | Livrable |
 |------|-------|----------|
 | 09 | Design Storage API: trait `StorageEngine`, MemTable `BTreeMap<Vec<u8>, Vec<u8>>`, opérations get/put/delete, iterator ✅ | `MemTable` CRUD opérationnel avec test d'itération triée ✅ |
-| 10 | Seuil flush configurable `max_mem_bytes`; MemTable immuable quand pleine, swap atomic | MemTable fonctionnel, durabilité testée avant flush |
+| 10 | WAL append-only + `LogEntry` (OpType, CRC32), `max_mem_bytes` rotation ✅ | WAL fonctionnel, écritures durables avant MemTable ✅ |
 | 11 | WAL replay au démarrage → reconstruire MemTable; test crash: process kill → restart → data OK | WAL recovery testé et validé, 0 perte de données |
 | 12 | SSTable format binaire: magic bytes + version header, SSTable Writer avec `encoder<K,V>` triés en blocs de 4KB, index de blocs en fin de fichier | SSTable Writer ↔ format binaire stable documenté |
 | 13 | SSTable Reader: lire header + charger index sparse, recherche binaire sur l'index, décompresser bloc et chercher clé, iterator full SSTable | SSTable Reader opérationnel avec recherche O(log n) |

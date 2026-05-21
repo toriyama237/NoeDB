@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Week 10 storage:** CRC-32 checksums, append-only [`Wal`] with `sync_all`,
+  [`LogEntry`] (`Put`/`Delete` + CRC32), [`DurableStore`] (WAL-first writes,
+  `max_mem_bytes` MemTable rotation with immutable swap).
 - **Week 09 storage:** `StorageEngine` trait, `MemTable` backed by `BTreeMap`,
   `get`/`put`/`delete`, sorted iterator, range scan, 1 000-entry integration test.
 

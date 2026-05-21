@@ -45,7 +45,7 @@ crates/
 ├── noedb-ast/        # AST node types             (Phase 1 ✅)
 ├── noedb-parser/     # recursive-descent parser   (Phase 1 ✅)
 ├── noedb-planner/    # logical + physical plans   (stub, grows in W17)
-├── noedb-storage/    # LSM-tree engine            (MemTable ✅ W09)
+├── noedb-storage/    # LSM-tree engine            (MemTable + WAL ✅ W10)
 └── noedb-raft/       # consensus                  (stub, grows in W29)
 ```
 

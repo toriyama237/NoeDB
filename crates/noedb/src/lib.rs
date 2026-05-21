@@ -76,7 +76,9 @@ pub mod planner {
 /// Storage engine (re-exported from [`noedb_storage`]).
 pub mod storage {
     pub use noedb_storage::{
-        MemTable, MemTableIter, MemTableRangeIter, StorageEngine, StorageError, DEFAULT_MAX_ENTRIES,
+        replay_into_memtable, DurableStore, LogEntry, MemTable, MemTableIter, MemTableRangeIter,
+        OpType, StorageEngine, StorageError, Wal, DEFAULT_MAX_ENTRIES, DEFAULT_MAX_MEM_BYTES,
+        WAL_MAGIC, WAL_VERSION,
     };
 }
 
