@@ -1,26 +1,22 @@
 //! LSM-tree storage engine for NoeDB.
 //!
-//! This crate will own the on-disk format and the in-memory MemTable
-//! once Phase 2 of the sprint begins (Week 09). Today it only exists so
-//! that the workspace dependency graph is complete and the planner can
-//! reserve its place at the table.
+//! Phase 2 builds the on-disk persistence stack piece by piece:
 //!
-//! Planned modules:
-//!
-//! - `memtable`: in-memory sorted map, write-optimised.
-//! - `wal`: append-only write-ahead log with `fsync` semantics.
-//! - `sstable`: immutable on-disk sorted runs.
-//! - `bloom`: per-SSTable Bloom filter.
-//! - `compaction`: leveled / tiered compaction strategy (TBD Week 14).
+//! - **Week 09** — [`MemTable`]: in-memory sorted map (this crate today).
+//! - **Week 10–11** — WAL + flush + crash recovery.
+//! - **Week 12–13** — SSTable writer/reader.
+//! - **Week 14–16** — Bloom filter, compaction, full [`LsmTree`].
 //!
 //! See `docs/sprint-plan.md`, Phase 2.
+//!
+//! [`LsmTree`]: memtable::MemTable
 
 #![forbid(unsafe_code)]
 
-/// Reserved: the central trait every storage backend will implement.
-///
-/// Defined in Week 09 once we have an AST and a planner to drive it.
-pub trait StorageEngine {
-    /// Storage-level error type.
-    type Error;
-}
+mod engine;
+mod error;
+mod memtable;
+
+pub use crate::engine::StorageEngine;
+pub use crate::error::StorageError;
+pub use crate::memtable::{MemTable, MemTableIter, MemTableRangeIter, DEFAULT_MAX_ENTRIES};
