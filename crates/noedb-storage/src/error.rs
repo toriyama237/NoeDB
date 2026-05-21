@@ -11,6 +11,18 @@ pub enum StorageError {
         /// Human-readable reason.
         message: &'static str,
     },
+    /// An I/O failure while talking to the WAL or SSTable files.
+    Io {
+        /// Underlying OS error message.
+        message: String,
+    },
+    /// The WAL bytes on disk could not be parsed.
+    CorruptWal {
+        /// Human-readable reason.
+        message: &'static str,
+    },
+    /// A WAL record failed its CRC-32 check.
+    ChecksumMismatch,
 }
 
 impl StorageError {
@@ -19,12 +31,35 @@ impl StorageError {
     pub const fn invalid_input(message: &'static str) -> Self {
         Self::InvalidInput { message }
     }
+
+    /// Construct a [`CorruptWal`] error.
+    #[must_use]
+    pub const fn corrupt_wal(message: &'static str) -> Self {
+        Self::CorruptWal { message }
+    }
+
+    /// Construct a [`ChecksumMismatch`] error.
+    #[must_use]
+    pub const fn checksum_mismatch() -> Self {
+        Self::ChecksumMismatch
+    }
+}
+
+impl From<std::io::Error> for StorageError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Io {
+            message: err.to_string(),
+        }
+    }
 }
 
 impl fmt::Display for StorageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidInput { message } => write!(f, "invalid storage input: {message}"),
+            Self::Io { message } => write!(f, "storage I/O error: {message}"),
+            Self::CorruptWal { message } => write!(f, "corrupt WAL: {message}"),
+            Self::ChecksumMismatch => write!(f, "WAL checksum mismatch"),
         }
     }
 }
