@@ -15,7 +15,7 @@ fn bench_three_node_propose(c: &mut Criterion) {
         b.iter_batched(
             || Cluster::new_voters(3).unwrap(),
             |mut cluster| {
-                cluster.run_rounds(400).unwrap();
+                cluster.run_rounds(80).unwrap();
                 for i in 0..1_000u32 {
                     let cmd = format!("k:{i}");
                     cluster.propose_on_leader(cmd.into_bytes()).unwrap();

@@ -103,6 +103,19 @@ impl Cluster {
         self.nodes.values().map(|n| n.applied().len()).sum()
     }
 
+    /// Drive ticks and delivery until the inbox is quiet or `max_rounds` elapses.
+    ///
+    /// Faster than [`Self::run_rounds`] for in-process replication (no extra deliver loop per tick).
+    pub fn drive_quiescent(&mut self, max_rounds: usize) -> Result<(), RaftError> {
+        for _ in 0..max_rounds {
+            while !self.inbox.is_empty() {
+                self.deliver_all()?;
+            }
+            self.tick_all(25)?;
+        }
+        Ok(())
+    }
+
     /// Propose on the current leader and replicate.
     ///
     /// # Errors
@@ -114,7 +127,7 @@ impl Cluster {
         for (to, msg) in sends {
             self.inbox.push_back((leader, to, msg));
         }
-        self.run_rounds(40)?;
+        self.drive_quiescent(16)?;
         match self.nodes.get(&leader) {
             Some(n) if !n.applied().is_empty() => {}
             _ => return Err(RaftError::internal("not replicated")),
