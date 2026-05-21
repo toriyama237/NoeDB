@@ -75,7 +75,9 @@ pub mod planner {
 
 /// Storage engine (re-exported from [`noedb_storage`]).
 pub mod storage {
-    pub use noedb_storage::StorageEngine;
+    pub use noedb_storage::{
+        MemTable, MemTableIter, MemTableRangeIter, StorageEngine, StorageError, DEFAULT_MAX_ENTRIES,
+    };
 }
 
 /// Raft consensus (re-exported from [`noedb_raft`]).
