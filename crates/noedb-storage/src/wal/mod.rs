@@ -1,6 +1,7 @@
 //! Append-only write-ahead log with `fsync` durability.
 
 mod entry;
+mod segments;
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -103,7 +104,9 @@ impl Wal {
     }
 }
 
-/// Replay helper used in tests and Week 11 recovery.
+pub use segments::{replay_wal_dir, WalSegmentManager};
+
+/// Replay a single WAL file into `table`.
 pub fn replay_into_memtable(
     path: impl AsRef<Path>,
     table: &mut crate::MemTable,
