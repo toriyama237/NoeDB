@@ -42,8 +42,8 @@ DataFusion uses.
 crates/
 ├── noedb/            # meta-crate, re-exports the user-facing API
 ├── noedb-lexer/      # tokens, spans, source map  (real code)
-├── noedb-ast/        # AST node types             (stub, grows in W02)
-├── noedb-parser/     # recursive-descent parser   (stub, grows in W05)
+├── noedb-ast/        # AST node types             (Phase 1 ✅)
+├── noedb-parser/     # recursive-descent parser   (Phase 1 ✅)
 ├── noedb-planner/    # logical + physical plans   (stub, grows in W17)
 ├── noedb-storage/    # LSM-tree engine            (stub, grows in W09)
 └── noedb-raft/       # consensus                  (stub, grows in W29)
@@ -77,7 +77,10 @@ hide behind a framework.
 
 > *Filled in as each phase ships. The honest version, not the polished one.*
 
-- **Lexer & Parser (Phase 1)** — *coming Week 08.*
+- **Lexer & Parser (Phase 1)** — shipped Week 08. Pratt precedence for
+  `WHERE`, zero-copy identifiers in the lexer, `Display` round-trip on the
+  AST. Hardest surprise: disambiguating bare table aliases from column names
+  without a full symbol table.
 - **LSM Storage Engine (Phase 2)** — *coming Week 16.* I expect the hardest
   parts to be the WAL replay semantics on crash and choosing a sensible compaction
   policy without copying RocksDB's.
@@ -91,26 +94,35 @@ hide behind a framework.
 
 ## Status
 
-> **Day 3 / 260** — Week 03 of Phase 1 (Lexer & Parser).
+> **Week 08 / Phase 1 complete** — Lexer, AST, and Parser shipped as `v0.1.0`.
 
-The lexer covers ~95 % of SQL surface tokens: keywords, identifiers,
-literals, operators, punctuation, and comments:
+Phase 1 parses `SELECT` (with `JOIN` / `WHERE`), DML (`INSERT`, `UPDATE`,
+`DELETE`), and core DDL (`CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`):
 
 ```rust
-use noedb::lexer::{tokenize, Keyword, Operator, Punctuation, Token};
+use noedb::parser::parse;
+use noedb::ast::Statement;
 
-let toks = tokenize("SELECT * FROM users WHERE id = 42 AND active IS NOT NULL")?;
-assert_eq!(toks[1].kind, Token::Punct(Punctuation::Star));
-assert_eq!(toks[5].kind, Token::Op(Operator::Eq));
-assert_eq!(toks[7].kind, Token::Keyword(Keyword::And));
-# Ok::<_, noedb::lexer::LexError>(())
+let stmt = parse("SELECT u.name FROM users u INNER JOIN orders o ON u.id = o.user_id")?;
+assert!(matches!(stmt, Statement::Select(_)));
+# Ok::<_, noedb::parser::ParseError>(())
 ```
 
-Zero-copy identifiers, static keyword table (no `HashMap`). The workspace
-is split into 7 crates with an honest dependency graph. Watch the
-[CHANGELOG](./CHANGELOG.md), [Releases](https://github.com/toriyama237/NoeDB/releases),
-or [Discussions](https://github.com/toriyama237/NoeDB/discussions) for weekly
-progress.
+The lexer tokenizes ~95 % of SQL surface syntax. **200+ tests**, a
+**1M-token Criterion bench**, and a **`cargo-fuzz`** target ship with
+Phase 1. See [`crates/noedb-lexer/README.md`](crates/noedb-lexer/README.md)
+for lexer details.
+
+```text
+   SQL text
+      │
+      ▼
+  ┌────────┐     ┌─────────┐     ┌──────────────┐
+  │ Lexer  │ ──▶ │ Parser  │ ──▶ │     AST      │
+  │ tokens │     │ recursive│     │ Select/DML/  │
+  └────────┘     │ + Pratt  │     │ DDL nodes    │
+                 └─────────┘     └──────────────┘
+```
 
 ---
 
@@ -118,7 +130,7 @@ progress.
 
 | Phase | Weeks   | Theme                | Milestone tag          | Status        |
 |-------|---------|----------------------|------------------------|---------------|
-| 1     | 01 – 08 | Lexer & Parser       | `v0.1.0-lexer-parser`  | 🟡 in progress |
+| 1     | 01 – 08 | Lexer & Parser       | `v0.1.0-lexer-parser`  | ✅ shipped     |
 | 2     | 09 – 16 | Storage Engine (LSM) | `v0.2.0-storage`       | ⏳ planned     |
 | 3     | 17 – 28 | Query Planner        | `v0.3.0-query-engine`  | ⏳ planned     |
 | 4     | 29 – 44 | Raft Consensus       | `v0.4.0-raft`          | ⏳ planned     |
@@ -158,16 +170,18 @@ The exact same checks run in [CI](.github/workflows/ci.yml).
 
 ## Benchmarks
 
-Micro-benchmarks live in [`benches/`](./benches) and are powered by
-[Criterion](https://bheisler.github.io/criterion.rs/book/). Run them with:
+Micro-benchmarks live in [`crates/noedb-lexer/benches/`](crates/noedb-lexer/benches/)
+and are powered by [Criterion](https://bheisler.github.io/criterion.rs/book/).
+Run them with:
 
 ```bash
-cargo bench
+cargo bench -p noedb-lexer --bench lexer
 open target/criterion/report/index.html
 ```
 
-Real, comparative benchmark numbers (throughput, P99 latency, comparison with
-SQLite single-node) will land alongside Phase 2.
+The `one_million_tokens` bench targets ~1M tokens per run (debug builds are
+slower; use `--release` for representative numbers). Comparative benchmarks
+against SQLite land in Phase 2.
 
 ---
 

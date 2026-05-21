@@ -34,7 +34,8 @@
 //!
 //! # What works today
 //!
-//! **Day 3 / 260** — Week 03 deliverable. The lexer recognizes:
+//! **Week 08 / Phase 1** — lexer complete. Parser consumes these tokens in
+//! `noedb-parser`. See `docs/sprint-plan.md`.
 //!
 //! - 80+ SQL-92 reserved keywords (case-insensitive).
 //! - Ordinary and delimited identifiers (zero-copy).
