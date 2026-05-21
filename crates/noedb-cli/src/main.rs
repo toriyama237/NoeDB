@@ -1,6 +1,8 @@
-//! NoeDB interactive shell and optional TCP server (Phase 5).
+//! NoeDB interactive shell and optional TCP server (Phase 5 + Phase 1 TLS).
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
+
+mod tls;
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -9,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use noedb_engine::{DistributedEngine, EngineError, LocalEngine, QueryResult};
 use noedb_protocol::{decode_request, encode_response, Request, Response};
 use noedb_raft::ClusterAuth;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 enum Backend {
     Local(LocalEngine),
@@ -42,6 +44,13 @@ fn main() {
         }
         return;
     }
+    if args.iter().any(|a| a == "--ping") {
+        if let Err(e) = run_ping(&args) {
+            eprintln!("noedb ping error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if let Err(e) = run_repl(&args) {
         eprintln!("noedb error: {e}");
         std::process::exit(1);
@@ -64,8 +73,10 @@ fn run_repl(args: &[String]) -> Result<(), String> {
         }
     }
     println!("NoeDB v1.0 — interactive SQL shell (not your shell — type SQL here).");
-    println!("  SQL:   SELECT 1;     CREATE INDEX idx ON t (id);");
-    println!("  meta:  \\help  \\explain SELECT ...  \\q");
+    println!("  One statement per line, or several separated by ';'");
+    println!("  Examples:  SELECT 1;");
+    println!("             \\explain SELECT name FROM users WHERE id = '1'");
+    println!("             \\q");
     let stdin = io::stdin();
     let mut line = String::new();
     loop {
@@ -100,13 +111,27 @@ fn run_repl(args: &[String]) -> Result<(), String> {
             }
             continue;
         }
-        let sql = trimmed.trim_end_matches(';');
-        match backend.execute(sql) {
-            Ok(result) => print_result(&result),
-            Err(e) => eprintln!("error: {e}"),
+        for sql in split_statements(trimmed) {
+            match backend.execute(&sql) {
+                Ok(result) => print_result(&result),
+                Err(e) => eprintln!("error: {e}"),
+            }
         }
     }
     Ok(())
+}
+
+/// Split on `;` into non-empty statements (REPL convenience; not string-aware).
+fn split_statements(line: &str) -> Vec<String> {
+    line.split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+fn use_tls(args: &[String]) -> bool {
+    !args.iter().any(|a| a == "--no-tls")
 }
 
 fn run_server(args: &[String]) -> Result<(), String> {
@@ -121,25 +146,118 @@ fn run_server(args: &[String]) -> Result<(), String> {
         let listener = TcpListener::bind(&addr)
             .await
             .map_err(|e| format!("bind {addr}: {e}"))?;
-        println!("noedb listening on {addr} (auth: noedb-dev passphrase)");
-        loop {
-            let (stream, peer) = listener.accept().await.map_err(|e| e.to_string())?;
-            let auth = auth.clone();
-            let engine = Arc::clone(&engine);
-            tokio::spawn(async move {
-                if let Err(e) = handle_client(stream, auth, engine).await {
-                    eprintln!("client {peer}: {e}");
-                }
-            });
+
+        if use_tls(args) {
+            let certs = tls::load_or_create_dev_certs(&dir)?;
+            let acceptor = tls::server_acceptor(&certs)?;
+            println!("noedb listening on {addr} (TLS 1.3, auth: noedb-dev)");
+            println!("  CA: {}", tls::ca_path(&dir).display());
+            loop {
+                let (tcp, peer) = listener.accept().await.map_err(|e| e.to_string())?;
+                let auth = auth.clone();
+                let engine = Arc::clone(&engine);
+                let acceptor = acceptor.clone();
+                tokio::spawn(async move {
+                    match acceptor.accept(tcp).await {
+                        Ok(stream) => {
+                            if let Err(e) = handle_connection(stream, auth, engine).await {
+                                eprintln!("client {peer}: {e}");
+                            }
+                        }
+                        Err(e) => eprintln!("tls handshake {peer}: {e}"),
+                    }
+                });
+            }
+        } else {
+            println!("noedb listening on {addr} (plain TCP — dev only, use TLS in production)");
+            loop {
+                let (stream, peer) = listener.accept().await.map_err(|e| e.to_string())?;
+                let auth = auth.clone();
+                let engine = Arc::clone(&engine);
+                tokio::spawn(async move {
+                    if let Err(e) = handle_connection(stream, auth, engine).await {
+                        eprintln!("client {peer}: {e}");
+                    }
+                });
+            }
         }
     })
 }
 
-async fn handle_client(
-    mut stream: TcpStream,
+fn run_ping(args: &[String]) -> Result<(), String> {
+    let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    rt.block_on(async {
+        let addr = server_addr(args);
+        let dir = data_dir(args);
+        let auth = ClusterAuth::from_passphrase("noedb-dev");
+
+        if use_tls(args) {
+            let certs = tls::load_or_create_dev_certs(&dir)?;
+            let connector = tls::client_connector(&certs)?;
+            let tcp = tokio::net::TcpStream::connect(&addr)
+                .await
+                .map_err(|e| e.to_string())?;
+            let server_name = "localhost"
+                .try_into()
+                .map_err(|e: rustls::pki_types::InvalidDnsNameError| e.to_string())?;
+            let mut stream = connector
+                .connect(server_name, tcp)
+                .await
+                .map_err(|e| e.to_string())?;
+            ping_over_connection(&mut stream, &auth).await?;
+            println!("pong (TLS 1.3)");
+        } else {
+            let mut stream = tokio::net::TcpStream::connect(&addr)
+                .await
+                .map_err(|e| e.to_string())?;
+            ping_over_connection(&mut stream, &auth).await?;
+            println!("pong (plain TCP)");
+        }
+        Ok(())
+    })
+}
+
+async fn ping_over_connection<S>(stream: &mut S, auth: &ClusterAuth) -> Result<(), String>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    use noedb_protocol::{encode_request, Request};
+    let frame = encode_request(auth, &Request::Ping).map_err(|e| e.to_string())?;
+    let len = u32::try_from(frame.len()).map_err(|_| "frame too large".to_string())?;
+    stream
+        .write_all(&len.to_le_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+    stream
+        .write_all(&frame)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut len_buf = [0u8; 4];
+    stream
+        .read_exact(&mut len_buf)
+        .await
+        .map_err(|e| e.to_string())?;
+    let len = u32::from_le_bytes(len_buf) as usize;
+    let mut buf = vec![0u8; len];
+    stream
+        .read_exact(&mut buf)
+        .await
+        .map_err(|e| e.to_string())?;
+    let resp = noedb_protocol::decode_response(auth, &buf).map_err(|e| e.to_string())?;
+    match resp {
+        Response::Pong => Ok(()),
+        other => Err(format!("unexpected response: {other:?}")),
+    }
+}
+
+async fn handle_connection<S>(
+    mut stream: S,
     auth: ClusterAuth,
     engine: Arc<Mutex<LocalEngine>>,
-) -> Result<(), String> {
+) -> Result<(), String>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let mut len_buf = [0u8; 4];
     stream
         .read_exact(&mut len_buf)
@@ -210,8 +328,10 @@ fn print_result(r: &QueryResult) {
 fn print_help() {
     println!("\\q          quit");
     println!("\\help       this message");
-    println!("\\explain    show plan for SELECT");
-    println!("SQL;        execute query (SELECT, CREATE INDEX)");
+    println!("\\explain    show plan for SELECT (one statement)");
+    println!("SELECT ...;  one query per line, or use ';' between statements");
+    println!("Server: cargo run -p noedb-cli -- --server [--listen HOST:PORT]");
+    println!("Ping:   cargo run -p noedb-cli -- --ping   (TLS client, needs running server)");
 }
 
 fn data_dir(args: &[String]) -> PathBuf {

@@ -41,8 +41,14 @@ noedb-storage = { path = "crates/noedb-storage",  version = "=1.0.1" }
 noedb-raft    = { path = "crates/noedb-raft",     version = "=1.0.1" }
 noedb-engine  = { path = "crates/noedb-engine",   version = "=1.0.1" }
 noedb-protocol = { path = "crates/noedb-protocol", version = "=1.0.1" }
+noedb-tls     = { path = "crates/noedb-tls",      version = "=1.0.1" }
 
 # Phase 4 Raft + networking
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile = "2"
+rcgen = "0.13"
+tokio-rustls = "0.26"
+
 tokio = { version = "1.43", features = ["sync", "time", "rt-multi-thread", "macros", "io-util", "net"] }
 serde = { version = "1.0", features = ["derive"] }
 bincode = "1.3"
