@@ -1,0 +1,33 @@
+[package]
+name = "noedb-engine"
+description = "End-to-end SQL engine: parser → planner → Raft → LSM"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+categories.workspace = true
+keywords.workspace = true
+
+[dependencies]
+noedb-parser = { workspace = true }
+noedb-planner = { workspace = true }
+noedb-storage = { workspace = true }
+noedb-raft = { workspace = true }
+noedb-ast = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+bincode = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+noedb-parser = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "pipeline"
+harness = false
+
+[lints]
+workspace = true
