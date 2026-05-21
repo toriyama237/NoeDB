@@ -58,7 +58,7 @@ mod span;
 mod token;
 
 pub use crate::error::{LexError, LexErrorKind};
-pub use crate::keywords::KEYWORD_COUNT;
+pub use crate::keywords::{all_keywords, KEYWORD_COUNT};
 pub use crate::lexer::Lexer;
 pub use crate::span::{LineColumn, SourceMap, Span};
 pub use crate::token::{Keyword, Operator, Punctuation, SpannedToken, Token};

@@ -98,6 +98,12 @@ static KEYWORD_TABLE: &[(&str, Keyword)] = &[
 /// Number of reserved keywords compiled into the lexer today.
 pub const KEYWORD_COUNT: usize = KEYWORD_TABLE.len();
 
+/// All reserved keywords and their token variants (for tests and tooling).
+#[must_use]
+pub fn all_keywords() -> &'static [(&'static str, Keyword)] {
+    KEYWORD_TABLE
+}
+
 /// Look up a word (already lexed as an identifier body) as a keyword.
 ///
 /// Returns `None` for ordinary identifiers such as `users` or `id`.
