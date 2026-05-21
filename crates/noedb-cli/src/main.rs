@@ -63,7 +63,9 @@ fn run_repl(args: &[String]) -> Result<(), String> {
             e.tick(80).map_err(|e| e.to_string())?;
         }
     }
-    println!("NoeDB v1 — type SQL ending with ';', \\explain <sql>, or \\q to quit.");
+    println!("NoeDB v1.0 — interactive SQL shell (not your shell — type SQL here).");
+    println!("  SQL:   SELECT 1;     CREATE INDEX idx ON t (id);");
+    println!("  meta:  \\help  \\explain SELECT ...  \\q");
     let stdin = io::stdin();
     let mut line = String::new();
     loop {
@@ -75,6 +77,13 @@ fn run_repl(args: &[String]) -> Result<(), String> {
         }
         let trimmed = line.trim();
         if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with('#')
+            || trimmed.starts_with("cargo ")
+            || trimmed.starts_with("git ")
+        {
+            eprintln!("hint: run shell commands in another terminal; this is the SQL REPL.");
             continue;
         }
         if trimmed == "\\q" || trimmed.eq_ignore_ascii_case("quit") {

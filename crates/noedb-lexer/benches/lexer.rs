@@ -2,71 +2,63 @@
 //!
 //! Run with: `cargo bench -p noedb-lexer --bench lexer`.
 //!
-//! The 1M-token bench reuses a `Vec` buffer (`tokenize_into`) so Criterion measures
-//! lexing throughput, not allocator churn from 50_000 fresh `Vec`s per iteration.
+//! All benches reuse a `Vec` buffer via [`tokenize_into`] so Criterion measures
+//! lexing throughput, not allocator churn.
 
 #![allow(missing_docs, clippy::unwrap_used)]
 
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
-use noedb_lexer::{tokenize, tokenize_into};
+use noedb_lexer::tokenize_into;
 
-fn bench_tokenize_select_one(c: &mut Criterion) {
+fn bench_tokenize(c: &mut Criterion, name: &str, input: &'static str) {
     let mut group = c.benchmark_group("lexer");
-    let input = "SELECT 1";
     #[allow(clippy::cast_possible_truncation)]
     group.throughput(Throughput::Bytes(input.len() as u64));
-    group.bench_function("select_one", |b| {
-        b.iter(|| {
-            let _ = tokenize(black_box(input));
-        });
+    group.bench_function(name, |b| {
+        b.iter_batched(
+            || Vec::with_capacity(32),
+            |mut buf| {
+                tokenize_into(&mut buf, black_box(input)).unwrap();
+                black_box(buf.len());
+            },
+            BatchSize::SmallInput,
+        );
     });
     group.finish();
+}
+
+fn bench_tokenize_select_one(c: &mut Criterion) {
+    bench_tokenize(c, "select_one", "SELECT 1");
 }
 
 fn bench_tokenize_full_statement(c: &mut Criterion) {
-    let mut group = c.benchmark_group("lexer");
-    let input = "SELECT name, age FROM users WHERE active = true AND age > 18 ORDER BY name";
-    #[allow(clippy::cast_possible_truncation)]
-    group.throughput(Throughput::Bytes(input.len() as u64));
-    group.bench_function("select_full", |b| {
-        b.iter(|| {
-            let _ = tokenize(black_box(input));
-        });
-    });
-    group.finish();
+    bench_tokenize(
+        c,
+        "select_full",
+        "SELECT name, age FROM users WHERE active = true AND age > 18 ORDER BY name",
+    );
 }
 
 fn bench_tokenize_string_heavy(c: &mut Criterion) {
-    let mut group = c.benchmark_group("lexer");
-    let input = "INSERT INTO logs VALUES ('evt', 'user clicked ''buy''', 1.5)";
-    #[allow(clippy::cast_possible_truncation)]
-    group.throughput(Throughput::Bytes(input.len() as u64));
-    group.bench_function("insert_strings", |b| {
-        b.iter(|| {
-            let _ = tokenize(black_box(input));
-        });
-    });
-    group.finish();
+    bench_tokenize(
+        c,
+        "insert_strings",
+        "INSERT INTO logs VALUES ('evt', 'user clicked ''buy''', 1.5)",
+    );
 }
 
 fn bench_tokenize_where_clause(c: &mut Criterion) {
-    let mut group = c.benchmark_group("lexer");
-    let input = "SELECT * FROM users WHERE id = 42 AND active IS NOT NULL";
-    #[allow(clippy::cast_possible_truncation)]
-    group.throughput(Throughput::Bytes(input.len() as u64));
-    group.bench_function("select_where", |b| {
-        b.iter(|| {
-            let _ = tokenize(black_box(input));
-        });
-    });
-    group.finish();
+    bench_tokenize(
+        c,
+        "select_where",
+        "SELECT * FROM users WHERE id = 42 AND active IS NOT NULL",
+    );
 }
 
 fn bench_tokenize_one_million_tokens(c: &mut Criterion) {
     let mut group = c.benchmark_group("lexer");
-    // ~20 tokens per statement × 50_000 iterations ≈ 1M tokens
     let input = "SELECT a, b FROM t WHERE x = 1 AND y = 2";
     #[allow(clippy::cast_possible_truncation)]
     group.throughput(Throughput::Elements(1_000_000));
