@@ -20,5 +20,8 @@ noedb-lexer   = { workspace = true }
 noedb-ast     = { workspace = true }
 noedb-storage = { workspace = true }
 
+[dev-dependencies]
+noedb-parser = { workspace = true }
+
 [lints]
 workspace = true

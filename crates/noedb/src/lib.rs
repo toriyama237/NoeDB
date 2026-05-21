@@ -39,8 +39,8 @@
 //!
 //! # Status
 //!
-//! **Day 3 / 260** — Week 03 of Phase 1 (Lexer & Parser). See the full
-//! roadmap in the project [README] and in `docs/sprint-plan.md`.
+//! **Week 08 / Phase 1** — `SELECT`, DML, and DDL with Pratt `WHERE`,
+//! `Display` round-trip, and error recovery. See `docs/sprint-plan.md`.
 //!
 //! [README]: https://github.com/toriyama237/NoeDB
 
@@ -56,7 +56,11 @@ pub mod lexer {
 
 /// Abstract syntax tree (re-exported from [`noedb_ast`]).
 pub mod ast {
-    pub use noedb_ast::Statement;
+    pub use noedb_ast::{
+        BinaryOp, ColumnDef, ColumnRef, CreateIndexStmt, CreateTableStmt, DeleteStmt, Expr,
+        Ident, InsertStmt, Join, JoinKind, Literal, SelectItem, SelectStmt, SqlType, Statement,
+        TableRef, UnaryOp, UpdateStmt,
+    };
 }
 
 /// Parser (re-exported from [`noedb_parser`]).

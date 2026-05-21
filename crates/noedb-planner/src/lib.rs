@@ -51,13 +51,10 @@ pub enum PlanError {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use noedb_lexer::Span;
 
     #[test]
     fn plan_is_not_yet_implemented() {
-        let stmt = Statement::Placeholder {
-            span: Span::new(0, 0),
-        };
+        let stmt = noedb_parser::parse("SELECT 1").expect("parse");
         assert_eq!(plan(&stmt), Err(PlanError::NotYetImplemented));
     }
 }

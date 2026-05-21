@@ -2,6 +2,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use noedb::ast::Statement;
 use noedb::lexer::{Keyword, Token};
 
 #[test]
@@ -14,14 +15,12 @@ fn lexer_re_export_is_reachable() {
 
 #[test]
 fn parser_re_export_is_reachable() {
-    let err = noedb::parser::parse("SELECT 1").unwrap_err();
-    assert_eq!(err, noedb::parser::ParseError::NotYetImplemented);
+    let stmt = noedb::parser::parse("SELECT 1").expect("parse");
+    assert!(matches!(stmt, Statement::Select(_)));
 }
 
 #[test]
 fn ast_re_export_is_reachable() {
-    let s = noedb::ast::Statement::Placeholder {
-        span: noedb::lexer::Span::new(0, 0),
-    };
-    assert_eq!(s.span(), noedb::lexer::Span::new(0, 0));
+    let stmt = noedb::parser::parse("SELECT 1").expect("parse");
+    assert!(stmt.span().start < stmt.span().end || stmt.span().start == 0);
 }
