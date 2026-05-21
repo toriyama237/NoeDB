@@ -81,8 +81,8 @@ pub mod storage {
     pub use noedb_storage::{
         compact_level0_to_l1, replay_into_memtable, replay_wal_dir, BloomFilter, DurableStore,
         LogEntry, LsmConfig, LsmTree, MemTable, MemTableIter, MemTableRangeIter, OpType, SstReader,
-        SstWriter, StorageEngine, StorageError, Wal, WalSegmentManager, DEFAULT_MAX_ENTRIES,
-        DEFAULT_MAX_MEM_BYTES, L0_COMPACTION_TRIGGER, SST_MAGIC, SST_VERSION, WAL_MAGIC,
+        SstWriter, StorageEngine, StorageError, Wal, WalSegmentManager, WalSyncMode,
+        DEFAULT_MAX_ENTRIES, DEFAULT_MAX_MEM_BYTES, L0_COMPACTION_TRIGGER, SST_MAGIC, SST_VERSION, WAL_MAGIC,
         WAL_VERSION,
     };
 }

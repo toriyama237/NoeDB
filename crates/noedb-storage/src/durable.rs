@@ -104,7 +104,7 @@ impl DurableStore {
             }
             OpType::Delete => LogEntry::delete(key.to_vec()),
         };
-        self.wal.append(&entry)
+        self.wal.append_durable(&entry)
     }
 
     fn maybe_rotate(&mut self) {

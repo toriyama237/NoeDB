@@ -1,5 +1,7 @@
 //! Full LSM-tree engine orchestrating MemTable, WAL, SSTables (Week 16).
 
+use std::cell::RefCell;
+use std::collections::{HashMap, hash_map::Entry};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -8,7 +10,7 @@ use crate::engine::StorageEngine;
 use crate::error::StorageError;
 use crate::memtable::{MemTable, DEFAULT_MAX_MEM_BYTES};
 use crate::sstable::{SstReader, SstWriter};
-use crate::wal::{LogEntry, WalSegmentManager};
+use crate::wal::{LogEntry, WalSegmentManager, WalSyncMode};
 
 /// Configuration for [`LsmTree`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +19,8 @@ pub struct LsmConfig {
     pub max_mem_bytes: usize,
     /// Start L0→L1 compaction at this many L0 files.
     pub l0_compaction_trigger: usize,
+    /// When to `fsync` the WAL (`EveryAppend` = durable per put, `OnFlush` = group commit).
+    pub wal_sync: WalSyncMode,
 }
 
 impl Default for LsmConfig {
@@ -24,6 +28,19 @@ impl Default for LsmConfig {
         Self {
             max_mem_bytes: DEFAULT_MAX_MEM_BYTES,
             l0_compaction_trigger: L0_COMPACTION_TRIGGER,
+            wal_sync: WalSyncMode::EveryAppend,
+        }
+    }
+}
+
+impl LsmConfig {
+    /// High-throughput profile: group-commit WAL, large memtable, rare compaction.
+    #[must_use]
+    pub const fn throughput() -> Self {
+        Self {
+            max_mem_bytes: 16 * 1024 * 1024,
+            l0_compaction_trigger: 64,
+            wal_sync: WalSyncMode::OnFlush,
         }
     }
 }
@@ -37,6 +54,7 @@ pub struct LsmTree {
     level1: Vec<PathBuf>,
     config: LsmConfig,
     flushed_wal_segment: u64,
+    sst_cache: RefCell<HashMap<PathBuf, SstReader>>,
 }
 
 impl LsmTree {
@@ -51,7 +69,7 @@ impl LsmTree {
 
         let level0 = compaction::list_sst_level(&dir.join("sst"), 0)?;
         let level1 = compaction::list_sst_level(&dir.join("sst"), 1)?;
-        let wal = WalSegmentManager::open(&dir)?;
+        let wal = WalSegmentManager::open_with_sync(&dir, config.wal_sync)?;
 
         Ok(Self {
             dir,
@@ -61,6 +79,7 @@ impl LsmTree {
             level1,
             config,
             flushed_wal_segment: 0,
+            sst_cache: RefCell::new(HashMap::new()),
         })
     }
 
@@ -75,11 +94,28 @@ impl LsmTree {
         &self.dir
     }
 
+    /// Durably flush buffered WAL records (no-op when already synced per append).
+    pub fn sync(&mut self) -> Result<(), StorageError> {
+        self.wal.sync()
+    }
+
     /// Insert or overwrite a key (WAL → MemTable → maybe flush).
     pub fn put(&mut self, key: &[u8], value: &[u8]) -> Result<(), StorageError> {
         self.wal
             .append(&LogEntry::put(key.to_vec(), value.to_vec()))?;
         self.active.put(key, value)?;
+        self.maybe_flush_and_compact()?;
+        Ok(())
+    }
+
+    /// Bulk insert with a single WAL sync at the end (ideal for ingest workloads).
+    pub fn put_batch(&mut self, entries: &[(&[u8], &[u8])]) -> Result<(), StorageError> {
+        for (key, value) in entries {
+            self.wal
+                .append(&LogEntry::put(key.to_vec(), value.to_vec()))?;
+            self.active.put(key, value)?;
+        }
+        self.wal.sync()?;
         self.maybe_flush_and_compact()?;
         Ok(())
     }
@@ -98,12 +134,12 @@ impl LsmTree {
             return Ok(Some(v));
         }
         for path in self.level0.iter().rev() {
-            if let Some(v) = SstReader::open(path)?.get(key)? {
+            if let Some(v) = self.get_from_sst(path, key)? {
                 return Ok(Some(v));
             }
         }
         for path in self.level1.iter().rev() {
-            if let Some(v) = SstReader::open(path)?.get(key)? {
+            if let Some(v) = self.get_from_sst(path, key)? {
                 return Ok(Some(v));
             }
         }
@@ -114,6 +150,19 @@ impl LsmTree {
     #[must_use]
     pub fn l0_count(&self) -> usize {
         self.level0.len()
+    }
+
+    fn get_from_sst(&self, path: &Path, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
+        let mut cache = self.sst_cache.borrow_mut();
+        let reader = match cache.entry(path.to_path_buf()) {
+            Entry::Vacant(slot) => slot.insert(SstReader::open(path)?),
+            Entry::Occupied(slot) => slot.into_mut(),
+        };
+        reader.get(key)
+    }
+
+    fn clear_sst_cache(&self) {
+        self.sst_cache.borrow_mut().clear();
     }
 
     fn maybe_flush_and_compact(&mut self) -> Result<(), StorageError> {
@@ -136,6 +185,7 @@ impl LsmTree {
         let path = compaction::alloc_sst_path(&self.dir.join("sst"), 0)?;
         SstWriter::write_from_memtable(&path, &frozen)?;
         self.level0.push(path);
+        self.clear_sst_cache();
 
         let old_wal = self.wal.rotate()?;
         for seg in self.flushed_wal_segment..=old_wal {
@@ -150,6 +200,7 @@ impl LsmTree {
         let l1_path = compaction::compact_level0_to_l1(&self.dir, &l0)?;
         self.level0.clear();
         self.level1.push(l1_path);
+        self.clear_sst_cache();
         Ok(())
     }
 }
@@ -210,6 +261,7 @@ mod tests {
                 LsmConfig {
                     max_mem_bytes: 1_000_000,
                     l0_compaction_trigger: 99,
+                    wal_sync: WalSyncMode::EveryAppend,
                 },
             )
             .unwrap();
@@ -221,6 +273,18 @@ mod tests {
     }
 
     #[test]
+    fn on_flush_sync_makes_batch_durable() {
+        let dir = temp_dir("batch");
+        {
+            let mut tree = LsmTree::open(&dir, LsmConfig::throughput()).unwrap();
+            tree.put_batch(&[(b"k", b"v")]).unwrap();
+        }
+        let tree = LsmTree::open(&dir, LsmConfig::default()).unwrap();
+        assert_eq!(tree.get(b"k").unwrap(), Some(b"v".to_vec()));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn flush_creates_l0_sstable() {
         let dir = temp_dir("flush");
         let mut tree = LsmTree::open(
@@ -228,6 +292,7 @@ mod tests {
             LsmConfig {
                 max_mem_bytes: 48,
                 l0_compaction_trigger: 99,
+                wal_sync: WalSyncMode::EveryAppend,
             },
         )
         .unwrap();
@@ -253,6 +318,7 @@ mod tests {
             LsmConfig {
                 max_mem_bytes: 4096,
                 l0_compaction_trigger: 4,
+                wal_sync: WalSyncMode::OnFlush,
             },
         )
         .unwrap();
@@ -261,6 +327,7 @@ mod tests {
             let k = format!("row:{i:05}");
             tree.put(k.as_bytes(), b"data").unwrap();
         }
+        tree.sync().unwrap();
         for i in (0..10_000u32).step_by(10) {
             let k = format!("row:{i:05}");
             assert_eq!(tree.get(k.as_bytes()).unwrap(), Some(b"data".to_vec()));

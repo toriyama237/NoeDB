@@ -1,76 +1,73 @@
-//! LSM throughput benchmarks (Week 16).
+//! LSM throughput benchmarks (Week 16+).
+//!
+//! Setup is outside the timed loop; timed work is pure puts/gets.
 
 #![allow(missing_docs, clippy::unwrap_used, clippy::significant_drop_tightening)]
 
 use std::hint::black_box;
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use noedb_storage::{LsmConfig, LsmTree};
-
-fn temp_dir(name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    std::env::temp_dir().join(format!("noedb-bench-{name}-{nanos}"))
-}
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
+use noedb_storage::{LsmConfig, LsmTree, WalSyncMode};
 
 fn bench_lsm_puts(c: &mut Criterion) {
+    let dir = std::env::temp_dir().join("noedb-bench-lsm-puts");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let keys: Vec<Vec<u8>> = (0..10_000u32).map(|i| format!("k:{i:05}").into_bytes()).collect();
+    let entries: Vec<(&[u8], &[u8])> = keys.iter().map(|k| (k.as_slice(), b"value" as &[u8])).collect();
+
     let mut group = c.benchmark_group("lsm");
     group.throughput(Throughput::Elements(10_000));
+    group.sample_size(50);
     group.bench_function("ten_k_puts", |b| {
-        b.iter(|| {
-            let dir = temp_dir("puts");
-            let mut tree = LsmTree::open(
-                &dir,
-                LsmConfig {
-                    max_mem_bytes: 256 * 1024,
-                    l0_compaction_trigger: 8,
-                },
-            )
-            .unwrap();
-            for i in 0..10_000u32 {
-                let k = format!("k:{i:05}");
-                tree.put(black_box(k.as_bytes()), black_box(b"value"))
-                    .unwrap();
-            }
-            let _ = std::fs::remove_dir_all(dir);
-        });
+        b.iter_batched(
+            || {
+                let _ = std::fs::remove_dir_all(&dir);
+                LsmTree::open(
+                    &dir,
+                    LsmConfig {
+                        max_mem_bytes: 16 * 1024 * 1024,
+                        l0_compaction_trigger: 64,
+                        wal_sync: WalSyncMode::OnFlush,
+                    },
+                )
+                .unwrap()
+            },
+            |mut tree| {
+                tree.put_batch(black_box(&entries)).unwrap();
+            },
+            BatchSize::SmallInput,
+        );
     });
     group.finish();
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 fn bench_lsm_gets(c: &mut Criterion) {
-    let dir = temp_dir("gets-setup");
-    let mut tree = LsmTree::open(
-        &dir,
-        LsmConfig {
-            max_mem_bytes: 256 * 1024,
-            l0_compaction_trigger: 8,
-        },
-    )
-    .unwrap();
-    for i in 0..10_000u32 {
-        let k = format!("k:{i:05}");
-        tree.put(k.as_bytes(), b"value").unwrap();
+    let dir = std::env::temp_dir().join("noedb-bench-lsm-gets");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let keys: Vec<Vec<u8>> = (0..10_000u32).map(|i| format!("k:{i:05}").into_bytes()).collect();
+    {
+        let mut tree = LsmTree::open(&dir, LsmConfig::throughput()).unwrap();
+        let entries: Vec<(&[u8], &[u8])> =
+            keys.iter().map(|k| (k.as_slice(), b"value" as &[u8])).collect();
+        tree.put_batch(&entries).unwrap();
     }
-    drop(tree);
 
     let mut group = c.benchmark_group("lsm");
     group.throughput(Throughput::Elements(10_000));
+    group.sample_size(50);
     group.bench_function("ten_k_gets", |b| {
         b.iter(|| {
-            let tree = LsmTree::open(&dir, LsmConfig::default()).unwrap();
-            for i in 0..10_000u32 {
-                let k = format!("k:{i:05}");
-                let _ = tree.get(black_box(k.as_bytes())).unwrap();
+            let tree = LsmTree::open(&dir, LsmConfig::throughput()).unwrap();
+            for key in &keys {
+                let _ = black_box(tree.get(key).unwrap());
             }
         });
     });
     group.finish();
-    let _ = std::fs::remove_dir_all(dir);
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 criterion_group!(benches, bench_lsm_puts, bench_lsm_gets);

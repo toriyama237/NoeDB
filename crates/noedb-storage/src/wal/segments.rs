@@ -8,6 +8,16 @@ use super::{LogEntry, Wal};
 use crate::error::StorageError;
 use crate::memtable::MemTable;
 
+/// When the WAL calls `fsync`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WalSyncMode {
+    /// `fsync` after every append (safest, slowest).
+    #[default]
+    EveryAppend,
+    /// Buffer WAL writes; [`WalSegmentManager::sync`] / MemTable flush persists them.
+    OnFlush,
+}
+
 const CURRENT_FILE: &str = "CURRENT";
 const SEGMENT_EXT: &str = "wal";
 
@@ -16,11 +26,20 @@ pub struct WalSegmentManager {
     dir: PathBuf,
     active_id: u64,
     active: Wal,
+    sync_mode: WalSyncMode,
 }
 
 impl WalSegmentManager {
     /// Open or create WAL segments under `data_dir/wal/`.
     pub fn open(data_dir: impl AsRef<Path>) -> Result<Self, StorageError> {
+        Self::open_with_sync(data_dir, WalSyncMode::default())
+    }
+
+    /// Open with an explicit [`WalSyncMode`].
+    pub fn open_with_sync(
+        data_dir: impl AsRef<Path>,
+        sync_mode: WalSyncMode,
+    ) -> Result<Self, StorageError> {
         let dir = data_dir.as_ref().join("wal");
         fs::create_dir_all(&dir)?;
 
@@ -32,6 +51,7 @@ impl WalSegmentManager {
             dir,
             active_id,
             active,
+            sync_mode,
         })
     }
 
@@ -41,13 +61,20 @@ impl WalSegmentManager {
         self.active_id
     }
 
-    /// Append to the active segment (synced).
+    /// Append to the active segment (sync policy from [`WalSyncMode`]).
     pub fn append(&mut self, entry: &LogEntry) -> Result<(), StorageError> {
-        self.active.append(entry)
+        let sync = self.sync_mode == WalSyncMode::EveryAppend;
+        self.active.append(entry, sync)
+    }
+
+    /// Force `fsync` on the active segment (required after batched writes in [`WalSyncMode::OnFlush`]).
+    pub fn sync(&mut self) -> Result<(), StorageError> {
+        self.active.sync()
     }
 
     /// Rotate to a fresh segment after MemTable flush (Week 11).
     pub fn rotate(&mut self) -> Result<u64, StorageError> {
+        self.sync()?;
         let old_id = self.active_id;
         self.active_id += 1;
         let path = Self::segment_path(&self.dir, self.active_id);

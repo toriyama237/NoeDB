@@ -41,6 +41,6 @@ pub use crate::memtable::{
 };
 pub use crate::sstable::{SstReader, SstWriter, SST_MAGIC, SST_VERSION};
 pub use crate::wal::{
-    replay_into_memtable, replay_wal_dir, LogEntry, OpType, Wal, WalSegmentManager, WAL_MAGIC,
-    WAL_VERSION,
+    replay_into_memtable, replay_wal_dir, LogEntry, OpType, Wal, WalSegmentManager, WalSyncMode,
+    WAL_MAGIC, WAL_VERSION,
 };

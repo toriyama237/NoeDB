@@ -51,11 +51,19 @@ impl Wal {
         &self.path
     }
 
-    /// Append a record and [`sync_all`](Self::sync) before returning.
-    pub fn append(&mut self, entry: &LogEntry) -> Result<(), StorageError> {
+    /// Append a record. When `sync` is false, call [`Self::sync`] before crash-safe durability.
+    pub fn append(&mut self, entry: &LogEntry, sync: bool) -> Result<(), StorageError> {
         let bytes = entry.encode()?;
         self.file.write_all(&bytes).map_err(StorageError::from)?;
-        self.sync()
+        if sync {
+            self.sync()?;
+        }
+        Ok(())
+    }
+
+    /// Append and [`sync_all`](Self::sync) before returning (legacy durable path).
+    pub fn append_durable(&mut self, entry: &LogEntry) -> Result<(), StorageError> {
+        self.append(entry, true)
     }
 
     /// Durably flush buffered WAL data to disk.
@@ -104,7 +112,7 @@ impl Wal {
     }
 }
 
-pub use segments::{replay_wal_dir, WalSegmentManager};
+pub use segments::{replay_wal_dir, WalSegmentManager, WalSyncMode};
 
 /// Replay a single WAL file into `table`.
 pub fn replay_into_memtable(
@@ -150,7 +158,7 @@ mod tests {
         {
             let mut wal = Wal::open(&path).unwrap();
             for e in &entries {
-                wal.append(e).unwrap();
+                wal.append_durable(e).unwrap();
             }
         }
 

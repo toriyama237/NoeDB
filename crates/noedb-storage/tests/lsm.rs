@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use noedb_storage::{LsmConfig, LsmTree, WalSegmentManager};
+use noedb_storage::{LsmConfig, LsmTree, WalSegmentManager, WalSyncMode};
 
 fn temp_dir(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -24,6 +24,7 @@ fn wal_segment_replay_after_simulated_crash() {
             LsmConfig {
                 max_mem_bytes: 512 * 1024,
                 l0_compaction_trigger: 99,
+                wal_sync: WalSyncMode::EveryAppend,
             },
         )
         .unwrap();
@@ -45,6 +46,7 @@ fn ten_k_durability_test() {
         LsmConfig {
             max_mem_bytes: 2048,
             l0_compaction_trigger: 4,
+            wal_sync: WalSyncMode::OnFlush,
         },
     )
     .unwrap();
@@ -53,6 +55,7 @@ fn ten_k_durability_test() {
         let k = format!("row:{i:05}");
         tree.put(k.as_bytes(), b"payload").unwrap();
     }
+    tree.sync().unwrap();
 
     drop(tree);
     let tree = LsmTree::open(&dir, LsmConfig::default()).unwrap();
