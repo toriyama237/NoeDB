@@ -23,6 +23,11 @@ pub enum StorageError {
     },
     /// A WAL record failed its CRC-32 check.
     ChecksumMismatch,
+    /// SSTable bytes on disk could not be parsed.
+    CorruptSstable {
+        /// Human-readable reason.
+        message: &'static str,
+    },
 }
 
 impl StorageError {
@@ -43,6 +48,12 @@ impl StorageError {
     pub const fn checksum_mismatch() -> Self {
         Self::ChecksumMismatch
     }
+
+    /// Construct a [`CorruptSstable`] error.
+    #[must_use]
+    pub const fn corrupt_sstable(message: &'static str) -> Self {
+        Self::CorruptSstable { message }
+    }
 }
 
 impl From<std::io::Error> for StorageError {
@@ -60,6 +71,7 @@ impl fmt::Display for StorageError {
             Self::Io { message } => write!(f, "storage I/O error: {message}"),
             Self::CorruptWal { message } => write!(f, "corrupt WAL: {message}"),
             Self::ChecksumMismatch => write!(f, "WAL checksum mismatch"),
+            Self::CorruptSstable { message } => write!(f, "corrupt SSTable: {message}"),
         }
     }
 }
