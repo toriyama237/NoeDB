@@ -1,0 +1,30 @@
+[package]
+name = "noedb-grpc"
+description = "gRPC SQL API for NoeDB (tonic + proto3, mTLS-ready)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+noedb-raft = { workspace = true }
+noedb-tls = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }
+protoc-bin-vendored = "3"
+
+[dev-dependencies]
+noedb-tls = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
+
+[lints]
+workspace = true

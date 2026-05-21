@@ -42,6 +42,13 @@ noedb-raft    = { path = "crates/noedb-raft",     version = "=1.0.1" }
 noedb-engine  = { path = "crates/noedb-engine",   version = "=1.0.1" }
 noedb-protocol = { path = "crates/noedb-protocol", version = "=1.0.1" }
 noedb-tls     = { path = "crates/noedb-tls",      version = "=1.0.1" }
+noedb-grpc    = { path = "crates/noedb-grpc",     version = "=1.0.1" }
+
+tonic = { version = "0.13", default-features = false, features = ["transport", "codegen", "tls-ring", "prost", "router", "server"] }
+prost = "0.13"
+tonic-build = "0.13"
+hex = "0.4"
+protoc-bin-vendored = "3"
 
 # Phase 4 Raft + networking
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }

@@ -2,6 +2,7 @@
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
+mod grpc;
 mod tls;
 
 use std::io::{self, Write};
@@ -138,6 +139,18 @@ fn use_mtls(args: &[String]) -> bool {
     use_tls(args) && !args.iter().any(|a| a == "--no-mtls")
 }
 
+fn legacy_tcp(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--legacy-tcp")
+}
+
+fn grpc_addr(args: &[String]) -> String {
+    args.iter()
+        .position(|a| a == "--grpc-listen")
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .unwrap_or_else(|| noedb_grpc::DEFAULT_GRPC_ADDR.to_string())
+}
+
 fn node_id_arg(args: &[String]) -> u64 {
     args.iter()
         .position(|a| a == "--node-id")
@@ -149,15 +162,29 @@ fn node_id_arg(args: &[String]) -> u64 {
 fn run_server(args: &[String]) -> Result<(), String> {
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     rt.block_on(async {
-        let addr = server_addr(args);
         let auth = ClusterAuth::from_passphrase("noedb-dev");
         let dir = data_dir(args);
         let engine = Arc::new(Mutex::new(
             LocalEngine::open(&dir).map_err(|e| e.to_string())?,
         ));
+
+        if !legacy_tcp(args) && use_tls(args) {
+            let node_id = node_id_arg(args);
+            let certs = tls::load_or_create_dev_certs(&dir, node_id)?;
+            let addr = grpc_addr(args);
+            let mtls = use_mtls(args);
+            println!("  CA: {}", tls::ca_path(&dir).display());
+            return grpc::run_grpc_server(&addr, auth, engine, mtls, &certs).await;
+        }
+
+        let addr = server_addr(args);
         let listener = TcpListener::bind(&addr)
             .await
             .map_err(|e| format!("bind {addr}: {e}"))?;
+
+        if legacy_tcp(args) {
+            println!("  gRPC (default): omit --legacy-tcp, listen {}", grpc_addr(args));
+        }
 
         if use_mtls(args) {
             let node_id = node_id_arg(args);
@@ -221,9 +248,21 @@ fn run_server(args: &[String]) -> Result<(), String> {
 fn run_ping(args: &[String]) -> Result<(), String> {
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     rt.block_on(async {
-        let addr = server_addr(args);
         let dir = data_dir(args);
         let auth = ClusterAuth::from_passphrase("noedb-dev");
+
+        if !legacy_tcp(args) && use_tls(args) {
+            let node_id = node_id_arg(args);
+            let certs = tls::load_or_create_dev_certs(&dir, node_id)?;
+            let addr = grpc_addr(args);
+            let mtls = use_mtls(args);
+            grpc::grpc_ping(&addr, &auth, mtls, &certs).await?;
+            let mode = if mtls { "gRPC mTLS 1.3" } else { "gRPC TLS 1.3" };
+            println!("pong ({mode})");
+            return Ok(());
+        }
+
+        let addr = server_addr(args);
 
         if use_mtls(args) {
             let certs = tls::load_or_create_dev_certs(&dir, node_id_arg(args))?;
@@ -379,8 +418,9 @@ fn print_help() {
     println!("\\help       this message");
     println!("\\explain    show plan for SELECT (one statement)");
     println!("SELECT ...;  one query per line, or use ';' between statements");
-    println!("Server: cargo run -p noedb-cli -- --server [--listen HOST:PORT]");
-    println!("Ping:   cargo run -p noedb-cli -- --ping   (TLS client, needs running server)");
+    println!("Server: cargo run -p noedb-cli -- --server  (gRPC+mTLS on :5434 by default)");
+    println!("        cargo run -p noedb-cli -- --server --legacy-tcp  (bincode on :5433)");
+    println!("Ping:   cargo run -p noedb-cli -- --ping");
 }
 
 fn data_dir(args: &[String]) -> PathBuf {

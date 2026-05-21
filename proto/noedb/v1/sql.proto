@@ -1,0 +1,42 @@
+// NoeDB SQL API v1 — unary gRPC over HTTP/2 + TLS/mTLS (Phase 1 Week 3).
+syntax = "proto3";
+
+package noedb.v1;
+
+// Cluster-authenticated SQL service (auth via `x-noedb-auth` metadata).
+service Sql {
+  rpc Execute(SqlRequest) returns (SqlResponse);
+  rpc Explain(SqlRequest) returns (SqlResponse);
+  rpc Ping(PingRequest) returns (SqlResponse);
+}
+
+message SqlRequest {
+  string query = 1;
+}
+
+message PingRequest {}
+
+message SqlResponse {
+  oneof body {
+    ResultSet result = 1;
+    string explain = 2;
+    Empty pong = 3;
+    SqlError error = 4;
+  }
+}
+
+message ResultSet {
+  repeated string columns = 1;
+  repeated Row rows = 2;
+}
+
+message Row {
+  repeated string cells = 1;
+}
+
+message SqlError {
+  uint32 code = 1;
+  string message = 2;
+}
+
+message Empty {}
