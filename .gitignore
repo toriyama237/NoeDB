@@ -30,3 +30,4 @@ tarpaulin-report.html
 # Local secrets / playgrounds
 /.cargo/config.toml.local
 /playground/
+perf.data
