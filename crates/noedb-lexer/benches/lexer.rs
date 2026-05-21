@@ -1,13 +1,16 @@
 //! Lexer micro-benchmarks.
 //!
 //! Run with: `cargo bench -p noedb-lexer --bench lexer`.
+//!
+//! The 1M-token bench reuses a `Vec` buffer (`tokenize_into`) so Criterion measures
+//! lexing throughput, not allocator churn from 50_000 fresh `Vec`s per iteration.
 
-#![allow(missing_docs)]
+#![allow(missing_docs, clippy::unwrap_used)]
 
 use std::hint::black_box;
 
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use noedb_lexer::tokenize;
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
+use noedb_lexer::{tokenize, tokenize_into};
 
 fn bench_tokenize_select_one(c: &mut Criterion) {
     let mut group = c.benchmark_group("lexer");
@@ -69,11 +72,18 @@ fn bench_tokenize_one_million_tokens(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1_000_000));
     group.sample_size(50);
     group.bench_function("one_million_tokens", |b| {
-        b.iter(|| {
-            for _ in 0..50_000 {
-                let _ = tokenize(black_box(input));
-            }
-        });
+        b.iter_batched(
+            || {
+                let buf = Vec::with_capacity(32);
+                (buf, input)
+            },
+            |(mut buf, sql)| {
+                for _ in 0..50_000 {
+                    tokenize_into(&mut buf, black_box(sql)).unwrap();
+                }
+            },
+            BatchSize::LargeInput,
+        );
     });
     group.finish();
 }

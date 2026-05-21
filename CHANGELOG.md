@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Lexer 1M-token benchmark regression (~30 ms → ~16 ms): bench now reuses a buffer via
+  [`tokenize_into`], whitespace skip tuned for single-space SQL, single-digit integer fast path,
+  and `[profile.bench] debug = false`.
+
+### Added
+- [`tokenize_into`] for allocation-free hot loops (parser can adopt later).
+
+[`tokenize_into`]: crates/noedb-lexer/src/lib.rs
+
 ## [0.3.0] - 2026-05-20
 
 ### Added

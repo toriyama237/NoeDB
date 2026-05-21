@@ -67,6 +67,17 @@ pub use crate::lexer::Lexer;
 pub use crate::span::{LineColumn, SourceMap, Span};
 pub use crate::token::{Keyword, Operator, Punctuation, SpannedToken, Token};
 
+/// Tokenize `src` into `buf` (reused across calls; cleared first).
+///
+/// Prefer this in hot loops to avoid repeated `Vec` allocations.
+///
+/// # Errors
+///
+/// Same as [`tokenize`].
+pub fn tokenize_into(buf: &mut Vec<SpannedToken>, src: &str) -> Result<(), LexError> {
+    Lexer::tokenize_into(buf, src)
+}
+
 /// Tokenize a SQL source string.
 ///
 /// Returns a vector of [`SpannedToken`]s ending with [`Token::Eof`].
@@ -76,7 +87,9 @@ pub use crate::token::{Keyword, Operator, Punctuation, SpannedToken, Token};
 ///
 /// Returns a [`LexError`] with a byte-precise [`Span`] on failure.
 pub fn tokenize(src: &str) -> Result<Vec<SpannedToken>, LexError> {
-    Lexer::tokenize(src)
+    let mut out = Vec::new();
+    tokenize_into(&mut out, src)?;
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -87,6 +100,16 @@ mod tests {
 
     fn kinds(src: &str) -> Vec<Token> {
         tokenize(src).unwrap().into_iter().map(|t| t.kind).collect()
+    }
+
+    #[test]
+    fn tokenize_into_reuses_buffer() {
+        let mut buf = Vec::new();
+        tokenize_into(&mut buf, "SELECT 1").unwrap();
+        assert_eq!(buf.len(), 3);
+        tokenize_into(&mut buf, "SELECT 2").unwrap();
+        assert_eq!(buf.len(), 3);
+        assert_eq!(buf[1].kind, Token::Integer(2));
     }
 
     #[test]

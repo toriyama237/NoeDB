@@ -49,7 +49,7 @@
 /// Lexer (re-exported from [`noedb_lexer`]).
 pub mod lexer {
     pub use noedb_lexer::{
-        tokenize, Keyword, LexError, LexErrorKind, Lexer, LineColumn, Operator, Punctuation,
+        tokenize, tokenize_into, Keyword, LexError, LexErrorKind, Lexer, LineColumn, Operator, Punctuation,
         SourceMap, Span, SpannedToken, Token, KEYWORD_COUNT,
     };
 }

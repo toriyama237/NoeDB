@@ -32,23 +32,33 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    /// Tokenize all of `src` into a vector ending with [`Token::Eof`].
-    ///
-    /// Convenience wrapper around [`Lexer::new`] + iteration.
-    pub fn tokenize(src: &'src str) -> Result<Vec<SpannedToken>, LexError> {
+    /// Tokenize all of `src` into `buf` (cleared first), appending [`Token::Eof`].
+    pub fn tokenize_into(buf: &mut Vec<SpannedToken>, src: &'src str) -> Result<(), LexError> {
+        buf.clear();
         let cap = (src.len() / 3).max(8);
-        let mut lexer = Self::new(src);
-        let mut out = Vec::with_capacity(cap);
-
-        for tok in &mut lexer {
-            out.push(tok?);
+        if buf.capacity() < cap {
+            buf.reserve(cap.saturating_sub(buf.capacity()));
         }
 
-        out.push(SpannedToken {
+        let mut cursor = Cursor::new(src);
+        while let Some(tok) = cursor.next_token()? {
+            buf.push(tok);
+        }
+
+        buf.push(SpannedToken {
             kind: Token::Eof,
             span: crate::span::Span::empty_at(src.len()),
         });
 
+        Ok(())
+    }
+
+    /// Tokenize all of `src` into a vector ending with [`Token::Eof`].
+    ///
+    /// Convenience wrapper around [`Lexer::new`] + iteration.
+    pub fn tokenize(src: &'src str) -> Result<Vec<SpannedToken>, LexError> {
+        let mut out = Vec::new();
+        Self::tokenize_into(&mut out, src)?;
         Ok(out)
     }
 }

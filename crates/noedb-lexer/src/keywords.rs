@@ -115,7 +115,7 @@ pub(crate) fn lookup(word: &str) -> Option<Keyword> {
         return None;
     }
     let bytes = word.as_bytes();
-    if bytes.iter().all(|&b| b.is_ascii_uppercase() || b == b'_') {
+    if crate::ascii_lut::is_upper_keyword_body(bytes) {
         lookup_in_table_upper(bytes, table)
     } else {
         lookup_in_table_ignore_case(word, table)
@@ -124,6 +124,14 @@ pub(crate) fn lookup(word: &str) -> Option<Keyword> {
 
 #[inline]
 fn lookup_in_table_upper(bytes: &[u8], table: &[(&str, Keyword)]) -> Option<Keyword> {
+    if table.len() <= 8 {
+        for &(name, kw) in table {
+            if bytes == name.as_bytes() {
+                return Some(kw);
+            }
+        }
+        return None;
+    }
     let mut lo = 0usize;
     let mut hi = table.len();
     while lo < hi {
@@ -140,6 +148,14 @@ fn lookup_in_table_upper(bytes: &[u8], table: &[(&str, Keyword)]) -> Option<Keyw
 
 #[inline]
 fn lookup_in_table_ignore_case(word: &str, table: &[(&str, Keyword)]) -> Option<Keyword> {
+    if table.len() <= 8 {
+        for &(name, kw) in table {
+            if cmp_ignore_ascii_case(word, name) == Ordering::Equal {
+                return Some(kw);
+            }
+        }
+        return None;
+    }
     let mut lo = 0usize;
     let mut hi = table.len();
     while lo < hi {
@@ -154,24 +170,20 @@ fn lookup_in_table_ignore_case(word: &str, table: &[(&str, Keyword)]) -> Option<
 }
 
 #[inline]
+#[allow(clippy::many_single_char_names)]
 fn cmp_ignore_ascii_case(a: &str, b: &str) -> Ordering {
-    let mut ai = a.bytes();
-    let mut bi = b.bytes();
-    loop {
-        match (ai.next(), bi.next()) {
-            (Some(x), Some(y)) => {
-                let x = x.to_ascii_uppercase();
-                let y = y.to_ascii_uppercase();
-                match x.cmp(&y) {
-                    Ordering::Equal => {}
-                    other => return other,
-                }
-            }
-            (None, None) => return Ordering::Equal,
-            (None, Some(_)) => return Ordering::Less,
-            (Some(_), None) => return Ordering::Greater,
+    let ab = a.as_bytes();
+    let bb = b.as_bytes();
+    let n = ab.len().min(bb.len());
+    for i in 0..n {
+        let x = ab[i].to_ascii_uppercase();
+        let y = bb[i].to_ascii_uppercase();
+        match x.cmp(&y) {
+            Ordering::Equal => {}
+            other => return other,
         }
     }
+    ab.len().cmp(&bb.len())
 }
 
 #[cfg(test)]

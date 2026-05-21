@@ -28,6 +28,7 @@ impl<'src> Cursor<'src> {
     /// Produce the next token, if any.
     ///
     /// Returns `Ok(None)` at end of input. The caller appends [`Token::Eof`].
+    #[inline]
     pub(crate) fn next_token(&mut self) -> Result<Option<SpannedToken>, LexError> {
         self.skip_trivia()?;
 
@@ -44,7 +45,7 @@ impl<'src> Cursor<'src> {
         }
 
         if b.is_ascii_digit() {
-            return self.lex_number().map(Some);
+            return self.lex_number_fast(b).map(Some);
         }
 
         if b == b'\'' {
@@ -108,6 +109,7 @@ impl<'src> Cursor<'src> {
     }
 
     /// Skip whitespace and SQL comments (`--` line, `/* */` block).
+    #[inline]
     fn skip_trivia(&mut self) -> Result<(), LexError> {
         loop {
             self.pos = crate::fast::skip_whitespace(self.bytes, self.pos);
@@ -148,6 +150,7 @@ impl<'src> Cursor<'src> {
         ))
     }
 
+    #[inline]
     fn lex_identifier_or_keyword(&mut self) -> SpannedToken {
         let start = self.pos;
         self.bump();
@@ -220,6 +223,24 @@ impl<'src> Cursor<'src> {
         };
 
         Ok(SpannedToken::new(kind, Self::mk_span(start, self.pos)))
+    }
+
+    /// Fast path for integers (single-digit literals avoid `lex_number` setup).
+    #[inline]
+    fn lex_number_fast(&mut self, first: u8) -> Result<SpannedToken, LexError> {
+        let start = self.pos;
+        if !self
+            .peek_byte_at(1)
+            .is_some_and(|n| n.is_ascii_digit() || n == b'.' || matches!(n, b'e' | b'E'))
+        {
+            self.bump();
+            let digit = i64::from(first - b'0');
+            return Ok(SpannedToken::new(
+                Token::Integer(digit),
+                Self::mk_span(start, self.pos),
+            ));
+        }
+        self.lex_number()
     }
 
     fn lex_number(&mut self) -> Result<SpannedToken, LexError> {
