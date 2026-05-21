@@ -57,9 +57,9 @@ pub mod lexer {
 /// Abstract syntax tree (re-exported from [`noedb_ast`]).
 pub mod ast {
     pub use noedb_ast::{
-        BinaryOp, ColumnDef, ColumnRef, CreateIndexStmt, CreateTableStmt, DeleteStmt, Expr,
-        Ident, InsertStmt, Join, JoinKind, Literal, SelectItem, SelectStmt, SqlType, Statement,
-        TableRef, UnaryOp, UpdateStmt,
+        BinaryOp, ColumnDef, ColumnRef, CreateIndexStmt, CreateTableStmt, DeleteStmt, Expr, Ident,
+        InsertStmt, Join, JoinKind, Literal, SelectItem, SelectStmt, SqlType, Statement, TableRef,
+        UnaryOp, UpdateStmt,
     };
 }
 

@@ -9,7 +9,7 @@
 //! # Status
 //!
 //! **Week 08 / Phase 1** — `SELECT`, DML, and DDL AST nodes with
-//! [`Display`] round-trip support. See `docs/sprint-plan.md`.
+//! [`Display`](core::fmt::Display) round-trip support. See `docs/sprint-plan.md`.
 //!
 //! [`Span`]: noedb_lexer::Span
 
