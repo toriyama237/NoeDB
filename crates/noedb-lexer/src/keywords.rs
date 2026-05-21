@@ -52,6 +52,7 @@ static KEYWORD_TABLE: &[(&str, Keyword)] = &[
     ("GROUP", Keyword::Group),
     ("HAVING", Keyword::Having),
     ("IN", Keyword::In),
+    ("INDEX", Keyword::Index),
     ("INNER", Keyword::Inner),
     ("INSERT", Keyword::Insert),
     ("INTERSECT", Keyword::Intersect),

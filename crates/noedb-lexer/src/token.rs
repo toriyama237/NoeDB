@@ -55,6 +55,7 @@ pub enum Keyword {
     Group,
     Having,
     In,
+    Index,
     Inner,
     Insert,
     Intersect,
