@@ -54,44 +54,49 @@ PDF / DOCX détaillé : [`NoeDB_v2_Sprint_Plan.docx`](NoeDB_v2_Sprint_Plan.docx)
 - **`SECURITY.md`** : TLS/mTLS/gRPC/RLS/prepared/audit + CVE policy
 - **`cargo audit`** : à lancer avant chaque release
 
-## Phase 2 — MVCC & Transactions (S7–S14) 🟡
+## Phase 2 — MVCC & Transactions (S7–S14) ✅
 
 | Semaine | Statut | Livrable |
 |---------|--------|----------|
-| 07 | ✅ | `Version`, `TimestampOracle`, `MvccMemTable`, clés internes LSM, `get_at_ts` |
+| 07 | ✅ | `Version`, `TimestampOracle`, `MvccMemTable`, LSM `put_version` |
 | 08 | ✅ | `TxnManager`, `BEGIN`/`COMMIT`/`ROLLBACK`, read-your-writes |
-| 09 | ✅ | `ReadView`, `SnapshotStore`, tests 100 txns concurrentes |
-| 10 | 🟡 | `SsiChecker` + `record_read` (détection overlap au commit) |
-| 11 | 🟡 | `DeadlockGuard` wait-for + timeout 5s |
-| 12 | 🟡 | `SchemaCatalog` (version_ts) — DDL transactionnel SQL à suivre |
-| 13 | 🟡 | `gc_versions` memtable + `gc_mvcc_active` LSM |
-| 14 | 🟡 | Bench `oltp_mvcc` — tag `v1.1.0-mvcc` à publier |
+| 09 | ✅ | `ReadView`, `SnapshotStore`, 100 txns concurrentes |
+| 10 | 🟡 | `SsiChecker` + `record_read` |
+| 11 | 🟡 | `DeadlockGuard` |
+| 12 | 🟡 | `SchemaCatalog` |
+| 13 | 🟡 | GC memtable + LSM active |
+| 14 | 🟡 | Bench `oltp_mvcc`, tag `v1.1.0-mvcc` |
 
-### Semaine 7 — ✅
+Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 
-- Module **`noedb-storage::mvcc`** : multi-version memtable, oracle, codec disque
-- **`LsmTree::put_version`** : WAL + SST avec clés internes (durable)
-- Tests : `mvcc_smoke`, `lsm_mvcc_durable`
+## Phase 3 — Performance extrême (S15–S24) 🟡
 
-### Semaine 8–9 — ✅
+| Semaine | Statut | Livrable |
+|---------|--------|----------|
+| 15 | ⬜ | io_uring WAL / SST |
+| 16 | ⬜ | mmap zero-copy reads |
+| 17 | ⬜ | SIMD predicates |
+| 18 | ✅ | Rayon parallel `SeqScan` (`noedb-planner::parallel`) |
+| 19 | ⬜ | LZ4 + dict + RLE SST blocks |
+| 20 | ⬜ | XOR filter (remplace Bloom) |
+| 21 | ⬜ | Query cache LRU |
+| 22 | 🟡 | Group commit (`LsmConfig::throughput`, `WalSyncMode::OnFlush`) |
+| 23 | ⬜ | Adaptive optimizer |
+| 24 | ⬜ | YCSB suite + tag `v1.2.0-perf` |
 
-- Crate **`noedb-txn`** : coordinator, write/read sets
-- SQL : `BEGIN` / `COMMIT` / `ROLLBACK`
-- **`SnapshotStore`** : SI + overlay txn pour `SELECT`
-- Tests : `phase2_mvcc`, `concurrent` (100 sessions)
+### Semaine 18 — ✅
 
-### Semaines 10–14 — en cours
+- **`parallel::load_table_rows`** : grouping Rayon au-delà de 512 cellules
+- Tests : résultats identiques au scan séquentiel
 
-- SSI / deadlock : structures actives, wiring partiel
-- Schema : `SchemaCatalog` in-memory
-- GC : memtable + active LSM
-- Bench : `cargo bench -p noedb-engine --bench oltp_mvcc`
+### Semaine 22 — 🟡 (existant)
+
+- **`LsmConfig::throughput()`** : memtable 16 MiB, WAL `OnFlush`, compaction rare
 
 ## Phases suivantes
 
 | Phase | Semaines | Thème |
 |-------|----------|-------|
-| 3 | 15–24 | Performance extrême |
 | 4 | 25–36 | Distributed elite |
 | 5 | 37–44 | Query engine v2 |
 | 6 | 45–48 | Observabilité & fiabilité |

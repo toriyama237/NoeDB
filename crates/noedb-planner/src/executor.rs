@@ -501,41 +501,12 @@ fn compare_rows(a: &RowMap, b: &RowMap, keys: &[(String, bool)]) -> std::cmp::Or
 }
 
 /// Row keys: `table\0row_id\0column` → cell value; collapsed to one row per `row_id`.
-#[allow(clippy::option_if_let_else)]
 fn load_table_rows<S: StorageEngine<Error = StorageError>>(
     store: &S,
     table: &str,
     columns: Option<&[String]>,
 ) -> Vec<RowMap> {
-    let mut prefix = table.as_bytes().to_vec();
-    prefix.push(0);
-
-    let mut grouped: BTreeMap<Vec<u8>, RowMap> = BTreeMap::new();
-    for (key, val) in StorageEngine::iter(store) {
-        if !key.starts_with(&prefix) {
-            continue;
-        }
-        let rest = &key[prefix.len()..];
-        if let Some(pos) = rest.iter().position(|&b| b == 0) {
-            let (row_id, col) = rest.split_at(pos);
-            let col = &col[1..];
-            let col_name = String::from_utf8_lossy(col).into_owned();
-            if columns.is_some_and(|cols| !cols.contains(&col_name)) {
-                continue;
-            }
-            grouped
-                .entry(row_id.to_vec())
-                .or_default()
-                .push((col_name, Value::Bytes(val)));
-        } else {
-            grouped
-                .entry(rest.to_vec())
-                .or_default()
-                .push(("value".into(), Value::Bytes(val)));
-        }
-    }
-
-    grouped.into_values().collect()
+    crate::parallel::load_table_rows(store, table, columns)
 }
 
 fn load_row_by_id<S: StorageEngine<Error = StorageError>>(

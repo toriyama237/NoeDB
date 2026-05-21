@@ -16,6 +16,7 @@ mod join;
 mod logical;
 mod lower;
 mod optimize;
+mod parallel;
 mod physical;
 mod value;
 

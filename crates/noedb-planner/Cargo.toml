@@ -19,6 +19,7 @@ path = "src/lib.rs"
 noedb-lexer   = { workspace = true }
 noedb-ast     = { workspace = true }
 noedb-storage = { workspace = true }
+rayon         = { workspace = true }
 
 [dev-dependencies]
 noedb-parser = { workspace = true }
