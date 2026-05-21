@@ -45,7 +45,7 @@ crates/
 ├── noedb-ast/        # AST node types             (Phase 1 ✅)
 ├── noedb-parser/     # recursive-descent parser   (Phase 1 ✅)
 ├── noedb-planner/    # logical + physical plans   (stub, grows in W17)
-├── noedb-storage/    # LSM-tree engine            (stub, grows in W09)
+├── noedb-storage/    # LSM-tree engine            (MemTable ✅ W09)
 └── noedb-raft/       # consensus                  (stub, grows in W29)
 ```
 
@@ -131,7 +131,7 @@ for lexer details.
 | Phase | Weeks   | Theme                | Milestone tag          | Status        |
 |-------|---------|----------------------|------------------------|---------------|
 | 1     | 01 – 08 | Lexer & Parser       | `v0.1.0-lexer-parser`  | ✅ shipped     |
-| 2     | 09 – 16 | Storage Engine (LSM) | `v0.2.0-storage`       | ⏳ planned     |
+| 2     | 09 – 16 | Storage Engine (LSM) | `v0.2.0-storage`       | 🟡 in progress |
 | 3     | 17 – 28 | Query Planner        | `v0.3.0-query-engine`  | ⏳ planned     |
 | 4     | 29 – 44 | Raft Consensus       | `v0.4.0-raft`          | ⏳ planned     |
 | 5     | 45 – 52 | Integration & launch | `v1.0.0`               | ⏳ planned     |

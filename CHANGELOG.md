@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Week 09 storage:** `StorageEngine` trait, `MemTable` backed by `BTreeMap`,
+  `get`/`put`/`delete`, sorted iterator, range scan, 1 000-entry integration test.
+
 ## [0.1.0] - 2026-05-20
 
 ### Added
