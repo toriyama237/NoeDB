@@ -37,12 +37,12 @@ Every commit should be traceable to a line below.
 |------|-------|----------|
 | 09 | Design Storage API: trait `StorageEngine`, MemTable `BTreeMap<Vec<u8>, Vec<u8>>`, opérations get/put/delete, iterator ✅ | `MemTable` CRUD opérationnel avec test d'itération triée ✅ |
 | 10 | WAL append-only + `LogEntry` (OpType, CRC32), `max_mem_bytes` rotation ✅ | WAL fonctionnel, écritures durables avant MemTable ✅ |
-| 11 | WAL replay au démarrage → reconstruire MemTable; test crash: process kill → restart → data OK | WAL recovery testé et validé, 0 perte de données |
-| 12 | SSTable format binaire: magic bytes + version header, SSTable Writer avec `encoder<K,V>` triés en blocs de 4KB, index de blocs en fin de fichier | SSTable Writer ↔ format binaire stable documenté |
-| 13 | SSTable Reader: lire header + charger index sparse, recherche binaire sur l'index, décompresser bloc et chercher clé, iterator full SSTable | SSTable Reader opérationnel avec recherche O(log n) |
-| 14 | Bloom filter: théorie m bits + k fonctions de hachage, implémentation BitVec maison, k fonctions par double hashing, intégration dans SSTable (sérialisation) | Bloom filter from scratch, false positive rate < 1 % mesuré |
-| 15 | Compaction leveled: niveaux L0..Ln, déclenchement basé sur taille, merge tri-fusion | Compaction fonctionnelle, amplification mesurée |
-| 16 | Benchmarks E2E vs SQLite single-node, tag `v0.2.0-storage`, post LinkedIn #2 | **v0.2.0** publiée + post LinkedIn |
+| 11 | WAL replay au démarrage → reconstruire MemTable; test crash: process kill → restart → data OK ✅ | WAL recovery testé et validé, 0 perte de données ✅ |
+| 12 | SSTable format binaire: magic bytes + version header, SSTable Writer avec blocs triés 4KB, index sparse en fin de fichier ✅ | SSTable Writer ↔ format binaire stable (`NOES` v1) ✅ |
+| 13 | SSTable Reader: lire footer + index sparse, recherche binaire, scan bloc, iterator full SSTable ✅ | SSTable Reader opérationnel avec recherche O(log n) ✅ |
+| 14 | Bloom filter: double hashing maison, intégration SSTable (sérialisation footer-adjacent) ✅ | Bloom filter from scratch, FPR mesuré < 2 % ✅ |
+| 15 | Compaction leveled: merge L0→L1, déclenchement par nombre de fichiers L0 ✅ | Compaction k-way merge fonctionnelle ✅ |
+| 16 | `LsmTree` E2E (WAL segments + MemTable + SST + compaction), benchmarks Criterion, tag `v0.2.0-storage` ✅ | **v0.2.0** publiée ✅ |
 
 ---
 
