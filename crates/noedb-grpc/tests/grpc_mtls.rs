@@ -1,9 +1,17 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, missing_docs)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::similar_names,
+    missing_docs
+)]
 
 use noedb_grpc::auth::{inject_auth, verify_auth};
 use noedb_grpc::generated::sql_response::Body;
 use noedb_grpc::tls::{client_tls_mtls, peer_host_from_addr, server_tls_mtls, MAX_GRPC_BYTES};
-use noedb_grpc::{Empty, PingRequest, ResultSet, Row, Sql, SqlClient, SqlRequest, SqlResponse, SqlServer};
+use noedb_grpc::{
+    Empty, PingRequest, ResultSet, Row, Sql, SqlClient, SqlRequest, SqlResponse, SqlServer,
+};
 use noedb_raft::ClusterAuth;
 use noedb_tls::DevCertPem;
 use tonic::transport::Server;
@@ -13,10 +21,7 @@ struct EchoSql;
 
 #[tonic::async_trait]
 impl Sql for EchoSql {
-    async fn execute(
-        &self,
-        request: Request<SqlRequest>,
-    ) -> Result<Response<SqlResponse>, Status> {
+    async fn execute(&self, request: Request<SqlRequest>) -> Result<Response<SqlResponse>, Status> {
         let auth = ClusterAuth::from_passphrase("noedb-dev");
         verify_auth(&request, &auth)?;
         Ok(Response::new(SqlResponse {

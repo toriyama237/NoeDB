@@ -67,6 +67,11 @@ impl WalSegmentManager {
         self.active.append(entry, sync)
     }
 
+    /// Append without `fsync` (pair with [`Self::sync`] or [`crate::append_batch_sync`]).
+    pub fn append_unsynced(&mut self, entry: &LogEntry) -> Result<(), StorageError> {
+        self.active.append(entry, false)
+    }
+
     /// Force `fsync` on the active segment (required after batched writes in [`WalSyncMode::OnFlush`]).
     pub fn sync(&mut self) -> Result<(), StorageError> {
         self.active.sync()

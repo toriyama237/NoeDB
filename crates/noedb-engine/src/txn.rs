@@ -61,6 +61,7 @@ pub(crate) fn execute_select_in_txn(
     let view = manager.read_view(session_id).map_err(txn_err)?;
     let overlay = build_read_overlay(&manager, session_id, &view)?;
     let tree = storage.read();
+    #[allow(clippy::redundant_clone)]
     let mgr = manager.clone();
     let store = TxnOverlayStore {
         base: &tree,
@@ -98,11 +99,15 @@ impl StorageEngine for TxnOverlayStore<'_> {
     }
 
     fn put(&mut self, _key: &[u8], _value: &[u8]) -> Result<(), StorageError> {
-        Err(StorageError::invalid_input("txn overlay store is read-only"))
+        Err(StorageError::invalid_input(
+            "txn overlay store is read-only",
+        ))
     }
 
     fn delete(&mut self, _key: &[u8]) -> Result<bool, StorageError> {
-        Err(StorageError::invalid_input("txn overlay store is read-only"))
+        Err(StorageError::invalid_input(
+            "txn overlay store is read-only",
+        ))
     }
 
     fn iter(&self) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
@@ -156,7 +161,10 @@ fn build_read_overlay(
     Ok(overlay)
 }
 
-fn pending_writes(manager: &TxnManager, session_id: u64) -> Result<Vec<(Vec<u8>, WriteOp)>, EngineError> {
+fn pending_writes(
+    manager: &TxnManager,
+    session_id: u64,
+) -> Result<Vec<(Vec<u8>, WriteOp)>, EngineError> {
     let mut out = Vec::new();
     manager
         .with_txn(session_id, |txn| {
@@ -171,7 +179,9 @@ pub(crate) fn txn_err(e: TxnError) -> EngineError {
         TxnError::Storage(msg) => EngineError::Storage(StorageError::Io { message: msg }),
         TxnError::SerializationFailure(msg) => EngineError::SerializationFailure(msg.into()),
         TxnError::DeadlockVictim => EngineError::SerializationFailure("deadlock detected".into()),
-        TxnError::WaitTimeout => EngineError::SerializationFailure("transaction wait timeout".into()),
+        TxnError::WaitTimeout => {
+            EngineError::SerializationFailure("transaction wait timeout".into())
+        }
         TxnError::NoActiveTxn => EngineError::InvalidSql("no active transaction"),
         TxnError::TxnAlreadyActive => EngineError::InvalidSql("transaction already in progress"),
     }

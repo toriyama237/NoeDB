@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use noedb_tls::{
-    client_connector_mtls_dev, client_connector_mtls_pinned, ReloadingAcceptor, DevCertPem,
+    client_connector_mtls_dev, client_connector_mtls_pinned, DevCertPem, ReloadingAcceptor,
 };
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
@@ -12,7 +12,10 @@ use tokio_rustls::{TlsAcceptor, TlsConnector};
 /// # Errors
 ///
 /// I/O or certificate generation failures.
-pub(crate) fn load_or_create_dev_certs(data_dir: &Path, node_id: u64) -> Result<DevCertPem, String> {
+pub(crate) fn load_or_create_dev_certs(
+    data_dir: &Path,
+    node_id: u64,
+) -> Result<DevCertPem, String> {
     let tls_dir = data_dir.join("tls");
     std::fs::create_dir_all(&tls_dir).map_err(|e| e.to_string())?;
     let ca_path = tls_dir.join("ca.pem");
@@ -31,7 +34,8 @@ pub(crate) fn load_or_create_dev_certs(data_dir: &Path, node_id: u64) -> Result<
             ca_pem: std::fs::read_to_string(&ca_path).map_err(|e| e.to_string())?,
             cert_pem: std::fs::read_to_string(&cert_path).map_err(|e| e.to_string())?,
             key_pem: std::fs::read_to_string(&key_path).map_err(|e| e.to_string())?,
-            client_cert_pem: std::fs::read_to_string(&client_cert_path).map_err(|e| e.to_string())?,
+            client_cert_pem: std::fs::read_to_string(&client_cert_path)
+                .map_err(|e| e.to_string())?,
             client_key_pem: std::fs::read_to_string(&client_key_path).map_err(|e| e.to_string())?,
             client_spiffe_cn: noedb_tls::SpiffeId::cn(node_id),
         });

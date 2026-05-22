@@ -35,9 +35,8 @@ impl ExplainWriter {
                 let cols = columns
                     .as_ref()
                     .map_or_else(|| "*".into(), |c| c.join(", "));
-                self.lines.push(format!(
-                    "{pad}SeqScan(table={table}, columns=[{cols}])"
-                ));
+                self.lines
+                    .push(format!("{pad}SeqScan(table={table}, columns=[{cols}])"));
             }
             PhysicalPlan::IndexScan {
                 table,
@@ -51,8 +50,9 @@ impl ExplainWriter {
                 let key = point_key
                     .as_ref()
                     .map_or_else(|| "?".into(), |k| format!("{k:?}"));
-                self.lines
-                    .push(format!("{pad}IndexScan(table={table}, index={column}, key={key}, columns=[{cols}])"));
+                self.lines.push(format!(
+                    "{pad}IndexScan(table={table}, index={column}, key={key}, columns=[{cols}])"
+                ));
             }
             PhysicalPlan::Filter { input, .. } => {
                 self.lines.push(format!("{pad}Filter"));
@@ -70,9 +70,8 @@ impl ExplainWriter {
                 right_key,
                 ..
             } => {
-                self.lines.push(format!(
-                    "{pad}HashJoin(keys={left_key}={right_key})"
-                ));
+                self.lines
+                    .push(format!("{pad}HashJoin(keys={left_key}={right_key})"));
                 self.write_plan(left, indent + 1);
                 self.write_plan(right, indent + 1);
             }
@@ -88,13 +87,16 @@ impl ExplainWriter {
                 right_key,
                 ..
             } => {
-                self.lines.push(format!(
-                    "{pad}MergeJoin(keys={left_key}={right_key})"
-                ));
+                self.lines
+                    .push(format!("{pad}MergeJoin(keys={left_key}={right_key})"));
                 self.write_plan(left, indent + 1);
                 self.write_plan(right, indent + 1);
             }
-            PhysicalPlan::Aggregate { group_by, aggs, input } => {
+            PhysicalPlan::Aggregate {
+                group_by,
+                aggs,
+                input,
+            } => {
                 self.lines.push(format!(
                     "{pad}Aggregate(groups={}, aggs={})",
                     group_by.len(),

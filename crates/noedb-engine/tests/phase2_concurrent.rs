@@ -1,5 +1,7 @@
 //! Phase 2 Week 9 — 100 concurrent sessions on `LocalEngine` (`&self`).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use noedb_engine::LocalEngine;
 use rayon::prelude::*;
 

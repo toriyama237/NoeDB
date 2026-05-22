@@ -1,5 +1,7 @@
 //! Transaction manager tests (Phase 2 Weeks 8–11).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::sync::Arc;
 use std::thread;
 

@@ -45,7 +45,11 @@ impl DevCertPem {
 
         let mut server_params = CertificateParams::default();
         server_params.subject_alt_names = vec![
-            SanType::DnsName("localhost".try_into().map_err(|e| TlsError::CertGen(format!("{e:?}")))?),
+            SanType::DnsName(
+                "localhost"
+                    .try_into()
+                    .map_err(|e| TlsError::CertGen(format!("{e:?}")))?,
+            ),
             SanType::IpAddress(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
         ];
         let mut server_dn = DistinguishedName::new();
@@ -88,7 +92,9 @@ impl DevCertPem {
     /// # Errors
     ///
     /// PEM or rustls parse errors.
-    pub fn server_identity(&self) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>), TlsError> {
+    pub fn server_identity(
+        &self,
+    ) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>), TlsError> {
         let certs = pem_certs(&self.cert_pem)?;
         let key = pem_key(&self.key_pem)?;
         Ok((certs, key))
@@ -99,7 +105,9 @@ impl DevCertPem {
     /// # Errors
     ///
     /// PEM or rustls parse errors.
-    pub fn client_identity(&self) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>), TlsError> {
+    pub fn client_identity(
+        &self,
+    ) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>), TlsError> {
         let certs = pem_certs(&self.client_cert_pem)?;
         let key = pem_key(&self.client_key_pem)?;
         Ok((certs, key))
@@ -122,20 +130,20 @@ impl DevCertPem {
     /// PEM parse errors.
     pub fn server_leaf_der(&self) -> Result<CertificateDer<'static>, TlsError> {
         let mut certs = pem_certs(&self.cert_pem)?;
-        certs.pop().ok_or_else(|| TlsError::Pem("empty server cert".into()))
+        certs
+            .pop()
+            .ok_or_else(|| TlsError::Pem("empty server cert".into()))
     }
 }
 
 fn pem_certs(pem: &str) -> Result<Vec<CertificateDer<'static>>, TlsError> {
-    let mut reader = std::io::BufReader::new(pem.as_bytes());
-    rustls_pemfile::certs(&mut reader)
+    use rustls_pki_types::pem::PemObject;
+    CertificateDer::pem_slice_iter(pem.as_bytes())
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| TlsError::Pem(e.to_string()))
 }
 
 fn pem_key(pem: &str) -> Result<PrivateKeyDer<'static>, TlsError> {
-    let mut reader = std::io::BufReader::new(pem.as_bytes());
-    rustls_pemfile::private_key(&mut reader)
-        .map_err(|e| TlsError::Pem(e.to_string()))?
-        .ok_or_else(|| TlsError::Pem("no private key".into()))
+    use rustls_pki_types::pem::PemObject;
+    PrivateKeyDer::from_pem_slice(pem.as_bytes()).map_err(|e| TlsError::Pem(e.to_string()))
 }

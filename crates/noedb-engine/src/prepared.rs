@@ -25,10 +25,8 @@ impl PrepareCache {
     /// Store a prepared statement.
     pub fn insert(&mut self, name: &str, stmt: Statement) -> Result<(), EngineError> {
         let param_count = max_param_index(&stmt);
-        self.stmts.insert(
-            name.to_string(),
-            PreparedStatement { stmt, param_count },
-        );
+        self.stmts
+            .insert(name.to_string(), PreparedStatement { stmt, param_count });
         Ok(())
     }
 
@@ -66,10 +64,14 @@ fn substitute_params(stmt: &Statement, params: &[Literal]) -> Statement {
     match stmt {
         Statement::Select(s) => Statement::Select(noedb_ast::SelectStmt {
             distinct: s.distinct,
-            items: s.items.iter().map(|i| noedb_ast::SelectItem {
-                expr: substitute_expr(&i.expr, params),
-                alias: i.alias.clone(),
-            }).collect(),
+            items: s
+                .items
+                .iter()
+                .map(|i| noedb_ast::SelectItem {
+                    expr: substitute_expr(&i.expr, params),
+                    alias: i.alias.clone(),
+                })
+                .collect(),
             from: s.from.clone(),
             joins: s.joins.clone(),
             where_clause: s.where_clause.as_ref().map(|e| substitute_expr(e, params)),
@@ -88,7 +90,12 @@ fn substitute_expr(expr: &Expr, params: &[Literal]) -> Expr {
                 .unwrap_or(Literal::Null { span: *span });
             Expr::Literal(lit)
         }
-        Expr::Binary { op, left, right, span } => Expr::Binary {
+        Expr::Binary {
+            op,
+            left,
+            right,
+            span,
+        } => Expr::Binary {
             op: *op,
             left: Box::new(substitute_expr(left, params)),
             right: Box::new(substitute_expr(right, params)),
@@ -99,18 +106,33 @@ fn substitute_expr(expr: &Expr, params: &[Literal]) -> Expr {
             expr: Box::new(substitute_expr(expr, params)),
             span: *span,
         },
-        Expr::IsNull { expr, negated, span } => Expr::IsNull {
+        Expr::IsNull {
+            expr,
+            negated,
+            span,
+        } => Expr::IsNull {
             expr: Box::new(substitute_expr(expr, params)),
             negated: *negated,
             span: *span,
         },
-        Expr::In { expr, values, negated, span } => Expr::In {
+        Expr::In {
+            expr,
+            values,
+            negated,
+            span,
+        } => Expr::In {
             expr: Box::new(substitute_expr(expr, params)),
             values: values.iter().map(|v| substitute_expr(v, params)).collect(),
             negated: *negated,
             span: *span,
         },
-        Expr::Between { expr, low, high, negated, span } => Expr::Between {
+        Expr::Between {
+            expr,
+            low,
+            high,
+            negated,
+            span,
+        } => Expr::Between {
             expr: Box::new(substitute_expr(expr, params)),
             low: Box::new(substitute_expr(low, params)),
             high: Box::new(substitute_expr(high, params)),
@@ -123,16 +145,13 @@ fn substitute_expr(expr: &Expr, params: &[Literal]) -> Expr {
 }
 
 fn walk_stmt(stmt: &Statement, f: &mut dyn FnMut(&Expr)) {
-    match stmt {
-        Statement::Select(s) => {
-            for item in &s.items {
-                walk_expr(&item.expr, f);
-            }
-            if let Some(w) = &s.where_clause {
-                walk_expr(w, f);
-            }
+    if let Statement::Select(s) = stmt {
+        for item in &s.items {
+            walk_expr(&item.expr, f);
         }
-        _ => {}
+        if let Some(w) = &s.where_clause {
+            walk_expr(w, f);
+        }
     }
 }
 
@@ -143,15 +162,16 @@ fn walk_expr(expr: &Expr, f: &mut dyn FnMut(&Expr)) {
             walk_expr(left, f);
             walk_expr(right, f);
         }
-        Expr::Unary { expr, .. } => walk_expr(expr, f),
-        Expr::IsNull { expr, .. } => walk_expr(expr, f),
+        Expr::Unary { expr, .. } | Expr::IsNull { expr, .. } => walk_expr(expr, f),
         Expr::In { expr, values, .. } => {
             walk_expr(expr, f);
             for v in values {
                 walk_expr(v, f);
             }
         }
-        Expr::Between { expr, low, high, .. } => {
+        Expr::Between {
+            expr, low, high, ..
+        } => {
             walk_expr(expr, f);
             walk_expr(low, f);
             walk_expr(high, f);

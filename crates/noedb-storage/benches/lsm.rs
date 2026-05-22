@@ -13,8 +13,13 @@ fn bench_lsm_puts(c: &mut Criterion) {
     let dir = std::env::temp_dir().join("noedb-bench-lsm-puts");
     let _ = std::fs::remove_dir_all(&dir);
 
-    let keys: Vec<Vec<u8>> = (0..10_000u32).map(|i| format!("k:{i:05}").into_bytes()).collect();
-    let entries: Vec<(&[u8], &[u8])> = keys.iter().map(|k| (k.as_slice(), b"value" as &[u8])).collect();
+    let keys: Vec<Vec<u8>> = (0..10_000u32)
+        .map(|i| format!("k:{i:05}").into_bytes())
+        .collect();
+    let entries: Vec<(&[u8], &[u8])> = keys
+        .iter()
+        .map(|k| (k.as_slice(), b"value" as &[u8]))
+        .collect();
 
     let mut group = c.benchmark_group("lsm");
     group.throughput(Throughput::Elements(10_000));
@@ -48,11 +53,15 @@ fn bench_lsm_gets(c: &mut Criterion) {
     let dir = std::env::temp_dir().join("noedb-bench-lsm-gets");
     let _ = std::fs::remove_dir_all(&dir);
 
-    let keys: Vec<Vec<u8>> = (0..10_000u32).map(|i| format!("k:{i:05}").into_bytes()).collect();
+    let keys: Vec<Vec<u8>> = (0..10_000u32)
+        .map(|i| format!("k:{i:05}").into_bytes())
+        .collect();
     {
         let mut tree = LsmTree::open(&dir, LsmConfig::throughput()).unwrap();
-        let entries: Vec<(&[u8], &[u8])> =
-            keys.iter().map(|k| (k.as_slice(), b"value" as &[u8])).collect();
+        let entries: Vec<(&[u8], &[u8])> = keys
+            .iter()
+            .map(|k| (k.as_slice(), b"value" as &[u8]))
+            .collect();
         tree.put_batch(&entries).unwrap();
     }
 

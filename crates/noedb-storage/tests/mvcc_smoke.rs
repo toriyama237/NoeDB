@@ -1,5 +1,7 @@
 //! MVCC integration tests (Phase 2 Week 7).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use noedb_storage::{MvccMemTable, TimestampOracle};
 
 #[test]
@@ -24,11 +26,7 @@ fn oracle_monotonic() {
 fn gc_stabilizes_versions() {
     let mut mt = MvccMemTable::new();
     for i in 1..=100u64 {
-        mt.put(
-            b"k".to_vec(),
-            format!("v{i}").into_bytes(),
-            i,
-        );
+        mt.put(b"k".to_vec(), format!("v{i}").into_bytes(), i);
     }
     let before = mt.len();
     let stats = noedb_storage::gc_versions(&mut mt, 95);

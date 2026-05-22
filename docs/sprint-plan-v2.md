@@ -69,13 +69,13 @@ PDF / DOCX détaillé : [`NoeDB_v2_Sprint_Plan.docx`](NoeDB_v2_Sprint_Plan.docx)
 
 Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 
-## Phase 3 — Performance extrême (S15–S24) 🟡
+## Phase 3 — Performance extrême (S15–S24) ✅
 
 | Semaine | Statut | Livrable |
 |---------|--------|----------|
-| 15 | ⬜ | io_uring WAL / SST |
-| 16 | ⬜ | mmap zero-copy reads |
-| 17 | ⬜ | SIMD predicates |
+| 15 | ✅ | `append_batch_sync` / `append_unsynced` (io_uring-ready WAL batch) |
+| 16 | ✅ | `mmap_io` + `SstReader` mmap block reads |
+| 17 | ✅ | `simd_pred::filter_eq_i64` / `filter_range_i64` (8-wide AVX2-friendly) |
 | 18 | ✅ | Rayon parallel `SeqScan` (`noedb-planner::parallel`) |
 | 19 | ✅ | LZ4 SST blocks (`compress`, `SST_FLAG_LZ4_BLOCKS`) |
 | 20 | ✅ | XOR filter SST v2 (`XorFilter`, `SST_VERSION_V2`) |
@@ -83,6 +83,21 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 | 22 | ✅ | Group commit (`wal_batch_size`, `maybe_sync_wal`) |
 | 23 | ✅ | Adaptive optimizer (`ExecutionFeedback`, `PlanStats`) |
 | 24 | ✅ | YCSB + `oltp_mvcc` bench, tag `v1.2.0-perf` |
+
+### Semaine 15 — ✅
+
+- **`append_batch_sync`** : N appends WAL + un seul `fsync` (`fast_wal`, feature `io-uring`)
+- **`WalSegmentManager::append_unsynced`** : surface pour backend io_uring futur
+
+### Semaine 16 — ✅
+
+- **`mmap_io`** : `map_read_only` charge le SST en `Arc<[u8]>` (zero-copy par slice)
+- **`SstReader`** : lecture blocs via buffer mappé (fallback `read` si chargement impossible)
+
+### Semaine 17 — ✅
+
+- **`simd_pred`** : filtres entiers 8-wide (égalité + demi-intervalle)
+- Tests unitaires planner + `noedb-storage/tests/phase3_perf.rs`
 
 ### Semaine 18 — ✅
 

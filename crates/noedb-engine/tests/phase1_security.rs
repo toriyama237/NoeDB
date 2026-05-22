@@ -9,14 +9,14 @@ fn prepared_statement_binds_without_interpolation() {
     let dir = std::env::temp_dir().join("noedb-phase1-prep");
     let _ = std::fs::remove_dir_all(&dir);
     let eng = LocalEngine::open(&dir).unwrap();
-    eng.put_row_default("docs", "1", "title", b"secret-a").unwrap();
-    eng.put_row_default("docs", "2", "title", b"secret-b").unwrap();
+    eng.put_row_default("docs", "1", "title", b"secret-a")
+        .unwrap();
+    eng.put_row_default("docs", "2", "title", b"secret-b")
+        .unwrap();
 
     eng.execute("PREPARE q AS SELECT title FROM docs WHERE title = $1")
         .unwrap();
-    let r = eng
-        .execute("EXECUTE q ('secret-a')")
-        .unwrap();
+    let r = eng.execute("EXECUTE q ('secret-a')").unwrap();
     assert_eq!(r.rows.len(), 1);
     assert_eq!(r.rows[0][0], "secret-a");
 
@@ -34,7 +34,8 @@ fn rls_isolates_rows_by_role() {
     eng.put_row_default("t", "2", "owner", b"bob").unwrap();
     eng.put_row_default("t", "2", "val", b"b1").unwrap();
 
-    eng.execute("ALTER TABLE t ENABLE ROW LEVEL SECURITY").unwrap();
+    eng.execute("ALTER TABLE t ENABLE ROW LEVEL SECURITY")
+        .unwrap();
     eng.execute("CREATE POLICY p ON t USING (owner = CURRENT_USER)")
         .unwrap();
 

@@ -31,6 +31,7 @@ pub struct ExecutionContext<'a, S: StorageEngine<Error = StorageError> = LsmTree
 impl<'a> ExecutionContext<'a, LsmTree> {
     /// Single-tree context (default path).
     #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn single(store: &'a LsmTree) -> Self {
         Self {
             store,
@@ -247,9 +248,7 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
             columns,
         } => {
             let row_ids = match point_key {
-                Some(key) => {
-                    SecondaryIndex::lookup(ctx.index_catalog, &table, &column, &key)
-                }
+                Some(key) => SecondaryIndex::lookup(ctx.index_catalog, &table, &column, &key),
                 None => SecondaryIndex::load(ctx.index_catalog, &table, &column)
                     .iter()
                     .flat_map(|(_, ids)| ids.clone())
@@ -339,12 +338,8 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
         } => {
             let mut left_rows = execute_to_rows(*left, ctx)?;
             let mut right_rows = execute_to_rows(*right, ctx)?;
-            left_rows.sort_by(|a, b| {
-                join_key_value(a, &left_key).cmp(&join_key_value(b, &left_key))
-            });
-            right_rows.sort_by(|a, b| {
-                join_key_value(a, &right_key).cmp(&join_key_value(b, &right_key))
-            });
+            left_rows.sort_by_key(|row| join_key_value(row, &left_key));
+            right_rows.sort_by_key(|row| join_key_value(row, &right_key));
             let mut pairs = Vec::new();
             let mut i = 0;
             let mut j = 0;
@@ -456,11 +451,9 @@ fn execute_to_rows<S: StorageEngine<Error = StorageError>>(
     plan: PhysicalPlan,
     ctx: &ExecutionContext<'_, S>,
 ) -> Result<Vec<RowMap>, ExecError> {
-    Executor::new(plan, ctx)?.collect().map(|recs| {
-        recs.into_iter()
-            .map(|r| r.fields)
-            .collect()
-    })
+    Executor::new(plan, ctx)?
+        .collect()
+        .map(|recs| recs.into_iter().map(|r| r.fields).collect())
 }
 
 #[allow(clippy::option_if_let_else)]
@@ -543,7 +536,11 @@ fn load_row_by_id<S: StorageEngine<Error = StorageError>>(
         let col_name = String::from_utf8_lossy(col).into_owned();
         row.push((col_name, Value::Bytes(val)));
     }
-    if row.is_empty() { None } else { Some(row) }
+    if row.is_empty() {
+        None
+    } else {
+        Some(row)
+    }
 }
 
 fn table_cell_key(table: &str, row_id: &[u8], column: &[u8]) -> Vec<u8> {
@@ -597,8 +594,9 @@ mod join_tests {
         put_row(&mut tree, "orders", "10", "user_id", b"1");
         put_row(&mut tree, "orders", "10", "amount", b"99");
 
-        let on = noedb_parser::parse("SELECT 1 FROM users u INNER JOIN orders o ON u.id = o.user_id")
-            .unwrap();
+        let on =
+            noedb_parser::parse("SELECT 1 FROM users u INNER JOIN orders o ON u.id = o.user_id")
+                .unwrap();
         let on_expr = match on {
             noedb_ast::Statement::Select(s) => s.joins[0].on.clone(),
             _ => panic!("select"),

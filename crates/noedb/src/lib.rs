@@ -49,8 +49,8 @@
 /// Lexer (re-exported from [`noedb_lexer`]).
 pub mod lexer {
     pub use noedb_lexer::{
-        tokenize, tokenize_into, Keyword, LexError, LexErrorKind, Lexer, LineColumn, Operator, Punctuation,
-        SourceMap, Span, SpannedToken, Token, KEYWORD_COUNT,
+        tokenize, tokenize_into, Keyword, LexError, LexErrorKind, Lexer, LineColumn, Operator,
+        Punctuation, SourceMap, Span, SpannedToken, Token, KEYWORD_COUNT,
     };
 }
 
@@ -71,10 +71,10 @@ pub mod parser {
 /// Query planner (re-exported from [`noedb_planner`]).
 pub mod planner {
     pub use noedb_planner::{
-        apply_statement, build, create_index, estimate, execute, execute_sql, explain,
-        explain_sql, index_wins, lower, optimize, plan, AggFunc, BTreeIndex, ExecutionContext,
-        ExecError, Executor, LogicalPlan, PhysicalPlan, PlanContext, PlanError, PlanStats,
-        Record, SecondaryIndex, Value, INDEX_LOOKUP_COST, SEQ_SCAN_ROW_COST,
+        apply_statement, build, create_index, estimate, execute, execute_sql, explain, explain_sql,
+        index_wins, lower, optimize, plan, AggFunc, BTreeIndex, ExecError, ExecutionContext,
+        Executor, LogicalPlan, PhysicalPlan, PlanContext, PlanError, PlanStats, Record,
+        SecondaryIndex, Value, INDEX_LOOKUP_COST, SEQ_SCAN_ROW_COST,
     };
 }
 
@@ -84,8 +84,8 @@ pub mod storage {
         compact_level0_to_l1, replay_into_memtable, replay_wal_dir, BloomFilter, DurableStore,
         LogEntry, LsmConfig, LsmTree, MemTable, MemTableIter, MemTableRangeIter, OpType, SstReader,
         SstWriter, StorageEngine, StorageError, Wal, WalSegmentManager, WalSyncMode,
-        DEFAULT_MAX_ENTRIES, DEFAULT_MAX_MEM_BYTES, L0_COMPACTION_TRIGGER, SST_MAGIC, SST_VERSION, WAL_MAGIC,
-        WAL_VERSION,
+        DEFAULT_MAX_ENTRIES, DEFAULT_MAX_MEM_BYTES, L0_COMPACTION_TRIGGER, SST_MAGIC, SST_VERSION,
+        WAL_MAGIC, WAL_VERSION,
     };
 }
 
@@ -100,8 +100,8 @@ pub mod engine {
 /// Client wire protocol (re-exported from [`noedb_protocol`]).
 pub mod protocol {
     pub use noedb_protocol::{
-        decode_request, decode_response, encode_request, encode_response, ProtocolError,
-        Request, Response, PROTOCOL_VERSION,
+        decode_request, decode_response, encode_request, encode_response, ProtocolError, Request,
+        Response, PROTOCOL_VERSION,
     };
 }
 
@@ -109,8 +109,8 @@ pub mod protocol {
 pub mod raft {
     pub use noedb_raft::{
         decode_message, encode_message, Action, AppendEntriesReq, AppendEntriesResp, Cluster,
-        ClusterAuth, FileStorage, HardState, LogEntry, MemNode, MemStorage, Raft, RaftConfig,
-        RaftError, RaftLog, RaftNode, RaftStorage, RequestVoteReq, RequestVoteResp, Role, RpcMessage,
-        Snapshot, StateMachine, Term, LogIndex, NodeId, MAX_FRAME_BYTES,
+        ClusterAuth, FileStorage, HardState, LogEntry, LogIndex, MemNode, MemStorage, NodeId, Raft,
+        RaftConfig, RaftError, RaftLog, RaftNode, RaftStorage, RequestVoteReq, RequestVoteResp,
+        Role, RpcMessage, Snapshot, StateMachine, Term, MAX_FRAME_BYTES,
     };
 }

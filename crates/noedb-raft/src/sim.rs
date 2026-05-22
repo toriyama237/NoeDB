@@ -126,7 +126,9 @@ impl Cluster {
     ///
     /// No leader or replication failure.
     pub fn propose_on_leader(&mut self, cmd: Vec<u8>) -> Result<(), RaftError> {
-        let leader = self.leader().ok_or_else(|| RaftError::internal("no leader"))?;
+        let leader = self
+            .leader()
+            .ok_or_else(|| RaftError::internal("no leader"))?;
         let sends = self.nodes.get_mut(&leader).expect("leader").propose(cmd)?;
         for (to, msg) in sends {
             self.inbox.push_back((leader, to, msg));
@@ -169,13 +171,25 @@ impl Cluster {
     ///
     /// No leader or barrier not committed in time.
     pub fn linearizable_barrier(&mut self) -> Result<LogIndex, RaftError> {
-        let leader = self.leader().ok_or_else(|| RaftError::internal("no leader"))?;
+        let leader = self
+            .leader()
+            .ok_or_else(|| RaftError::internal("no leader"))?;
         let read_id = 1;
-        let sends = self.nodes.get_mut(&leader).expect("leader").read_index(read_id)?;
+        let sends = self
+            .nodes
+            .get_mut(&leader)
+            .expect("leader")
+            .read_index(read_id)?;
         for (to, msg) in sends {
             self.inbox.push_back((leader, to, msg));
         }
-        let target = self.nodes.get(&leader).expect("leader").raft().log().last_index();
+        let target = self
+            .nodes
+            .get(&leader)
+            .expect("leader")
+            .raft()
+            .log()
+            .last_index();
         for _ in 0..48 {
             self.drive_quiescent(8)?;
             if self.commit_index(leader) >= target {
@@ -206,7 +220,9 @@ impl Cluster {
         let node = MemNode::open(cfg, MemStorage::new())?;
         self.nodes.insert(id, node);
         self.run_rounds(8)?;
-        let leader = self.leader().ok_or_else(|| RaftError::internal("no leader"))?;
+        let leader = self
+            .leader()
+            .ok_or_else(|| RaftError::internal("no leader"))?;
         let sends = self
             .nodes
             .get_mut(&leader)

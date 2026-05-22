@@ -1,5 +1,7 @@
 //! Durable MVCC via LSM internal keys (Phase 2 Week 7).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use noedb_storage::{LsmConfig, LsmTree, Version};
 
 #[test]

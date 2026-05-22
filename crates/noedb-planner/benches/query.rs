@@ -1,6 +1,11 @@
 //! Query pipeline benchmarks (Week 28): SeqScan vs IndexScan.
 
-#![allow(missing_docs, clippy::unwrap_used, clippy::significant_drop_tightening, clippy::panic)]
+#![allow(
+    missing_docs,
+    clippy::unwrap_used,
+    clippy::significant_drop_tightening,
+    clippy::panic
+)]
 
 use std::hint::black_box;
 

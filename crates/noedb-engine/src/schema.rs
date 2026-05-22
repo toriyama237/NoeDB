@@ -27,13 +27,8 @@ impl SchemaCatalog {
     pub fn create_table(&mut self, name: impl Into<String>, version_ts: CommitTs) {
         let name = name.into();
         self.epoch = self.epoch.max(version_ts);
-        self.tables.insert(
-            name.clone(),
-            TableSchema {
-                name,
-                version_ts,
-            },
-        );
+        self.tables
+            .insert(name.clone(), TableSchema { name, version_ts });
     }
 
     /// Roll back a table created in the current txn (not yet committed to LSM).

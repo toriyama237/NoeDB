@@ -68,6 +68,7 @@ impl TxnManager {
 
     /// Timestamp oracle reference.
     #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn oracle(&self) -> &TimestampOracle {
         &self.oracle
     }
@@ -93,17 +94,22 @@ impl TxnManager {
             .sessions
             .get(&session_id)
             .ok_or(TxnError::NoActiveTxn)?;
-        let active = self.active.lock();
-        let txn = active.get(&txn_id).ok_or(TxnError::NoActiveTxn)?;
-        let active_ids: BTreeSet<TxnId> = active
-            .values()
-            .filter(|t| t.state == TxnState::Active && t.id != txn_id)
-            .map(|t| t.id)
-            .collect();
-        Ok(ReadView::new(txn_id, txn.start_ts, active_ids))
+        let (start_ts, active_ids) = {
+            let active = self.active.lock();
+            let txn = active.get(&txn_id).ok_or(TxnError::NoActiveTxn)?;
+            let start_ts = txn.start_ts;
+            let active_ids: BTreeSet<TxnId> = active
+                .values()
+                .filter(|t| t.state == TxnState::Active && t.id != txn_id)
+                .map(|t| t.id)
+                .collect();
+            (start_ts, active_ids)
+        };
+        Ok(ReadView::new(txn_id, start_ts, active_ids))
     }
 
     /// Mutable access to session txn (record reads/writes).
+    #[allow(clippy::significant_drop_tightening)]
     pub fn with_txn<F, R>(&self, session_id: u64, f: F) -> Result<R, TxnError>
     where
         F: FnOnce(&mut Transaction) -> R,
@@ -142,23 +148,31 @@ impl TxnManager {
     }
 
     /// `COMMIT` — SSI check, apply write set with `commit_ts`, purge intents.
+    #[allow(clippy::significant_drop_tightening, clippy::significant_drop_in_scrutinee)]
     pub fn commit(&self, session_id: u64) -> Result<CommitResult, TxnError> {
         let txn_id = *self
             .sessions
             .get(&session_id)
             .ok_or(TxnError::NoActiveTxn)?;
 
-        self.deadlock.lock().poll(&self.active.lock(), txn_id)?;
+        {
+            let active = self.active.lock();
+            self.deadlock.lock().poll(&active, txn_id)?;
+        }
 
         let (write_set, read_set) = {
-            let mut active = self.active.lock();
-            let txn = active.get(&txn_id).ok_or(TxnError::NoActiveTxn)?;
-            match self.ssi.lock().check_commit(txn) {
+            let decision = {
+                let active = self.active.lock();
+                let txn = active.get(&txn_id).ok_or(TxnError::NoActiveTxn)?;
+                self.ssi.lock().check_commit(txn)
+            };
+            match decision {
                 SsiDecision::Allow => {}
                 SsiDecision::Abort(msg) => {
                     return Err(TxnError::SerializationFailure(msg));
                 }
             }
+            let mut active = self.active.lock();
             let txn = active.get_mut(&txn_id).ok_or(TxnError::NoActiveTxn)?;
             txn.state = TxnState::Committed;
             (txn.write_set.clone(), txn.read_set.clone())
@@ -232,9 +246,7 @@ impl TxnManager {
         let writers: Vec<TxnId> = active
             .iter()
             .filter(|(&id, t)| {
-                id != reader_id
-                    && t.state == TxnState::Active
-                    && t.write_set.contains_key(key)
+                id != reader_id && t.state == TxnState::Active && t.write_set.contains_key(key)
             })
             .map(|(&id, _)| id)
             .collect();

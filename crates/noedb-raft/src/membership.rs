@@ -35,9 +35,7 @@ impl JointConfig {
 #[must_use]
 pub fn encode_conf_change(cc: &ConfChange) -> Vec<u8> {
     let mut out = CONF_MAGIC.to_vec();
-    out.extend(
-        bincode::serialize(cc).unwrap_or_default(),
-    );
+    out.extend(bincode::serialize(cc).unwrap_or_default());
     out
 }
 
@@ -51,26 +49,19 @@ pub fn decode_conf_change(cmd: &[u8]) -> Option<ConfChange> {
 }
 
 /// Apply `AddVoter` during joint transition.
-#[must_use]
-pub fn joint_add_voter(
-    joint: &mut Option<JointConfig>,
-    voters: &mut Vec<NodeId>,
-    id: NodeId,
-) -> bool {
+pub fn joint_add_voter(joint: &mut Option<JointConfig>, voters: &[NodeId], id: NodeId) {
     if let Some(j) = joint {
         if !j.incoming.contains(&id) {
             j.incoming.push(id);
         }
-        false
-    } else {
-        let outgoing = voters.clone();
-        let mut incoming = voters.clone();
-        if !incoming.contains(&id) {
-            incoming.push(id);
-        }
-        *joint = Some(JointConfig { outgoing, incoming });
-        false
+        return;
     }
+    let outgoing = voters.to_vec();
+    let mut incoming = voters.to_vec();
+    if !incoming.contains(&id) {
+        incoming.push(id);
+    }
+    *joint = Some(JointConfig { outgoing, incoming });
 }
 
 /// Finalize joint config into `voters` when safe.

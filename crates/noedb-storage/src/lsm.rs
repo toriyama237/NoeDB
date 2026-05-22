@@ -1,7 +1,7 @@
 //! Full LSM-tree engine orchestrating MemTable, WAL, SSTables (Week 16).
 
 use parking_lot::Mutex;
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::{hash_map::Entry, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -9,7 +9,7 @@ use crate::compaction::{self, L0_COMPACTION_TRIGGER};
 use crate::engine::StorageEngine;
 use crate::error::StorageError;
 use crate::memtable::{MemTable, DEFAULT_MAX_MEM_BYTES};
-use crate::sstable::{SstReader, SstWriter, SstWriteOptions};
+use crate::sstable::{SstReader, SstWriteOptions, SstWriter};
 use crate::wal::{LogEntry, WalSegmentManager, WalSyncMode};
 
 /// Configuration for [`LsmTree`].
@@ -187,10 +187,12 @@ impl LsmTree {
     }
 
     fn get_from_sst(&self, path: &Path, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
-        let mut cache = self.sst_cache.lock();
-        let reader = match cache.entry(path.to_path_buf()) {
-            Entry::Vacant(slot) => slot.insert(SstReader::open(path)?),
-            Entry::Occupied(slot) => slot.into_mut(),
+        let reader = {
+            let mut cache = self.sst_cache.lock();
+            match cache.entry(path.to_path_buf()) {
+                Entry::Vacant(slot) => slot.insert(SstReader::open(path)?).clone(),
+                Entry::Occupied(slot) => slot.get().clone(),
+            }
         };
         reader.get(key)
     }
@@ -256,7 +258,7 @@ impl StorageEngine for LsmTree {
     }
 
     fn iter(&self) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
-        let view = crate::mvcc::ReadView::new(0, u64::MAX, Default::default());
+        let view = crate::mvcc::ReadView::new(0, u64::MAX, std::collections::BTreeSet::new());
         let mut latest: std::collections::BTreeMap<Vec<u8>, crate::mvcc::Version> =
             std::collections::BTreeMap::new();
 
@@ -278,10 +280,11 @@ impl StorageEngine for LsmTree {
             if !view.is_visible(&ver, None) {
                 return;
             }
-            if latest
-                .get(&user)
-                .is_none_or(|prev| ver.commit_ts > prev.commit_ts)
-            {
+            let newer = match latest.get(&user) {
+                None => true,
+                Some(prev) => ver.commit_ts > prev.commit_ts,
+            };
+            if newer {
                 latest.insert(user, ver);
             }
         };
@@ -299,15 +302,13 @@ impl StorageEngine for LsmTree {
             ingest(k, v);
         }
 
-        latest
-            .into_iter()
-            .filter_map(|(k, ver)| {
-                if ver.deleted {
-                    None
-                } else {
-                    Some((k, ver.value))
-                }
-            })
+        latest.into_iter().filter_map(|(k, ver)| {
+            if ver.deleted {
+                None
+            } else {
+                Some((k, ver.value))
+            }
+        })
     }
 }
 

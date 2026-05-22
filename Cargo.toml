@@ -54,7 +54,7 @@ protoc-bin-vendored = "3"
 
 # Phase 4 Raft + networking
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-rustls-pemfile = "2"
+rustls-pki-types = "1.9"
 rcgen = "0.13"
 tokio-rustls = "0.26"
 
@@ -70,7 +70,7 @@ criterion = { version = "0.8", default-features = false, features = ["html_repor
 parking_lot = "0.12"
 rayon = "1.10"
 lz4_flex = "0.11"
-lru = "0.12"
+lru = "0.16"
 dashmap = "6.1"
 
 

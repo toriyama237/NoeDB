@@ -110,9 +110,7 @@ static KW_LEN_08: &[(&str, Keyword)] = &[
     ("SECURITY", Keyword::Security),
 ];
 
-static KW_LEN_09: &[(&str, Keyword)] = &[
-    ("INTERSECT", Keyword::Intersect),
-];
+static KW_LEN_09: &[(&str, Keyword)] = &[("INTERSECT", Keyword::Intersect)];
 
 static KW_LEN_10: &[(&str, Keyword)] = &[
     ("CONSTRAINT", Keyword::Constraint),
@@ -125,14 +123,9 @@ static KW_LEN_12: &[(&str, Keyword)] = &[
     ("CURRENT_USER", Keyword::CurrentUser),
 ];
 
-static KW_LEN_13: &[(&str, Keyword)] = &[
-    ("AUTHORIZATION", Keyword::Authorization),
-];
+static KW_LEN_13: &[(&str, Keyword)] = &[("AUTHORIZATION", Keyword::Authorization)];
 
-static KW_LEN_17: &[(&str, Keyword)] = &[
-    ("CURRENT_TIMESTAMP", Keyword::CurrentTimestamp),
-];
-
+static KW_LEN_17: &[(&str, Keyword)] = &[("CURRENT_TIMESTAMP", Keyword::CurrentTimestamp)];
 
 #[inline]
 pub(crate) const fn table_for_len(len: usize) -> &'static [(&'static str, Keyword)] {

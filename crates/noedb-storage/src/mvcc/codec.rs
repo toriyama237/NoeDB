@@ -10,7 +10,9 @@ const FORMAT_V1: u8 = 1;
 /// Serialize a committed version for LSM/WAL storage.
 pub fn encode_version(version: &Version) -> Result<Vec<u8>, StorageError> {
     if version.commit_ts == 0 {
-        return Err(StorageError::invalid_input("cannot persist uncommitted intent"));
+        return Err(StorageError::invalid_input(
+            "cannot persist uncommitted intent",
+        ));
     }
     let mut out = Vec::with_capacity(MAGIC.len() + 1 + 8 + 1 + 4 + version.value.len());
     out.extend_from_slice(MAGIC);
@@ -63,7 +65,10 @@ fn read_u64(data: &[u8], off: &mut usize) -> Result<CommitTs, StorageError> {
         .get(*off..*off + 8)
         .ok_or(StorageError::corrupt_sstable("truncated u64"))?;
     *off += 8;
-    Ok(u64::from_le_bytes(slice.try_into().unwrap()))
+    let arr: [u8; 8] = slice
+        .try_into()
+        .map_err(|_| StorageError::corrupt_sstable("bad u64 width"))?;
+    Ok(u64::from_le_bytes(arr))
 }
 
 fn read_u32(data: &[u8], off: &mut usize) -> Result<u32, StorageError> {
@@ -71,7 +76,10 @@ fn read_u32(data: &[u8], off: &mut usize) -> Result<u32, StorageError> {
         .get(*off..*off + 4)
         .ok_or(StorageError::corrupt_sstable("truncated u32"))?;
     *off += 4;
-    Ok(u32::from_le_bytes(slice.try_into().unwrap()))
+    let arr: [u8; 4] = slice
+        .try_into()
+        .map_err(|_| StorageError::corrupt_sstable("bad u32 width"))?;
+    Ok(u32::from_le_bytes(arr))
 }
 
 #[cfg(test)]

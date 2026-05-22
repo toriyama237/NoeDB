@@ -20,8 +20,8 @@ use crate::error::EngineError;
 use crate::machine::apply_command;
 use crate::prepared::{bind_parameters, PrepareCache};
 use crate::query_cache::QueryCache;
-use crate::rls::{apply_rls, RlsCatalog};
 use crate::region::RegionId;
+use crate::rls::{apply_rls, RlsCatalog};
 use crate::schema::SchemaCatalog;
 use crate::session::SessionContext;
 use crate::shard::ShardRouter;
@@ -131,7 +131,10 @@ impl LocalEngine {
         Self::open_with_config(path, LsmConfig::throughput())
     }
 
-    fn open_with_config(path: impl AsRef<Path>, config: LsmConfig) -> Result<Arc<Self>, EngineError> {
+    fn open_with_config(
+        path: impl AsRef<Path>,
+        config: LsmConfig,
+    ) -> Result<Arc<Self>, EngineError> {
         let data_dir = path.as_ref().to_path_buf();
         let tree = LsmTree::open(&data_dir, config)?;
         let audit = AuditLog::open(&data_dir)?;
@@ -297,9 +300,7 @@ impl LocalEngine {
             }
             Statement::CreateTable(t) => {
                 let ts = self.txn.oracle().next();
-                self.schema
-                    .lock()
-                    .create_table(&t.name.value, ts);
+                self.schema.lock().create_table(&t.name.value, ts);
                 self.cache.lock().invalidate_table("");
                 self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
@@ -358,7 +359,11 @@ impl LocalEngine {
             let records = apply_statement(&stmt, &mut self.storage.write())?;
             QueryResult::from_records(&records)
         };
-        self.audit_record(session_id, sql, u64::try_from(result.rows.len()).unwrap_or(0))?;
+        self.audit_record(
+            session_id,
+            sql,
+            u64::try_from(result.rows.len()).unwrap_or(0),
+        )?;
         Ok(result)
     }
 

@@ -19,7 +19,7 @@ pub struct LogEntry {
 }
 
 /// Membership change (Week 39 — single-step conf change).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub enum ConfChange {
     /// Add a voter.
@@ -106,17 +106,25 @@ impl RaftLog {
     }
 
     /// Replace log from snapshot + suffix.
-    pub fn restore(&mut self, snapshot_index: LogIndex, snapshot_term: Term, suffix: Vec<LogEntry>) {
+    pub fn restore(
+        &mut self,
+        snapshot_index: LogIndex,
+        snapshot_term: Term,
+        suffix: Vec<LogEntry>,
+    ) {
         self.entries.clear();
         self.entries.push(LogEntry {
             term: snapshot_term,
             command: Vec::new(),
         });
         if snapshot_index.0 > 0 {
-            self.entries.resize(snapshot_index.0 as usize + 1, LogEntry {
-                term: snapshot_term,
-                command: Vec::new(),
-            });
+            self.entries.resize(
+                snapshot_index.0 as usize + 1,
+                LogEntry {
+                    term: snapshot_term,
+                    command: Vec::new(),
+                },
+            );
             if let Some(last) = self.entries.last_mut() {
                 last.term = snapshot_term;
             }

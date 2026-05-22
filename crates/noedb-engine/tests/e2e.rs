@@ -36,6 +36,8 @@ fn distributed_create_index() {
     eng.put_row("users", "1", "id", b"7").unwrap();
     eng.put_row("users", "1", "name", b"ada").unwrap();
     eng.execute("CREATE INDEX idx ON users (id)").unwrap();
-    let plan = eng.explain("SELECT name FROM users WHERE id = '7'").unwrap();
+    let plan = eng
+        .explain("SELECT name FROM users WHERE id = '7'")
+        .unwrap();
     assert!(plan.contains("IndexScan"));
 }

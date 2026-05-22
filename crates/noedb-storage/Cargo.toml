@@ -19,6 +19,11 @@ path = "src/lib.rs"
 parking_lot = { workspace = true }
 lz4_flex = { workspace = true }
 
+[features]
+default = []
+# Phase 3 S15: batched WAL sync (io_uring-ready API; uses std I/O today).
+io-uring = []
+
 [dev-dependencies]
 criterion = { workspace = true }
 

@@ -1,10 +1,10 @@
 //! mTLS TCP transport for Raft RPC (Phase 1, Week 2).
 
+use noedb_tls::DevCertPem;
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use noedb_tls::DevCertPem;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
@@ -59,11 +59,12 @@ impl Transport for TlsTcpTransport {
             let tcp = TcpStream::connect(*addr)
                 .await
                 .map_err(|e| RaftError::Transport(e.to_string()))?;
-            let server_name = "localhost"
-                .try_into()
-                .map_err(|e: rustls::pki_types::InvalidDnsNameError| {
-                    RaftError::Transport(e.to_string())
-                })?;
+            let server_name =
+                "localhost"
+                    .try_into()
+                    .map_err(|e: rustls::pki_types::InvalidDnsNameError| {
+                        RaftError::Transport(e.to_string())
+                    })?;
             let mut stream = connector
                 .connect(server_name, tcp)
                 .await

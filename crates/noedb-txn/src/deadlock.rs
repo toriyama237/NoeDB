@@ -67,9 +67,10 @@ impl DeadlockGuard {
             }
         }
 
-        let should_check = self
-            .last_check
-            .is_none_or(|t| now.duration_since(t) >= self.policy.check_interval);
+        let should_check = match self.last_check {
+            None => true,
+            Some(t) => now.duration_since(t) >= self.policy.check_interval,
+        };
         if should_check {
             self.last_check = Some(now);
             if let Some(victim) = self.find_cycle_victim() {

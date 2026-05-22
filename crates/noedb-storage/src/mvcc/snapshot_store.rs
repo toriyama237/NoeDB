@@ -7,15 +7,20 @@ use crate::error::StorageError;
 use crate::lsm::LsmTree;
 use crate::mvcc::{MvccMemTable, ReadView};
 
+/// Pending txn overlay: delete (`None`) or put (`Some(bytes)`).
+type TxnWriteSet = BTreeMap<Vec<u8>, Option<Vec<u8>>>;
+/// Optional read hook for SSI tracking.
+type ReadHook<'a> = Box<dyn Fn(&[u8]) + 'a>;
+
 /// Merged storage view for snapshot reads (SI + read-your-writes).
 pub struct SnapshotStore<'a> {
     base: &'a LsmTree,
     mvcc: &'a MvccMemTable,
     view: ReadView,
     /// Pending txn writes: `None` = delete, `Some(v)` = put.
-    writes: Option<BTreeMap<Vec<u8>, Option<Vec<u8>>>>,
+    writes: Option<TxnWriteSet>,
     /// Record reads for SSI (optional).
-    on_read: Option<Box<dyn Fn(&[u8]) + 'a>>,
+    on_read: Option<ReadHook<'a>>,
 }
 
 impl<'a> SnapshotStore<'a> {
@@ -79,13 +84,13 @@ impl StorageEngine for SnapshotStore<'_> {
             merged.insert(k, v);
         }
         for (k, v) in StorageEngine::iter(self.base) {
-            if !merged.contains_key(&k) {
+            merged.entry(k.clone()).or_insert_with(|| {
                 if let Ok(Some(vv)) = self.base.get_visible(&k, &self.view) {
-                    merged.insert(k, vv);
+                    vv
                 } else {
-                    merged.insert(k, v);
+                    v
                 }
-            }
+            });
         }
         if let Some(writes) = &self.writes {
             for (k, op) in writes {

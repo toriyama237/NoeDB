@@ -41,7 +41,10 @@ pub fn client_tls_mtls(certs: &DevCertPem, peer_host: &str) -> Result<ClientTlsC
     install_crypto_provider();
     let domain = std::env::var("NOEDB_GRPC_DOMAIN").unwrap_or_else(|_| peer_host.to_string());
     let ca = Certificate::from_pem(certs.ca_pem.as_bytes());
-    let identity = Identity::from_pem(certs.client_cert_pem.as_bytes(), certs.client_key_pem.as_bytes());
+    let identity = Identity::from_pem(
+        certs.client_cert_pem.as_bytes(),
+        certs.client_key_pem.as_bytes(),
+    );
     Ok(ClientTlsConfig::new()
         .domain_name(domain)
         .ca_certificate(ca)
@@ -53,5 +56,7 @@ pub fn client_tls_one_way(certs: &DevCertPem, peer_host: &str) -> Result<ClientT
     install_crypto_provider();
     let domain = std::env::var("NOEDB_GRPC_DOMAIN").unwrap_or_else(|_| peer_host.to_string());
     let ca = Certificate::from_pem(certs.ca_pem.as_bytes());
-    Ok(ClientTlsConfig::new().domain_name(domain).ca_certificate(ca))
+    Ok(ClientTlsConfig::new()
+        .domain_name(domain)
+        .ca_certificate(ca))
 }

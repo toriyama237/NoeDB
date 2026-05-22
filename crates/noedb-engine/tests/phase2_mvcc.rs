@@ -1,5 +1,7 @@
 //! Phase 2 MVCC + transaction SQL integration tests.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::sync::Arc;
 
 use noedb_engine::{LocalEngine, DEFAULT_SESSION};
@@ -19,7 +21,8 @@ fn temp_engine() -> (Arc<LocalEngine>, std::path::PathBuf) {
 fn begin_commit_sql() {
     let (eng, dir) = temp_engine();
     eng.execute("BEGIN").unwrap();
-    eng.put_row_default("accounts", "1", "balance", b"500").unwrap();
+    eng.put_row_default("accounts", "1", "balance", b"500")
+        .unwrap();
     eng.execute("COMMIT").unwrap();
     assert!(!eng.txn().in_txn(DEFAULT_SESSION));
     let _ = std::fs::remove_dir_all(dir);
@@ -28,7 +31,8 @@ fn begin_commit_sql() {
 #[test]
 fn read_your_writes_in_txn() {
     let (eng, dir) = temp_engine();
-    eng.put_row_default("items", "1", "name", b"before").unwrap();
+    eng.put_row_default("items", "1", "name", b"before")
+        .unwrap();
     eng.execute("BEGIN").unwrap();
     eng.put_row_default("items", "1", "name", b"after").unwrap();
     let rows = eng.execute("SELECT name FROM items").unwrap().rows;

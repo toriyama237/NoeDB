@@ -106,7 +106,9 @@ impl<S: RaftStorage> RaftNode<S> {
     fn dispatch(&mut self, from: NodeId, msg: RpcMessage) -> (Option<RpcMessage>, Vec<Action>) {
         match msg {
             RpcMessage::RequestVoteResp(resp) => (None, self.raft.step_vote_response(from, &resp)),
-            RpcMessage::AppendEntriesResp(resp) => (None, self.raft.step_append_response(from, &resp)),
+            RpcMessage::AppendEntriesResp(resp) => {
+                (None, self.raft.step_append_response(from, &resp))
+            }
             other => self.raft.step(from, other),
         }
     }

@@ -3,10 +3,12 @@
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::format::{Footer, IndexEntry, FOOTER_LEN, HEADER_LEN, SST_MAGIC, SST_VERSION};
 use crate::bloom::BloomFilter;
 use crate::error::StorageError;
+use crate::mmap_io::{map_read_only, read_block_from_mmap, MappedFile};
 
 /// Read-only handle to an on-disk SSTable.
 #[derive(Debug, Clone)]
@@ -14,6 +16,7 @@ pub struct SstReader {
     path: PathBuf,
     index: Vec<IndexEntry>,
     bloom: BloomFilter,
+    mmap: Option<Arc<MappedFile>>,
 }
 
 impl SstReader {
@@ -37,7 +40,13 @@ impl SstReader {
         let index = read_index(&mut file, &footer)?;
         let bloom = read_bloom(&mut file, &footer)?;
 
-        Ok(Self { path, index, bloom })
+        let mmap = map_read_only(&path).ok().map(Arc::new);
+        Ok(Self {
+            path,
+            index,
+            bloom,
+            mmap,
+        })
     }
 
     /// Path to the underlying file.
@@ -87,6 +96,9 @@ impl SstReader {
     }
 
     fn read_block(&self, offset: u64) -> Result<Vec<u8>, StorageError> {
+        if let Some(mmap) = &self.mmap {
+            return read_block_from_mmap(mmap, offset);
+        }
         let mut file = File::open(&self.path)?;
         file.seek(SeekFrom::Start(offset))?;
         let mut len_buf = [0u8; 4];

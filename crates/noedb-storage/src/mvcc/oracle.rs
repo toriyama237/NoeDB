@@ -21,7 +21,10 @@ impl TimestampOracle {
 
     /// Next commit timestamp via lock-free `fetch_add` (~1 ns).
     pub fn next(&self) -> CommitTs {
-        self.last.fetch_add(1, Ordering::SeqCst).saturating_add(1).max(1)
+        self.last
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1)
+            .max(1)
     }
 
     /// Raw TSO bump (alias for benchmarks).

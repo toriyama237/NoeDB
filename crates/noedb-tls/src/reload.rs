@@ -4,9 +4,9 @@ use std::sync::{Arc, RwLock};
 
 use tokio_rustls::TlsAcceptor;
 
+use crate::config::build_server_config_mtls;
 use crate::dev_certs::DevCertPem;
 use crate::error::TlsError;
-use crate::config::build_server_config_mtls;
 
 /// Server acceptor whose rustls config can be swapped without restarting TCP.
 #[derive(Clone)]
@@ -57,7 +57,10 @@ impl ReloadingAcceptor {
         IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
     {
         let acceptor = {
-            let guard = self.inner.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let guard = self
+                .inner
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             guard.clone()
         };
         acceptor.accept(io).await

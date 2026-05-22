@@ -51,7 +51,11 @@ impl SsiChecker {
 
         if let Some(out) = self.rw_edges.get(&txn.id) {
             for &pred in out {
-                if self.rw_edges.get(&pred).is_some_and(|s| s.contains(&txn.id)) {
+                if self
+                    .rw_edges
+                    .get(&pred)
+                    .is_some_and(|s| s.contains(&txn.id))
+                {
                     return SsiDecision::Abort("rw-cycle detected (SSI)");
                 }
             }

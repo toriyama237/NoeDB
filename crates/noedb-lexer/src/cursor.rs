@@ -76,7 +76,18 @@ impl<'src> Cursor<'src> {
     const fn is_operator_or_punct_start(b: u8) -> bool {
         matches!(
             b,
-            b'(' | b')' | b',' | b';' | b'*' | b'.' | b'=' | b'!' | b'<' | b'>' | b'+' | b'-' | b'$'
+            b'(' | b')'
+                | b','
+                | b';'
+                | b'*'
+                | b'.'
+                | b'='
+                | b'!'
+                | b'<'
+                | b'>'
+                | b'+'
+                | b'-'
+                | b'$'
         )
     }
 

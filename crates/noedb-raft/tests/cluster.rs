@@ -16,7 +16,8 @@ fn replicates_ten_commands() {
     let mut c = Cluster::new_voters(3).unwrap();
     c.run_rounds(80).unwrap();
     for i in 0..10u32 {
-        c.propose_on_leader(format!("cmd-{i}").into_bytes()).unwrap();
+        c.propose_on_leader(format!("cmd-{i}").into_bytes())
+            .unwrap();
     }
     assert!(c.applied_count() >= 10);
 }

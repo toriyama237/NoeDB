@@ -11,14 +11,18 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
         Expr::Literal(lit) => Ok(literal_to_value(lit)),
         Expr::Column(col) => eval_column(col, row),
         Expr::Unary { op, expr, .. } => eval_unary(*op, expr, row),
-        Expr::Binary { op, left, right, .. } => eval_binary(*op, left, right, row),
+        Expr::Binary {
+            op, left, right, ..
+        } => eval_binary(*op, left, right, row),
         Expr::IsNull { expr, negated, .. } => {
             let v = eval_expr(expr, row)?;
             let is_null = matches!(v, Value::Null);
             Ok(Value::Bool(if *negated { !is_null } else { is_null }))
         }
-        Expr::Between { .. } | Expr::In { .. } => Err(ExecError::UnsupportedExpr),
-        Expr::Parameter { .. } | Expr::CurrentUser { .. } => Err(ExecError::UnsupportedExpr),
+        Expr::Between { .. }
+        | Expr::In { .. }
+        | Expr::Parameter { .. }
+        | Expr::CurrentUser { .. } => Err(ExecError::UnsupportedExpr),
         Expr::Paren(inner, _) => eval_expr(inner, row),
     }
 }
@@ -68,7 +72,12 @@ fn eval_unary(op: UnaryOp, expr: &Expr, row: &[(String, Value)]) -> Result<Value
     }
 }
 
-fn eval_binary(op: BinaryOp, left: &Expr, right: &Expr, row: &[(String, Value)]) -> Result<Value, ExecError> {
+fn eval_binary(
+    op: BinaryOp,
+    left: &Expr,
+    right: &Expr,
+    row: &[(String, Value)],
+) -> Result<Value, ExecError> {
     match op {
         BinaryOp::And => {
             if !eval_predicate(left, row)? {

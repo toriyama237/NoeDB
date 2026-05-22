@@ -1,5 +1,7 @@
 //! LZ4 SST blocks + XOR filter round-trip (Phase 3 Weeks 19–20).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use noedb_storage::{
     compress::{decompress_block, maybe_compress_block, BLOCK_LZ4},
     MemTable, SstReader, SstWriter, XorFilter,

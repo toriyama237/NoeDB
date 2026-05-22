@@ -74,14 +74,12 @@ fn dispatch_sql(eng: &LocalEngine, query: &str) -> SqlResponse {
 
 fn result_set_response(r: QueryResult) -> SqlResponse {
     SqlResponse {
-        body: Some(noedb_grpc::generated::sql_response::Body::Result(ResultSet {
-            columns: r.columns,
-            rows: r
-                .rows
-                .into_iter()
-                .map(|cells| Row { cells })
-                .collect(),
-        })),
+        body: Some(noedb_grpc::generated::sql_response::Body::Result(
+            ResultSet {
+                columns: r.columns,
+                rows: r.rows.into_iter().map(|cells| Row { cells }).collect(),
+            },
+        )),
     }
 }
 
@@ -121,7 +119,10 @@ pub(crate) async fn run_grpc_server(
         .tls_config(tls)
         .map_err(|e| e.to_string())?
         .add_service(svc)
-        .serve(addr.parse().map_err(|e: std::net::AddrParseError| e.to_string())?)
+        .serve(
+            addr.parse()
+                .map_err(|e: std::net::AddrParseError| e.to_string())?,
+        )
         .await
         .map_err(|e| e.to_string())
 }

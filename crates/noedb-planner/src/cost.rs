@@ -48,16 +48,15 @@ impl PlanStats {
 #[must_use]
 pub fn estimate(plan: &PhysicalPlan, stats: &PlanStats) -> f64 {
     match plan {
-        PhysicalPlan::SeqScan { table, .. } => {
-            stats.rows_for(table) as f64 * SEQ_SCAN_ROW_COST
-        }
+        PhysicalPlan::SeqScan { table, .. } => stats.rows_for(table) as f64 * SEQ_SCAN_ROW_COST,
         PhysicalPlan::IndexScan { .. } => INDEX_LOOKUP_COST,
         PhysicalPlan::Filter { input, .. } => {
             estimate(input, stats) + stats.default_rows as f64 * FILTER_ROW_COST
         }
         PhysicalPlan::Project { input, .. } => estimate(input, stats),
         PhysicalPlan::HashJoin { left, right, .. } => {
-            estimate(left, stats) + estimate(right, stats)
+            estimate(left, stats)
+                + estimate(right, stats)
                 + (stats.default_rows as f64 * HASH_JOIN_ROW_COST * 2.0)
         }
         PhysicalPlan::NestedLoopJoin { left, right, .. } => {
@@ -67,8 +66,12 @@ pub fn estimate(plan: &PhysicalPlan, stats: &PlanStats) -> f64 {
         PhysicalPlan::MergeJoin { left, right, .. } => {
             estimate(left, stats) + estimate(right, stats) + stats.default_rows as f64
         }
-        PhysicalPlan::Aggregate { input, .. } => estimate(input, stats) + stats.default_rows as f64 * 0.5,
-        PhysicalPlan::Sort { input, .. } => estimate(input, stats) + stats.default_rows as f64 * 1.5,
+        PhysicalPlan::Aggregate { input, .. } => {
+            estimate(input, stats) + stats.default_rows as f64 * 0.5
+        }
+        PhysicalPlan::Sort { input, .. } => {
+            estimate(input, stats) + stats.default_rows as f64 * 1.5
+        }
         PhysicalPlan::Limit { input, limit, .. } => {
             estimate(input, stats).min(*limit as f64 * SEQ_SCAN_ROW_COST)
         }

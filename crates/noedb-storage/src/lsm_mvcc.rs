@@ -3,8 +3,8 @@
 use crate::error::StorageError;
 use crate::lsm::LsmTree;
 use crate::mvcc::{
-    decode_or_legacy, decode_user_key, encode_internal_key, encode_version,
-    user_key_prefix_end, CommitTs, ReadView, Version,
+    decode_or_legacy, decode_user_key, encode_internal_key, encode_version, user_key_prefix_end,
+    CommitTs, ReadView, Version,
 };
 use crate::wal::LogEntry;
 
@@ -13,8 +13,7 @@ impl LsmTree {
     pub fn put_version(&mut self, user_key: &[u8], version: &Version) -> Result<(), StorageError> {
         let ik = encode_internal_key(user_key, version.commit_ts);
         let val = encode_version(version)?;
-        self.wal
-            .append(&LogEntry::put(ik.clone(), val.clone()))?;
+        self.wal.append(&LogEntry::put(ik.clone(), val.clone()))?;
         self.wal_pending += 1;
         self.maybe_sync_wal()?;
         self.active.put(&ik, &val)?;
@@ -24,13 +23,17 @@ impl LsmTree {
 
     /// Latest committed cell value for `user_key` (newest visible version).
     pub fn get_latest(&self, user_key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
-        let view = ReadView::new(0, u64::MAX, Default::default());
+        let view = ReadView::new(0, u64::MAX, std::collections::BTreeSet::new());
         self.get_visible(user_key, &view)
     }
 
     /// Snapshot read at `read_ts`.
-    pub fn get_at_ts(&self, user_key: &[u8], read_ts: CommitTs) -> Result<Option<Vec<u8>>, StorageError> {
-        let view = ReadView::new(0, read_ts, Default::default());
+    pub fn get_at_ts(
+        &self,
+        user_key: &[u8],
+        read_ts: CommitTs,
+    ) -> Result<Option<Vec<u8>>, StorageError> {
+        let view = ReadView::new(0, read_ts, std::collections::BTreeSet::new());
         self.get_visible(user_key, &view)
     }
 
@@ -87,7 +90,11 @@ impl LsmTree {
             if !view.is_visible(&ver, None) {
                 continue;
             }
-            if best.as_ref().is_none_or(|b| ver.commit_ts > b.commit_ts) {
+            let better = match &best {
+                None => true,
+                Some(b) => ver.commit_ts > b.commit_ts,
+            };
+            if better {
                 let _ = decode_user_key(&ik);
                 best = Some(ver);
             }
@@ -105,7 +112,11 @@ impl LsmTree {
                         if !view.is_visible(&ver, None) {
                             continue;
                         }
-                        if best.as_ref().is_none_or(|b| ver.commit_ts > b.commit_ts) {
+                        let better = match &best {
+                            None => true,
+                            Some(b) => ver.commit_ts > b.commit_ts,
+                        };
+                        if better {
                             best = Some(ver);
                         }
                     }

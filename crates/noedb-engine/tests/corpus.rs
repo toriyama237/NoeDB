@@ -51,11 +51,15 @@ fn corpus_twenty_queries() {
     ];
 
     for (i, sql) in queries.iter().enumerate() {
-        eng.execute(sql).unwrap_or_else(|e| panic!("query {i} `{sql}`: {e}"));
+        eng.execute(sql)
+            .unwrap_or_else(|e| panic!("query {i} `{sql}`: {e}"));
     }
 
-    eng.execute("CREATE INDEX idx_users_id ON users (id)").unwrap();
-    let plan = eng.explain("SELECT name FROM users WHERE id = '1'").unwrap();
+    eng.execute("CREATE INDEX idx_users_id ON users (id)")
+        .unwrap();
+    let plan = eng
+        .explain("SELECT name FROM users WHERE id = '1'")
+        .unwrap();
     assert!(plan.contains("IndexScan"));
 
     let _ = std::fs::remove_dir_all(dir);

@@ -1,6 +1,10 @@
 //! NoeDB interactive shell and optional TCP server (Phase 5 + Phase 1 TLS).
 
-#![allow(clippy::print_stdout, clippy::print_stderr)]
+#![allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::missing_const_for_fn
+)]
 
 mod grpc;
 mod tls;
@@ -86,9 +90,7 @@ fn run_repl(args: &[String]) -> Result<(), String> {
         if trimmed.is_empty() {
             continue;
         }
-        if trimmed.starts_with('#')
-            || trimmed.starts_with("cargo ")
-            || trimmed.starts_with("git ")
+        if trimmed.starts_with('#') || trimmed.starts_with("cargo ") || trimmed.starts_with("git ")
         {
             eprintln!("hint: run shell commands in another terminal; this is the SQL REPL.");
             continue;
@@ -176,14 +178,20 @@ fn run_server(args: &[String]) -> Result<(), String> {
             .map_err(|e| format!("bind {addr}: {e}"))?;
 
         if legacy_tcp(args) {
-            println!("  gRPC (default): omit --legacy-tcp, listen {}", grpc_addr(args));
+            println!(
+                "  gRPC (default): omit --legacy-tcp, listen {}",
+                grpc_addr(args)
+            );
         }
 
         if use_mtls(args) {
             let node_id = node_id_arg(args);
             let certs = tls::load_or_create_dev_certs(&dir, node_id)?;
             let acceptor = tls::reloading_acceptor(&certs)?;
-            println!("noedb listening on {addr} (mTLS 1.3, SPIFFE cn: {})", certs.client_spiffe_cn);
+            println!(
+                "noedb listening on {addr} (mTLS 1.3, SPIFFE cn: {})",
+                certs.client_spiffe_cn
+            );
             println!("  CA: {}", tls::ca_path(&dir).display());
             loop {
                 let (tcp, peer) = listener.accept().await.map_err(|e| e.to_string())?;
@@ -250,7 +258,11 @@ fn run_ping(args: &[String]) -> Result<(), String> {
             let addr = grpc_addr(args);
             let mtls = use_mtls(args);
             grpc::grpc_ping(&addr, &auth, mtls, &certs).await?;
-            let mode = if mtls { "gRPC mTLS 1.3" } else { "gRPC TLS 1.3" };
+            let mode = if mtls {
+                "gRPC mTLS 1.3"
+            } else {
+                "gRPC TLS 1.3"
+            };
             println!("pong ({mode})");
             return Ok(());
         }
@@ -309,10 +321,7 @@ where
         .write_all(&len.to_le_bytes())
         .await
         .map_err(|e| e.to_string())?;
-    stream
-        .write_all(&frame)
-        .await
-        .map_err(|e| e.to_string())?;
+    stream.write_all(&frame).await.map_err(|e| e.to_string())?;
     let mut len_buf = [0u8; 4];
     stream
         .read_exact(&mut len_buf)
@@ -361,10 +370,7 @@ where
         .write_all(&len.to_le_bytes())
         .await
         .map_err(|e| e.to_string())?;
-    stream
-        .write_all(&out)
-        .await
-        .map_err(|e| e.to_string())?;
+    stream.write_all(&out).await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -417,10 +423,7 @@ fn data_dir(args: &[String]) -> PathBuf {
     args.iter()
         .position(|a| a == "--data")
         .and_then(|i| args.get(i + 1))
-        .map_or_else(
-            || std::env::temp_dir().join("noedb-data"),
-            PathBuf::from,
-        )
+        .map_or_else(|| std::env::temp_dir().join("noedb-data"), PathBuf::from)
 }
 
 fn localhost_name() -> Result<rustls::pki_types::ServerName<'static>, String> {

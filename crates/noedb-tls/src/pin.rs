@@ -5,9 +5,9 @@ use std::sync::Arc;
 use rustls::RootCertStore;
 use tokio_rustls::TlsConnector;
 
+use crate::config::install_crypto_provider;
 use crate::dev_certs::DevCertPem;
 use crate::error::TlsError;
-use crate::config::install_crypto_provider;
 
 /// mTLS client that trusts **only** the pinned server leaf (not the full CA).
 ///

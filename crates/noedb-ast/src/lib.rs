@@ -28,9 +28,9 @@ mod stmt;
 pub use crate::expr::{BinaryOp, Expr, Literal, SelectItem, UnaryOp};
 pub use crate::name::{ColumnRef, Ident, TableRef};
 pub use crate::stmt::{
-    ColumnDef, CreateIndexStmt, CreatePolicyStmt, CreateTableStmt, DeleteStmt, DropTableStmt,
-    EnableRlsStmt, ExecuteStmt, InsertStmt, Join, JoinKind, PrepareStmt, SelectStmt, SetRoleStmt,
-    SqlType, Statement, UpdateStmt, BeginTxnStmt, CommitTxnStmt, RollbackTxnStmt,
+    BeginTxnStmt, ColumnDef, CommitTxnStmt, CreateIndexStmt, CreatePolicyStmt, CreateTableStmt,
+    DeleteStmt, DropTableStmt, EnableRlsStmt, ExecuteStmt, InsertStmt, Join, JoinKind, PrepareStmt,
+    RollbackTxnStmt, SelectStmt, SetRoleStmt, SqlType, Statement, UpdateStmt,
 };
 
 #[cfg(test)]

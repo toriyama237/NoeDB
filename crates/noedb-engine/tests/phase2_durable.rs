@@ -1,5 +1,7 @@
 //! MVCC survives engine restart (LSM + WAL).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use noedb_engine::LocalEngine;
 
 #[test]

@@ -66,7 +66,11 @@ fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
             right: Box::new(pushdown_predicates(*right)),
             on,
         },
-        LogicalPlan::Aggregate { input, group_by, aggs } => LogicalPlan::Aggregate {
+        LogicalPlan::Aggregate {
+            input,
+            group_by,
+            aggs,
+        } => LogicalPlan::Aggregate {
             input: Box::new(pushdown_predicates(*input)),
             group_by,
             aggs,
@@ -204,8 +208,20 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
             }
             Some(dedup(cols))
         }
-        PhysicalPlan::HashJoin { left, right, left_key, right_key, .. }
-        | PhysicalPlan::MergeJoin { left, right, left_key, right_key, .. } => {
+        PhysicalPlan::HashJoin {
+            left,
+            right,
+            left_key,
+            right_key,
+            ..
+        }
+        | PhysicalPlan::MergeJoin {
+            left,
+            right,
+            left_key,
+            right_key,
+            ..
+        } => {
             let mut cols = collect_columns(left).unwrap_or_default();
             cols.extend(collect_columns(right).unwrap_or_default());
             cols.push(left_key.clone());
@@ -217,7 +233,9 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
             cols.extend(collect_columns(right).unwrap_or_default());
             Some(dedup(cols))
         }
-        PhysicalPlan::Aggregate { input, group_by, .. } => {
+        PhysicalPlan::Aggregate {
+            input, group_by, ..
+        } => {
             let mut cols = collect_columns(input).unwrap_or_default();
             cols.extend(group_by.clone());
             Some(dedup(cols))
@@ -418,10 +436,7 @@ mod tests {
                 table: None,
                 column: Ident::new("id".into(), Span::new(0, 0)),
             })),
-            right: Box::new(Expr::Literal(Literal::String(
-                "42".into(),
-                Span::new(0, 0),
-            ))),
+            right: Box::new(Expr::Literal(Literal::String("42".into(), Span::new(0, 0)))),
             span: Span::new(0, 0),
         };
         let logical = LogicalPlan::Filter {

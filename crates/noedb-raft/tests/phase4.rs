@@ -32,7 +32,8 @@ fn snapshot_triggers_on_large_log() {
     let mut c = Cluster::new_voters(3).unwrap();
     c.run_rounds(80).unwrap();
     for i in 0..80u32 {
-        c.propose_on_leader(format!("fill-{i}").into_bytes()).unwrap();
+        c.propose_on_leader(format!("fill-{i}").into_bytes())
+            .unwrap();
     }
     let leader = c.leader().expect("leader");
     let applied = c.applied_at(leader).len();

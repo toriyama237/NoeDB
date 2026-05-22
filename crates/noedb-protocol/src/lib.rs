@@ -99,7 +99,8 @@ pub fn encode_request(auth: &ClusterAuth, req: &Request) -> Result<Vec<u8>, Prot
 ///
 /// Auth, size, or codec failures.
 pub fn decode_request(auth: &ClusterAuth, bytes: &[u8]) -> Result<Request, ProtocolError> {
-    let env: WireEnvelope = bincode::deserialize(bytes).map_err(|e| ProtocolError::Codec(e.to_string()))?;
+    let env: WireEnvelope =
+        bincode::deserialize(bytes).map_err(|e| ProtocolError::Codec(e.to_string()))?;
     env.verify(auth)?;
     if env.payload.is_empty() {
         return Err(ProtocolError::Codec("empty payload".into()));
@@ -108,8 +109,8 @@ pub fn decode_request(auth: &ClusterAuth, bytes: &[u8]) -> Result<Request, Proto
     if version != PROTOCOL_VERSION {
         return Err(ProtocolError::BadVersion(version));
     }
-    let req: Request = bincode::deserialize(&env.payload[1..])
-        .map_err(|e| ProtocolError::Codec(e.to_string()))?;
+    let req: Request =
+        bincode::deserialize(&env.payload[1..]).map_err(|e| ProtocolError::Codec(e.to_string()))?;
     Ok(req)
 }
 
@@ -138,7 +139,8 @@ pub fn encode_response(auth: &ClusterAuth, resp: &Response) -> Result<Vec<u8>, P
 ///
 /// Auth, size, or codec failures.
 pub fn decode_response(auth: &ClusterAuth, bytes: &[u8]) -> Result<Response, ProtocolError> {
-    let env: WireEnvelope = bincode::deserialize(bytes).map_err(|e| ProtocolError::Codec(e.to_string()))?;
+    let env: WireEnvelope =
+        bincode::deserialize(bytes).map_err(|e| ProtocolError::Codec(e.to_string()))?;
     env.verify(auth)?;
     if env.payload.is_empty() {
         return Err(ProtocolError::Codec("empty payload".into()));
@@ -147,8 +149,8 @@ pub fn decode_response(auth: &ClusterAuth, bytes: &[u8]) -> Result<Response, Pro
     if version != PROTOCOL_VERSION {
         return Err(ProtocolError::BadVersion(version));
     }
-    let resp: Response = bincode::deserialize(&env.payload[1..])
-        .map_err(|e| ProtocolError::Codec(e.to_string()))?;
+    let resp: Response =
+        bincode::deserialize(&env.payload[1..]).map_err(|e| ProtocolError::Codec(e.to_string()))?;
     Ok(resp)
 }
 

@@ -19,6 +19,7 @@ mod lower;
 mod optimize;
 mod parallel;
 mod physical;
+mod simd_pred;
 mod value;
 
 pub use adaptive::ExecutionFeedback;
@@ -31,6 +32,7 @@ pub use logical::{AggFunc, LogicalPlan};
 pub use lower::lower;
 pub use optimize::{index_wins, optimize, PlanContext};
 pub use physical::PhysicalPlan;
+pub use simd_pred::{filter_eq_i64, filter_range_i64};
 pub use value::{Record, Value};
 
 use noedb_ast::Statement;
@@ -67,10 +69,13 @@ pub fn execute_sql_on<S: StorageEngine<Error = StorageError>>(
     let logical = plan(stmt)?;
     let ctx = PlanContext::new(index_store);
     let physical = optimize(logical, &ctx);
-    execute(physical, &ExecutionContext {
-        store: exec_store,
-        index_catalog: index_store,
-    })
+    execute(
+        physical,
+        &ExecutionContext {
+            store: exec_store,
+            index_catalog: index_store,
+        },
+    )
 }
 
 /// Return an `EXPLAIN` plan for a `SELECT` (optimized physical plan + cost).
@@ -108,11 +113,7 @@ pub fn apply_statement(stmt: &Statement, store: &mut LsmTree) -> Result<Vec<Reco
 /// # Errors
 ///
 /// Storage write failures.
-pub fn create_index(
-    store: &mut LsmTree,
-    table: &str,
-    column: &str,
-) -> Result<(), StorageError> {
+pub fn create_index(store: &mut LsmTree, table: &str, column: &str) -> Result<(), StorageError> {
     SecondaryIndex::build(store, table, column)
 }
 

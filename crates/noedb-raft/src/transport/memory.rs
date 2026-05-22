@@ -36,9 +36,15 @@ impl Transport for MemoryTransport {
     ) -> Pin<Box<dyn Future<Output = Result<RpcMessage, RaftError>> + Send + '_>> {
         let routes = Arc::clone(&self.routes);
         Box::pin(async move {
-            let routes = routes.lock().map_err(|e| RaftError::Transport(e.to_string()))?;
-            let target = routes.get(&to).ok_or_else(|| RaftError::Transport("unknown peer".into()))?;
-            let mut raft = target.lock().map_err(|e| RaftError::Transport(e.to_string()))?;
+            let routes = routes
+                .lock()
+                .map_err(|e| RaftError::Transport(e.to_string()))?;
+            let target = routes
+                .get(&to)
+                .ok_or_else(|| RaftError::Transport("unknown peer".into()))?;
+            let mut raft = target
+                .lock()
+                .map_err(|e| RaftError::Transport(e.to_string()))?;
             let (resp, _actions) = raft.step(NodeId(0), msg);
             resp.ok_or_else(|| RaftError::Transport("no response".into()))
         })

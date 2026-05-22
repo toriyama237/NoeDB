@@ -10,6 +10,7 @@
 //! See `docs/sprint-plan.md`, Phase 2.
 
 #![forbid(unsafe_code)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 #![allow(
     clippy::missing_const_for_fn,
     clippy::use_self,
@@ -26,32 +27,36 @@ pub mod compress;
 mod durable;
 mod engine;
 mod error;
+mod fast_wal;
 mod lsm;
 mod lsm_mvcc;
 mod memtable;
+mod mmap_io;
 pub mod mvcc;
 mod sstable;
 mod wal;
 mod xor_filter;
 
 pub use crate::bloom::BloomFilter;
-pub use crate::xor_filter::XorFilter;
 pub use crate::compaction::{compact_level0_to_l1, L0_COMPACTION_TRIGGER};
 pub use crate::durable::DurableStore;
 pub use crate::engine::StorageEngine;
 pub use crate::error::StorageError;
+pub use crate::fast_wal::append_batch_sync;
 pub use crate::lsm::{LsmConfig, LsmTree};
 pub use crate::memtable::{
     MemTable, MemTableIter, MemTableRangeIter, DEFAULT_MAX_ENTRIES, DEFAULT_MAX_MEM_BYTES,
 };
-pub use crate::sstable::{
-    SstReader, SstWriter, SstWriteOptions, SST_MAGIC, SST_VERSION, SST_VERSION_V2,
-};
+pub use crate::mmap_io::{map_read_only, read_block_from_mmap, MappedFile};
 pub use crate::mvcc::{
-    gc_versions, encode_internal_key, CommitTs, GcStats, MvccMemTable, ReadView, SnapshotStore,
+    encode_internal_key, gc_versions, CommitTs, GcStats, MvccMemTable, ReadView, SnapshotStore,
     TimestampOracle, TxnId, Version,
+};
+pub use crate::sstable::{
+    SstReader, SstWriteOptions, SstWriter, SST_MAGIC, SST_VERSION, SST_VERSION_V2,
 };
 pub use crate::wal::{
     replay_into_memtable, replay_wal_dir, LogEntry, OpType, Wal, WalSegmentManager, WalSyncMode,
     WAL_MAGIC, WAL_VERSION,
 };
+pub use crate::xor_filter::XorFilter;

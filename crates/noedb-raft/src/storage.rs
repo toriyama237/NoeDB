@@ -172,15 +172,15 @@ impl FileStorage {
             let bytes = std::fs::read(self.hard_path()).map_err(StorageError::io)?;
             let (payload, crc) = decode_record(&bytes)?;
             verify_checksum(&payload, crc).map_err(|e| StorageError::Corrupt(e.to_string()))?;
-            self.hard = bincode::deserialize(&payload)
-                .map_err(|e| StorageError::Corrupt(e.to_string()))?;
+            self.hard =
+                bincode::deserialize(&payload).map_err(|e| StorageError::Corrupt(e.to_string()))?;
         }
         if self.log_path().exists() {
             let bytes = std::fs::read(self.log_path()).map_err(StorageError::io)?;
             let (payload, crc) = decode_record(&bytes)?;
             verify_checksum(&payload, crc).map_err(|e| StorageError::Corrupt(e.to_string()))?;
-            self.log = bincode::deserialize(&payload)
-                .map_err(|e| StorageError::Corrupt(e.to_string()))?;
+            self.log =
+                bincode::deserialize(&payload).map_err(|e| StorageError::Corrupt(e.to_string()))?;
         }
         if self.snap_path().exists() {
             let bytes = std::fs::read(self.snap_path()).map_err(StorageError::io)?;
@@ -243,8 +243,8 @@ impl RaftStorage for FileStorage {
         let hard_bytes =
             bincode::serialize(&self.hard).map_err(|e| StorageError::Corrupt(e.to_string()))?;
         Self::write_record(&self.hard_path(), &hard_bytes)?;
-        let log_bytes =
-            bincode::serialize(&self.log.entries()).map_err(|e| StorageError::Corrupt(e.to_string()))?;
+        let log_bytes = bincode::serialize(&self.log.entries())
+            .map_err(|e| StorageError::Corrupt(e.to_string()))?;
         Self::write_record(&self.log_path(), &log_bytes)?;
         if let Some(ref snap) = self.snapshot {
             let snap_bytes =
@@ -260,6 +260,10 @@ fn decode_record(bytes: &[u8]) -> Result<(Vec<u8>, u32), StorageError> {
     if bytes.len() < 4 {
         return Err(StorageError::Corrupt("record too short".into()));
     }
-    let crc = u32::from_le_bytes(bytes[..4].try_into().map_err(|_| StorageError::Corrupt("crc".into()))?);
+    let crc = u32::from_le_bytes(
+        bytes[..4]
+            .try_into()
+            .map_err(|_| StorageError::Corrupt("crc".into()))?,
+    );
     Ok((bytes[4..].to_vec(), crc))
 }

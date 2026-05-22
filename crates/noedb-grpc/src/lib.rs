@@ -5,7 +5,7 @@
 //! - Cluster auth on `x-noedb-auth` metadata
 
 #![forbid(unsafe_code)]
-#![allow(clippy::unused_qualifications)] // tonic-build generated stubs
+#![allow(clippy::all, clippy::nursery, unused_qualifications)]
 
 pub mod auth;
 pub mod tls;
@@ -21,7 +21,7 @@ pub mod generated {
     #![allow(
         clippy::all,
         clippy::pedantic,
-        clippy::unused_qualifications,
+        unused_qualifications,
         missing_docs,
         unreachable_pub
     )]
@@ -30,6 +30,4 @@ pub mod generated {
 
 pub use generated::sql_client::SqlClient;
 pub use generated::sql_server::{Sql, SqlServer};
-pub use generated::{
-    Empty, PingRequest, ResultSet, Row, SqlError, SqlRequest, SqlResponse,
-};
+pub use generated::{Empty, PingRequest, ResultSet, Row, SqlError, SqlRequest, SqlResponse};

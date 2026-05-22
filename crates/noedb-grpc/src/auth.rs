@@ -36,7 +36,8 @@ pub fn verify_auth<T>(req: &Request<T>, expected: &ClusterAuth) -> Result<(), St
     let bytes = meta
         .to_str()
         .map_err(|_| Status::unauthenticated("invalid x-noedb-auth"))?;
-    let raw = hex::decode(bytes).map_err(|_| Status::unauthenticated("invalid x-noedb-auth hex"))?;
+    let raw =
+        hex::decode(bytes).map_err(|_| Status::unauthenticated("invalid x-noedb-auth hex"))?;
     if raw.len() != 32 {
         return Err(Status::unauthenticated("x-noedb-auth must be 32 bytes"));
     }
@@ -49,9 +50,12 @@ pub fn verify_auth<T>(req: &Request<T>, expected: &ClusterAuth) -> Result<(), St
     Ok(())
 }
 
-fn auth_metadata_value(auth: &ClusterAuth) -> Result<MetadataValue<tonic::metadata::Ascii>, Status> {
+fn auth_metadata_value(
+    auth: &ClusterAuth,
+) -> Result<MetadataValue<tonic::metadata::Ascii>, Status> {
     let hex = hex::encode(auth.0);
-    hex.parse().map_err(|_| Status::internal("auth metadata encode failed"))
+    hex.parse()
+        .map_err(|_| Status::internal("auth metadata encode failed"))
 }
 
 #[cfg(test)]

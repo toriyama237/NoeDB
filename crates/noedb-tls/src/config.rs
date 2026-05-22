@@ -5,7 +5,10 @@ use std::sync::Arc;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::server::WebPkiClientVerifier;
-use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, ServerConfig, ServerConnection, SignatureScheme};
+use rustls::{
+    ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, ServerConfig,
+    ServerConnection, SignatureScheme,
+};
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
 use crate::dev_certs::DevCertPem;
@@ -89,17 +92,23 @@ pub fn server_acceptor_dev(certs: &DevCertPem) -> Result<TlsAcceptor, TlsError> 
 
 /// Build an mTLS server acceptor (client cert required).
 pub fn server_acceptor_mtls_dev(certs: &DevCertPem) -> Result<TlsAcceptor, TlsError> {
-    Ok(TlsAcceptor::from(Arc::new(build_server_config_mtls(certs)?)))
+    Ok(TlsAcceptor::from(Arc::new(build_server_config_mtls(
+        certs,
+    )?)))
 }
 
 /// Build a TLS client connector (one-way).
 pub fn client_connector_dev(certs: &DevCertPem) -> Result<TlsConnector, TlsError> {
-    Ok(TlsConnector::from(Arc::new(build_client_config_tls(certs)?)))
+    Ok(TlsConnector::from(Arc::new(build_client_config_tls(
+        certs,
+    )?)))
 }
 
 /// Build an mTLS client connector.
 pub fn client_connector_mtls_dev(certs: &DevCertPem) -> Result<TlsConnector, TlsError> {
-    Ok(TlsConnector::from(Arc::new(build_client_config_mtls(certs)?)))
+    Ok(TlsConnector::from(Arc::new(build_client_config_mtls(
+        certs,
+    )?)))
 }
 
 /// Connector that rejects unknown CAs (for negative tests).

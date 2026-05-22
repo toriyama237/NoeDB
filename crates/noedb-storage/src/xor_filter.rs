@@ -18,16 +18,14 @@ pub struct XorFilter {
 impl XorFilter {
     /// Build for `expected_keys` keys (no false negatives on inserted keys).
     #[must_use]
-    pub fn build(
-        keys: impl IntoIterator<Item = impl AsRef<[u8]>>,
-        expected_keys: usize,
-    ) -> Self {
-        let keys: Vec<Vec<u8>> = keys
-            .into_iter()
-            .map(|k| k.as_ref().to_vec())
-            .collect();
+    pub fn build(keys: impl IntoIterator<Item = impl AsRef<[u8]>>, expected_keys: usize) -> Self {
+        let keys: Vec<Vec<u8>> = keys.into_iter().map(|k| k.as_ref().to_vec()).collect();
         let n = keys.len().max(expected_keys).max(1);
-        let mut size = next_pow2(u32::try_from(n.saturating_mul(4)).unwrap_or(u32::MAX).max(256));
+        let mut size = next_pow2(
+            u32::try_from(n.saturating_mul(4))
+                .unwrap_or(u32::MAX)
+                .max(256),
+        );
 
         loop {
             let mut filter = Self {
@@ -97,12 +95,16 @@ impl XorFilter {
                 "truncated xor filter",
             ));
         }
-        let size = u32::from_le_bytes(data[0..4].try_into().map_err(|_| {
-            crate::error::StorageError::corrupt_sstable("bad xor filter size")
-        })?);
-        let seed = u64::from_le_bytes(data[4..12].try_into().map_err(|_| {
-            crate::error::StorageError::corrupt_sstable("bad xor filter seed")
-        })?);
+        let size = u32::from_le_bytes(
+            data[0..4]
+                .try_into()
+                .map_err(|_| crate::error::StorageError::corrupt_sstable("bad xor filter size"))?,
+        );
+        let seed = u64::from_le_bytes(
+            data[4..12]
+                .try_into()
+                .map_err(|_| crate::error::StorageError::corrupt_sstable("bad xor filter seed"))?,
+        );
         let rest = &data[12..];
         if rest.len() != size as usize * 2 {
             return Err(crate::error::StorageError::corrupt_sstable(
@@ -120,7 +122,11 @@ impl XorFilter {
 fn fingerprint(key: &[u8]) -> u16 {
     let h = crc32(key);
     let fp = ((h >> 16) as u16) ^ (h as u16);
-    if fp == 0 { 1 } else { fp }
+    if fp == 0 {
+        1
+    } else {
+        fp
+    }
 }
 
 fn locations(key: &[u8], size: u32, seed: u64) -> (u32, u32) {

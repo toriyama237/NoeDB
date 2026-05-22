@@ -65,8 +65,15 @@ impl RlsCatalog {
 #[must_use]
 pub fn materialize_session(expr: &Expr, role: &str) -> Expr {
     match expr {
-        Expr::CurrentUser { span } => Expr::Literal(noedb_ast::Literal::String(role.to_string(), *span)),
-        Expr::Binary { op, left, right, span } => Expr::Binary {
+        Expr::CurrentUser { span } => {
+            Expr::Literal(noedb_ast::Literal::String(role.to_string(), *span))
+        }
+        Expr::Binary {
+            op,
+            left,
+            right,
+            span,
+        } => Expr::Binary {
             op: *op,
             left: Box::new(materialize_session(left, role)),
             right: Box::new(materialize_session(right, role)),
@@ -77,18 +84,36 @@ pub fn materialize_session(expr: &Expr, role: &str) -> Expr {
             expr: Box::new(materialize_session(expr, role)),
             span: *span,
         },
-        Expr::IsNull { expr, negated, span } => Expr::IsNull {
+        Expr::IsNull {
+            expr,
+            negated,
+            span,
+        } => Expr::IsNull {
             expr: Box::new(materialize_session(expr, role)),
             negated: *negated,
             span: *span,
         },
-        Expr::In { expr, values, negated, span } => Expr::In {
+        Expr::In {
+            expr,
+            values,
+            negated,
+            span,
+        } => Expr::In {
             expr: Box::new(materialize_session(expr, role)),
-            values: values.iter().map(|v| materialize_session(v, role)).collect(),
+            values: values
+                .iter()
+                .map(|v| materialize_session(v, role))
+                .collect(),
             negated: *negated,
             span: *span,
         },
-        Expr::Between { expr, low, high, negated, span } => Expr::Between {
+        Expr::Between {
+            expr,
+            low,
+            high,
+            negated,
+            span,
+        } => Expr::Between {
             expr: Box::new(materialize_session(expr, role)),
             low: Box::new(materialize_session(low, role)),
             high: Box::new(materialize_session(high, role)),

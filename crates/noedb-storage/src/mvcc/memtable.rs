@@ -16,6 +16,7 @@ pub struct MvccMemTable {
     intents: BTreeMap<Vec<u8>, TxnId>,
 }
 
+#[allow(clippy::needless_pass_by_value)] // `commit_ts` is forwarded into `Version::*` constructors
 impl MvccMemTable {
     /// Empty memtable.
     #[must_use]
@@ -39,31 +40,32 @@ impl MvccMemTable {
     pub fn put(&mut self, user_key: Vec<u8>, value: Vec<u8>, commit_ts: CommitTs) {
         let ik = encode_internal_key(&user_key, commit_ts);
         self.intents.remove(&ik);
-        self.data.insert(
-            ik,
-            Version::put(commit_ts, value),
-        );
+        let ver = Version::put(commit_ts, value);
+        self.data.insert(ik, ver);
     }
 
     /// Commit a delete tombstone at `commit_ts`.
     pub fn delete(&mut self, user_key: Vec<u8>, commit_ts: CommitTs) {
         let ik = encode_internal_key(&user_key, commit_ts);
         self.intents.remove(&ik);
-        self.data.insert(ik, Version::tombstone(commit_ts));
+        let ver = Version::tombstone(commit_ts);
+        self.data.insert(ik, ver);
     }
 
     /// Stage uncommitted write intent for `txn_id`.
     pub fn put_intent(&mut self, user_key: Vec<u8>, value: Vec<u8>, txn_id: TxnId) {
         let ik = encode_internal_key(&user_key, u64::MAX);
         self.intents.insert(ik.clone(), txn_id);
-        self.data.insert(ik, Version::intent(value));
+        let ver = Version::intent(value);
+        self.data.insert(ik, ver);
     }
 
     /// Stage uncommitted delete intent.
     pub fn delete_intent(&mut self, user_key: Vec<u8>, txn_id: TxnId) {
         let ik = encode_internal_key(&user_key, u64::MAX);
         self.intents.insert(ik.clone(), txn_id);
-        self.data.insert(ik, Version::delete_intent());
+        let ver = Version::delete_intent();
+        self.data.insert(ik, ver);
     }
 
     /// Drop all intents owned by `txn_id` (rollback).
@@ -91,14 +93,14 @@ impl MvccMemTable {
     /// Read at explicit `read_ts` (Week 7 — time-travel without full txn).
     #[must_use]
     pub fn get_at_ts(&self, user_key: &[u8], read_ts: CommitTs) -> Option<Vec<u8>> {
-        let view = ReadView::new(0, read_ts, Default::default());
+        let view = ReadView::new(0, read_ts, std::collections::BTreeSet::new());
         self.get(user_key, &view)
     }
 
     /// Scan all visible keys at `read_ts`.
     #[must_use]
     pub fn scan_at_ts(&self, read_ts: CommitTs) -> Vec<(Vec<u8>, Vec<u8>)> {
-        let view = ReadView::new(0, read_ts, Default::default());
+        let view = ReadView::new(0, read_ts, std::collections::BTreeSet::new());
         self.scan(&view).collect()
     }
 
@@ -118,7 +120,7 @@ impl MvccMemTable {
             if !view.is_visible(ver, writer) {
                 continue;
             }
-            if best.is_none_or(|b| ver.commit_ts > b.commit_ts) {
+            if best.map_or(true, |b| ver.commit_ts > b.commit_ts) {
                 best = Some(ver);
             }
         }
@@ -141,10 +143,7 @@ impl MvccMemTable {
     }
 
     /// Scan visible keys at snapshot (one row per user key).
-    pub fn scan<'a>(
-        &'a self,
-        view: &'a ReadView,
-    ) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + 'a {
+    pub fn scan<'a>(&'a self, view: &'a ReadView) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + 'a {
         let mut keys = std::collections::BTreeSet::new();
         for ik in self.data.keys() {
             keys.insert(decode_user_key(ik).to_vec());

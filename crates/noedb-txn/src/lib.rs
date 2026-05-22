@@ -7,6 +7,7 @@
 //! - [`DeadlockGuard`] — wait-for graph + 5s timeout fallback
 
 #![forbid(unsafe_code)]
+#![allow(clippy::significant_drop_tightening, clippy::significant_drop_in_scrutinee)]
 
 mod deadlock;
 mod error;
@@ -19,4 +20,4 @@ pub use error::TxnError;
 pub use manager::{CommitResult, TxnManager};
 pub use noedb_storage::mvcc::{CommitTs, ReadView, TxnId};
 pub use ssi::{SsiChecker, SsiDecision};
-pub use transaction::{TxnState, Transaction, WriteOp};
+pub use transaction::{Transaction, TxnState, WriteOp};

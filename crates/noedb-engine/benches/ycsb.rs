@@ -1,5 +1,12 @@
 //! YCSB-style workloads A/B/C/F on local engine (Phase 3 Week 24).
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::print_stdout,
+    missing_docs
+)]
+
 use std::time::Instant;
 
 use noedb_engine::LocalEngine;
@@ -47,7 +54,8 @@ fn main() {
         if i % 2 == 0 {
             let _ = read_field(eng, &rk);
         } else {
-            eng.put_row_default("users", &rk, "field0", b"v1").expect("update");
+            eng.put_row_default("users", &rk, "field0", b"v1")
+                .expect("update");
         }
     });
 
@@ -56,7 +64,8 @@ fn main() {
         if i % 20 != 0 {
             let _ = read_field(eng, &rk);
         } else {
-            eng.put_row_default("users", &rk, "field0", b"v2").expect("update");
+            eng.put_row_default("users", &rk, "field0", b"v2")
+                .expect("update");
         }
     });
 
@@ -69,7 +78,8 @@ fn main() {
             let _ = read_field(eng, &row_key(i % RECORDS));
         } else {
             let k = format!("new{i}");
-            eng.put_row_default("users", &k, "field0", b"x").expect("insert");
+            eng.put_row_default("users", &k, "field0", b"x")
+                .expect("insert");
         }
     });
 

@@ -5,8 +5,8 @@
 //! - [`MvccMemTable`] — in-memory multi-version store
 //! - [`ReadView`] — snapshot visibility (Snapshot Isolation)
 
-mod gc;
 mod codec;
+mod gc;
 mod key;
 mod memtable;
 mod oracle;

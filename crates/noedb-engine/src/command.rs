@@ -35,7 +35,8 @@ impl Command {
     ///
     /// Payload too large or serialization failure.
     pub fn encode(&self) -> Result<Vec<u8>, crate::EngineError> {
-        let bytes = bincode::serialize(self).map_err(|e| crate::EngineError::Codec(e.to_string()))?;
+        let bytes =
+            bincode::serialize(self).map_err(|e| crate::EngineError::Codec(e.to_string()))?;
         if bytes.len() > MAX_COMMAND_BYTES {
             return Err(crate::EngineError::CommandTooLarge);
         }

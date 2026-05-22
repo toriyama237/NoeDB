@@ -1,5 +1,16 @@
 //! OLTP bank transfer benchmark with MVCC + Rayon (interior mutability).
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::print_stdout,
+    clippy::panic,
+    clippy::items_after_statements,
+    clippy::redundant_closure,
+    clippy::unnecessary_operation,
+    missing_docs
+)]
+
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -29,7 +40,12 @@ fn read_balance(eng: &LocalEngine, session_id: u64, account: &str) -> i64 {
         .unwrap_or(0)
 }
 
-fn run_transfer(eng: &Arc<LocalEngine>, session_id: u64, from: &str, to: &str) -> Result<(), EngineError> {
+fn run_transfer(
+    eng: &Arc<LocalEngine>,
+    session_id: u64,
+    from: &str,
+    to: &str,
+) -> Result<(), EngineError> {
     let bal_from = read_balance(eng, session_id, from);
     if bal_from < 100 {
         return Ok(());
@@ -56,10 +72,16 @@ fn run_transfer(eng: &Arc<LocalEngine>, session_id: u64, from: &str, to: &str) -
 }
 
 fn main() {
+    const ACCOUNTS: u32 = 100;
+    const TXNS: u32 = 2_000;
+
     let threads = std::env::args()
         .nth(1)
         .and_then(|s| s.parse().ok())
-        .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()));
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map_or(4, std::num::NonZeroUsize::get)
+        });
 
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
@@ -76,15 +98,12 @@ fn main() {
 
     let eng = LocalEngine::open_throughput(&dir).expect("open engine");
 
-    const ACCOUNTS: u32 = 100;
-
     for i in 0..ACCOUNTS {
         eng.put_row_default("accounts", &i.to_string(), "balance", b"1000")
             .expect("seed");
     }
 
     let eng = Arc::new(eng);
-    const TXNS: u32 = 2_000;
 
     let start = Instant::now();
     let ok: u32 = (0..TXNS)
@@ -99,9 +118,10 @@ fn main() {
                     Ok(()) => return 1,
                     Err(EngineError::SerializationFailure(_)) => {
                         retries += 1;
-                        if retries > 10 {
-                            panic!("too many serialization conflicts for session {session_id}");
-                        }
+                        assert!(
+                            retries <= 10,
+                            "too many serialization conflicts for session {session_id}"
+                        );
                         let _ = eng.execute_session(session_id, "ROLLBACK");
                         std::thread::yield_now();
                     }
@@ -114,8 +134,6 @@ fn main() {
     let elapsed = start.elapsed();
     let tps = f64::from(ok) / elapsed.as_secs_f64();
 
-    println!(
-        "oltp_mvcc: {ok}/{TXNS} transfers in {elapsed:?} ({tps:.0} txn/s, threads={threads})"
-    );
+    println!("oltp_mvcc: {ok}/{TXNS} transfers in {elapsed:?} ({tps:.0} txn/s, threads={threads})");
     let _ = std::fs::remove_dir_all(dir);
 }

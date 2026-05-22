@@ -85,7 +85,7 @@ fn group_cells_parallel(cells: Vec<Cell>) -> Vec<RowMap> {
     let merged: BTreeMap<Vec<u8>, RowMap> = cells
         .into_par_iter()
         .fold(
-            || BTreeMap::<Vec<u8>, RowMap>::new(),
+            BTreeMap::<Vec<u8>, RowMap>::new,
             |mut acc, cell| {
                 acc.entry(cell.row_id)
                     .or_default()
@@ -93,7 +93,7 @@ fn group_cells_parallel(cells: Vec<Cell>) -> Vec<RowMap> {
                 acc
             },
         )
-        .reduce(|| BTreeMap::new(), merge_maps);
+        .reduce(BTreeMap::new, merge_maps);
 
     merged.into_values().collect()
 }
@@ -109,6 +109,7 @@ fn merge_maps(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use noedb_storage::{LsmConfig, LsmTree};
