@@ -22,6 +22,7 @@
 mod bloom;
 mod checksum;
 mod compaction;
+pub mod compress;
 mod durable;
 mod engine;
 mod error;
@@ -31,8 +32,10 @@ mod memtable;
 pub mod mvcc;
 mod sstable;
 mod wal;
+mod xor_filter;
 
 pub use crate::bloom::BloomFilter;
+pub use crate::xor_filter::XorFilter;
 pub use crate::compaction::{compact_level0_to_l1, L0_COMPACTION_TRIGGER};
 pub use crate::durable::DurableStore;
 pub use crate::engine::StorageEngine;
@@ -41,7 +44,9 @@ pub use crate::lsm::{LsmConfig, LsmTree};
 pub use crate::memtable::{
     MemTable, MemTableIter, MemTableRangeIter, DEFAULT_MAX_ENTRIES, DEFAULT_MAX_MEM_BYTES,
 };
-pub use crate::sstable::{SstReader, SstWriter, SST_MAGIC, SST_VERSION};
+pub use crate::sstable::{
+    SstReader, SstWriter, SstWriteOptions, SST_MAGIC, SST_VERSION, SST_VERSION_V2,
+};
 pub use crate::mvcc::{
     gc_versions, encode_internal_key, CommitTs, GcStats, MvccMemTable, ReadView, SnapshotStore,
     TimestampOracle, TxnId, Version,

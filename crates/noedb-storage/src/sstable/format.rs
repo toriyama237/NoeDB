@@ -3,8 +3,14 @@
 /// SSTable magic bytes (`NOES` = NoeDB SST).
 pub const SST_MAGIC: [u8; 4] = *b"NOES";
 
-/// Current SSTable format version.
+/// SSTable format v1 (Bloom + raw blocks).
 pub const SST_VERSION: u16 = 1;
+/// SSTable format v2 (LZ4 blocks + optional XOR filter).
+pub const SST_VERSION_V2: u16 = 2;
+/// Header flag: LZ4-compressed blocks.
+pub(crate) const SST_FLAG_LZ4_BLOCKS: u16 = 1;
+/// Header flag: XOR filter instead of Bloom.
+pub(crate) const SST_FLAG_XOR_FILTER: u16 = 2;
 
 /// Target data block size in bytes.
 pub(super) const BLOCK_SIZE: usize = 4096;
