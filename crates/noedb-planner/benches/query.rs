@@ -23,6 +23,7 @@ fn seed_tree() -> (LsmTree, std::path::PathBuf) {
             max_mem_bytes: 64 * 1024 * 1024,
             l0_compaction_trigger: 128,
             wal_sync: WalSyncMode::OnFlush,
+            ..Default::default()
         },
     )
     .unwrap();

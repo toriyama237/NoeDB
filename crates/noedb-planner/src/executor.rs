@@ -7,7 +7,7 @@
     clippy::option_if_let_else
 )]
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use noedb_ast::{Expr, SelectItem};
 use noedb_storage::{LsmTree, StorageEngine, StorageError};

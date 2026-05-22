@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 #![allow(unreachable_pub)] // API surface re-exported by the `noedb` meta-crate.
 
+mod adaptive;
 mod build;
 mod cost;
 mod eval;
@@ -20,6 +21,7 @@ mod parallel;
 mod physical;
 mod value;
 
+pub use adaptive::ExecutionFeedback;
 pub use build::build;
 pub use cost::{estimate, PlanStats, INDEX_LOOKUP_COST, SEQ_SCAN_ROW_COST};
 pub use executor::{execute, ExecutionContext, Executor};
@@ -110,8 +112,15 @@ pub fn create_index(
     store: &mut LsmTree,
     table: &str,
     column: &str,
-) -> Result<(), noedb_storage::StorageError> {
+) -> Result<(), StorageError> {
     SecondaryIndex::build(store, table, column)
+}
+
+/// Merge runtime feedback into planner statistics (adaptive costing).
+pub fn record_execution(stats: &mut PlanStats, feedback: &ExecutionFeedback) {
+    for (table, rows) in &feedback.table_rows {
+        stats.table_rows.insert(table.clone(), *rows);
+    }
 }
 
 /// An error produced by the planner.
@@ -143,7 +152,7 @@ pub enum ExecError {
     /// Planner failure.
     Plan(PlanError),
     /// Storage layer failure.
-    Storage(noedb_storage::StorageError),
+    Storage(StorageError),
 }
 
 impl From<PlanError> for ExecError {
@@ -152,8 +161,8 @@ impl From<PlanError> for ExecError {
     }
 }
 
-impl From<noedb_storage::StorageError> for ExecError {
-    fn from(e: noedb_storage::StorageError) -> Self {
+impl From<StorageError> for ExecError {
+    fn from(e: StorageError) -> Self {
         Self::Storage(e)
     }
 }
