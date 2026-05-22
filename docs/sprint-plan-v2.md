@@ -77,21 +77,45 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 | 16 | ⬜ | mmap zero-copy reads |
 | 17 | ⬜ | SIMD predicates |
 | 18 | ✅ | Rayon parallel `SeqScan` (`noedb-planner::parallel`) |
-| 19 | ⬜ | LZ4 + dict + RLE SST blocks |
-| 20 | ⬜ | XOR filter (remplace Bloom) |
-| 21 | ⬜ | Query cache LRU |
-| 22 | 🟡 | Group commit (`LsmConfig::throughput`, `WalSyncMode::OnFlush`) |
-| 23 | ⬜ | Adaptive optimizer |
-| 24 | ⬜ | YCSB suite + tag `v1.2.0-perf` |
+| 19 | ✅ | LZ4 SST blocks (`compress`, `SST_FLAG_LZ4_BLOCKS`) |
+| 20 | ✅ | XOR filter SST v2 (`XorFilter`, `SST_VERSION_V2`) |
+| 21 | ✅ | LRU query cache (`noedb-engine::QueryCache`) |
+| 22 | ✅ | Group commit (`wal_batch_size`, `maybe_sync_wal`) |
+| 23 | ✅ | Adaptive optimizer (`ExecutionFeedback`, `PlanStats`) |
+| 24 | ✅ | YCSB + `oltp_mvcc` bench, tag `v1.2.0-perf` |
 
 ### Semaine 18 — ✅
 
 - **`parallel::load_table_rows`** : grouping Rayon au-delà de 512 cellules
 - Tests : résultats identiques au scan séquentiel
 
-### Semaine 22 — 🟡 (existant)
+### Semaine 19 — ✅
 
-- **`LsmConfig::throughput()`** : memtable 16 MiB, WAL `OnFlush`, compaction rare
+- **`lz4_flex`** : compression blocs SST (`maybe_compress_block` / `decompress_block`)
+- Flag **`SST_FLAG_LZ4_BLOCKS`** sur SST v2
+
+### Semaine 20 — ✅
+
+- **`XorFilter`** : remplace Bloom sur SST v2 (v1 Bloom inchangé)
+- Footer `filter_offset` + flags `SST_FLAG_XOR_FILTER`
+
+### Semaine 21 — ✅
+
+- **`QueryCache`** : LRU 4096 entrées, invalidation sur DML / `COMMIT`
+
+### Semaine 22 — ✅
+
+- **`LsmConfig::throughput()`** : memtable 16 MiB, WAL `OnFlush`, `wal_batch_size` 256
+- **`maybe_sync_wal`** sur `put` / `put_version`
+
+### Semaine 23 — ✅
+
+- **`ExecutionFeedback`** + **`record_execution`** pour costing adaptatif
+
+### Semaine 24 — ✅
+
+- Bench **`ycsb`** (workloads A/B/C/F) et **`oltp_mvcc`** (transferts avec vérif solde)
+- Tag cible **`v1.2.0-perf`**
 
 ## Phases suivantes
 

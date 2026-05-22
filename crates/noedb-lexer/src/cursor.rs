@@ -246,11 +246,11 @@ impl<'src> Cursor<'src> {
         let start = self.pos;
         let mut n: u32 = 0;
         let mut digits = 0u32;
-        while let Some(d) = self.peek_byte().filter(|c| c.is_ascii_digit()) {
+        while let Some(d) = self.peek_byte().filter(u8::is_ascii_digit) {
             self.bump();
             digits += 1;
             n = n.saturating_mul(10).saturating_add(u32::from(d - b'0'));
-            if n > u16::MAX as u32 {
+            if n > u32::from(u16::MAX) {
                 return Err(LexError::new(
                     LexErrorKind::UnexpectedChar('$'),
                     Self::mk_span(start, self.pos),

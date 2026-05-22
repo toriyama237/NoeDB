@@ -29,6 +29,7 @@ fn bench_lsm_puts(c: &mut Criterion) {
                         max_mem_bytes: 16 * 1024 * 1024,
                         l0_compaction_trigger: 64,
                         wal_sync: WalSyncMode::OnFlush,
+                        ..Default::default()
                     },
                 )
                 .unwrap()

@@ -25,6 +25,7 @@ fn wal_segment_replay_after_simulated_crash() {
                 max_mem_bytes: 512 * 1024,
                 l0_compaction_trigger: 99,
                 wal_sync: WalSyncMode::EveryAppend,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -47,6 +48,7 @@ fn ten_k_durability_test() {
             max_mem_bytes: 2048,
             l0_compaction_trigger: 4,
             wal_sync: WalSyncMode::OnFlush,
+            ..Default::default()
         },
     )
     .unwrap();
