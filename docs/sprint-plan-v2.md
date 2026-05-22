@@ -61,11 +61,11 @@ PDF / DOCX détaillé : [`NoeDB_v2_Sprint_Plan.docx`](NoeDB_v2_Sprint_Plan.docx)
 | 07 | ✅ | `Version`, `TimestampOracle`, `MvccMemTable`, LSM `put_version` |
 | 08 | ✅ | `TxnManager`, `BEGIN`/`COMMIT`/`ROLLBACK`, read-your-writes |
 | 09 | ✅ | `ReadView`, `SnapshotStore`, 100 txns concurrentes |
-| 10 | 🟡 | `SsiChecker` + `record_read` |
-| 11 | 🟡 | `DeadlockGuard` |
-| 12 | 🟡 | `SchemaCatalog` |
-| 13 | 🟡 | GC memtable + LSM active |
-| 14 | 🟡 | Bench `oltp_mvcc`, tag `v1.1.0-mvcc` |
+| 10 | ✅ | `SsiChecker` + `record_read` + `track_rw_dependencies` |
+| 11 | ✅ | `DeadlockGuard` (poll on commit) |
+| 12 | ✅ | `SchemaCatalog` + `CREATE TABLE` |
+| 13 | ✅ | GC memtable + LSM active (`gc` / `gc_mvcc_active`) |
+| 14 | ✅ | Bench `oltp_mvcc` Rayon + interior mutability (`eaef836`) |
 
 Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 
@@ -117,11 +117,27 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 - Bench **`ycsb`** (workloads A/B/C/F) et **`oltp_mvcc`** (transferts avec vérif solde)
 - Tag cible **`v1.2.0-perf`**
 
+## Phase 4 — Distributed elite (S25–S36) 🟡
+
+| Semaine | Statut | Livrable |
+|---------|--------|----------|
+| 25 | ✅ | `DistributedEngine` : `Arc`, `RwLock<LsmTree>`, `execute`/`tick` sur `&self` |
+| 26 | ⬜ | ReadIndex linearizable sur leader |
+| 27 | ⬜ | Joint consensus / membership changes |
+| 28 | ⬜ | Log compaction + snapshots durables |
+| 29–36 | ⬜ | Multi-region, sharding, chaos tests |
+
+### Semaine 25 — ✅
+
+- **`DistributedEngine::new_voters` → `Arc<Self>`** : cluster dans `Mutex<Cluster>`
+- **Stores** : `Arc<RwLock<LsmTree>>` par replica — SELECT leader en read lock
+- **CLI `--cluster`** : backend `Arc<DistributedEngine>` sans mutex global
+
 ## Phases suivantes
 
 | Phase | Semaines | Thème |
 |-------|----------|-------|
-| 4 | 25–36 | Distributed elite |
+| 4 | 25–36 | Distributed elite (suite) |
 | 5 | 37–44 | Query engine v2 |
 | 6 | 45–48 | Observabilité & fiabilité |
 | 7 | 49–52 | Ecosystem & **v2.0.0** |

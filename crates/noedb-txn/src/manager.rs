@@ -122,9 +122,14 @@ impl TxnManager {
 
     /// Read key through MVCC + read-your-writes.
     pub fn get(&self, session_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>, TxnError> {
+        let txn_id = *self
+            .sessions
+            .get(&session_id)
+            .ok_or(TxnError::NoActiveTxn)?;
         self.with_txn(session_id, |txn| {
             txn.record_read(key.to_vec());
         })?;
+        self.track_rw_dependencies(txn_id, key);
         let view = self.read_view(session_id)?;
         if let Some(own) = self.with_txn(session_id, |txn| match txn.read_own(key) {
             None => None,
@@ -219,5 +224,27 @@ impl TxnManager {
     #[must_use]
     pub fn active_count(&self) -> usize {
         self.active.lock().len()
+    }
+
+    /// Record SSI rw-edges when this read overlaps another active txn's write set.
+    fn track_rw_dependencies(&self, reader_id: TxnId, key: &[u8]) {
+        let active = self.active.lock();
+        let writers: Vec<TxnId> = active
+            .iter()
+            .filter(|(&id, t)| {
+                id != reader_id
+                    && t.state == TxnState::Active
+                    && t.write_set.contains_key(key)
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        drop(active);
+        if writers.is_empty() {
+            return;
+        }
+        let mut ssi = self.ssi.lock();
+        for writer in writers {
+            ssi.note_rw_dependency(reader_id, writer);
+        }
     }
 }

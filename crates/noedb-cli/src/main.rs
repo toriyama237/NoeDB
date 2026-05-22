@@ -17,18 +17,18 @@ use tokio::net::TcpListener;
 
 enum Backend {
     Local(Arc<LocalEngine>),
-    Distributed(DistributedEngine),
+    Distributed(Arc<DistributedEngine>),
 }
 
 impl Backend {
-    fn execute(&mut self, sql: &str) -> Result<QueryResult, EngineError> {
+    fn execute(&self, sql: &str) -> Result<QueryResult, EngineError> {
         match self {
             Self::Local(e) => e.execute(sql),
             Self::Distributed(e) => e.execute(sql),
         }
     }
 
-    fn explain(&mut self, sql: &str) -> Result<String, EngineError> {
+    fn explain(&self, sql: &str) -> Result<String, EngineError> {
         match self {
             Self::Local(e) => e.explain(sql),
             Self::Distributed(e) => e.explain(sql),
@@ -60,19 +60,14 @@ fn main() {
 
 fn run_repl(args: &[String]) -> Result<(), String> {
     let distributed = args.iter().any(|a| a == "--cluster");
-    let mut backend = if distributed {
-        Backend::Distributed(
-            DistributedEngine::new_voters(3).map_err(|e| e.to_string())?,
-        )
+    let backend = if distributed {
+        let eng = DistributedEngine::new_voters(3).map_err(|e| e.to_string())?;
+        eng.tick(80).map_err(|e| e.to_string())?;
+        Backend::Distributed(eng)
     } else {
         let dir = data_dir(args);
         Backend::Local(LocalEngine::open(&dir).map_err(|e| e.to_string())?)
     };
-    if matches!(backend, Backend::Distributed(_)) {
-        if let Backend::Distributed(ref mut e) = &mut backend {
-            e.tick(80).map_err(|e| e.to_string())?;
-        }
-    }
     println!("NoeDB v1.0 — interactive SQL shell (not your shell — type SQL here).");
     println!("  One statement per line, or several separated by ';'");
     println!("  Examples:  SELECT 1;");

@@ -23,7 +23,7 @@ fn bench_local_select(c: &mut Criterion) {
 }
 
 fn bench_distributed_select(c: &mut Criterion) {
-    let mut eng = DistributedEngine::new_voters(3).expect("cluster");
+    let eng = DistributedEngine::new_voters(3).expect("cluster");
     eng.tick(80).expect("tick");
     for i in 0..100u64 {
         eng.seed_leader_row("users", &i.to_string(), "name", b"x")

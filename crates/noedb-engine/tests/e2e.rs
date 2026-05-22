@@ -21,7 +21,7 @@ fn local_select_literal() {
 
 #[test]
 fn distributed_put_and_select() {
-    let mut eng = DistributedEngine::new_voters(3).unwrap();
+    let eng = DistributedEngine::new_voters(3).unwrap();
     eng.tick(80).unwrap();
     eng.put_row("users", "1", "name", b"ada").unwrap();
     let out = eng.execute("SELECT name FROM users").unwrap();
@@ -31,7 +31,7 @@ fn distributed_put_and_select() {
 
 #[test]
 fn distributed_create_index() {
-    let mut eng = DistributedEngine::new_voters(3).unwrap();
+    let eng = DistributedEngine::new_voters(3).unwrap();
     eng.tick(80).unwrap();
     eng.put_row("users", "1", "id", b"7").unwrap();
     eng.put_row("users", "1", "name", b"ada").unwrap();

@@ -164,13 +164,13 @@ Phase 5 runs the full stack (local or 3-node Raft cluster):
 ```rust
 use noedb::engine::{DistributedEngine, LocalEngine};
 
-// Local: one LSM
-let mut eng = LocalEngine::open("/tmp/noedb-data")?;
-eng.put_row("users", "1", "name", b"ada")?;
+// Local: one LSM (Arc — safe to share across Rayon threads)
+let eng = LocalEngine::open("/tmp/noedb-data")?;
+eng.put_row_default("users", "1", "name", b"ada")?;
 let rows = eng.execute("SELECT name FROM users")?;
 
 // Distributed: parser → planner → Raft → LSM on each replica
-let mut cluster = DistributedEngine::new_voters(3)?;
+let cluster = DistributedEngine::new_voters(3)?;
 cluster.tick(80)?;
 cluster.put_row("users", "1", "name", b"ada")?;
 let rows = cluster.execute("SELECT name FROM users")?;
