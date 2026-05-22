@@ -5,6 +5,7 @@ use std::io::Write;
 use std::path::Path;
 
 use super::format::{Footer, IndexEntry, BLOCK_SIZE, HEADER_LEN, SST_MAGIC, SST_VERSION};
+use super::options::SstWriteOptions;
 use crate::bloom::BloomFilter;
 use crate::error::StorageError;
 use crate::memtable::MemTable;
@@ -16,6 +17,16 @@ pub struct SstWriter {
 }
 
 impl SstWriter {
+    /// Write with Phase 3 options (currently maps to v1 Bloom SST; LZ4 path follows).
+    pub fn write_from_memtable_opts(
+        path: impl AsRef<Path>,
+        table: &MemTable,
+        opts: SstWriteOptions,
+    ) -> Result<u64, StorageError> {
+        let _ = opts;
+        Self::write_from_memtable(path, table)
+    }
+
     /// Write `table` to `path` and return the number of keys written.
     pub fn write_from_memtable(
         path: impl AsRef<Path>,
