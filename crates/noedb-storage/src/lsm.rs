@@ -9,7 +9,7 @@ use crate::compaction::{self, L0_COMPACTION_TRIGGER};
 use crate::engine::StorageEngine;
 use crate::error::StorageError;
 use crate::memtable::{MemTable, DEFAULT_MAX_MEM_BYTES};
-use crate::sstable::{SstReader, SstWriter};
+use crate::sstable::{SstReader, SstWriter, SstWriteOptions};
 use crate::wal::{LogEntry, WalSegmentManager, WalSyncMode};
 
 /// Configuration for [`LsmTree`].
@@ -21,6 +21,10 @@ pub struct LsmConfig {
     pub l0_compaction_trigger: usize,
     /// When to `fsync` the WAL (`EveryAppend` = durable per put, `OnFlush` = group commit).
     pub wal_sync: WalSyncMode,
+    /// SST write profile (LZ4 + XOR by default).
+    pub sst: SstWriteOptions,
+    /// Group-commit: max WAL records before implicit sync on flush path.
+    pub wal_batch_size: usize,
 }
 
 impl Default for LsmConfig {
@@ -29,6 +33,8 @@ impl Default for LsmConfig {
             max_mem_bytes: DEFAULT_MAX_MEM_BYTES,
             l0_compaction_trigger: L0_COMPACTION_TRIGGER,
             wal_sync: WalSyncMode::EveryAppend,
+            sst: SstWriteOptions::default(),
+            wal_batch_size: 1,
         }
     }
 }
@@ -41,6 +47,8 @@ impl LsmConfig {
             max_mem_bytes: 16 * 1024 * 1024,
             l0_compaction_trigger: 64,
             wal_sync: WalSyncMode::OnFlush,
+            sst: SstWriteOptions::phase3_default(),
+            wal_batch_size: 256,
         }
     }
 }
@@ -55,6 +63,7 @@ pub struct LsmTree {
     config: LsmConfig,
     flushed_wal_segment: u64,
     sst_cache: RefCell<HashMap<PathBuf, SstReader>>,
+    pub(crate) wal_pending: usize,
 }
 
 impl LsmTree {
@@ -80,6 +89,7 @@ impl LsmTree {
             config,
             flushed_wal_segment: 0,
             sst_cache: RefCell::new(HashMap::new()),
+            wal_pending: 0,
         })
     }
 
@@ -96,13 +106,26 @@ impl LsmTree {
 
     /// Durably flush buffered WAL records (no-op when already synced per append).
     pub fn sync(&mut self) -> Result<(), StorageError> {
-        self.wal.sync()
+        self.wal.sync()?;
+        self.wal_pending = 0;
+        Ok(())
+    }
+
+    pub(crate) fn maybe_sync_wal(&mut self) -> Result<(), StorageError> {
+        if self.config.wal_sync == WalSyncMode::EveryAppend
+            || self.wal_pending >= self.config.wal_batch_size
+        {
+            self.sync()?;
+        }
+        Ok(())
     }
 
     /// Insert or overwrite a key (WAL → MemTable → maybe flush).
     pub fn put(&mut self, key: &[u8], value: &[u8]) -> Result<(), StorageError> {
         self.wal
             .append(&LogEntry::put(key.to_vec(), value.to_vec()))?;
+        self.wal_pending += 1;
+        self.maybe_sync_wal()?;
         self.active.put(key, value)?;
         self.maybe_flush_and_compact()?;
         Ok(())
@@ -203,6 +226,7 @@ impl LsmTree {
             self.wal.delete_segment(seg)?;
         }
         self.flushed_wal_segment = self.wal.active_id();
+        self.wal_pending = 0;
         Ok(())
     }
 
@@ -311,6 +335,7 @@ mod tests {
                     max_mem_bytes: 1_000_000,
                     l0_compaction_trigger: 99,
                     wal_sync: WalSyncMode::EveryAppend,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -342,6 +367,7 @@ mod tests {
                 max_mem_bytes: 48,
                 l0_compaction_trigger: 99,
                 wal_sync: WalSyncMode::EveryAppend,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -368,6 +394,7 @@ mod tests {
                 max_mem_bytes: 4096,
                 l0_compaction_trigger: 4,
                 wal_sync: WalSyncMode::OnFlush,
+                ..Default::default()
             },
         )
         .unwrap();

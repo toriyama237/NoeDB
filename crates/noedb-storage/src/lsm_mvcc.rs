@@ -13,7 +13,10 @@ impl LsmTree {
     pub fn put_version(&mut self, user_key: &[u8], version: &Version) -> Result<(), StorageError> {
         let ik = encode_internal_key(user_key, version.commit_ts);
         let val = encode_version(version)?;
-        self.wal.append(&LogEntry::put(ik.clone(), val.clone()))?;
+        self.wal
+            .append(&LogEntry::put(ik.clone(), val.clone()))?;
+        self.wal_pending += 1;
+        self.maybe_sync_wal()?;
         self.active.put(&ik, &val)?;
         self.maybe_flush_and_compact()?;
         Ok(())
