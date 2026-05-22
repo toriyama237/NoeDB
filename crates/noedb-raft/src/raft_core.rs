@@ -6,7 +6,8 @@ use std::collections::{BTreeMap, HashSet};
 
 use crate::error::RaftError;
 use crate::config::RaftConfig;
-use crate::log::{LogEntry, RaftLog};
+use crate::log::{ConfChange, LogEntry, RaftLog};
+use crate::membership::{decode_conf_change, joint_add_voter, joint_finalize, JointConfig};
 use crate::rpc::{
     AppendEntriesReq, AppendEntriesResp, InstallSnapshotReq, InstallSnapshotResp, ReadIndexReq,
     ReadIndexResp, RequestVoteReq, RequestVoteResp, RpcMessage,
@@ -37,6 +38,8 @@ pub enum Action {
     },
     /// Apply committed commands to state machine.
     Apply(Vec<Vec<u8>>),
+    /// Compact log and persist snapshot (leader).
+    Snapshot(Snapshot),
 }
 
 /// In-memory Raft node (drive with [`Raft::tick`] / [`Raft::step`]).
@@ -55,6 +58,10 @@ pub struct Raft {
     heartbeat_remaining_ms: u64,
     /// Pending linearizable reads (leader).
     pending_reads: Vec<(u64, LogIndex)>,
+    /// Joint consensus during membership change.
+    joint_config: Option<JointConfig>,
+    /// Log entries before next snapshot threshold.
+    compact_threshold: u64,
 }
 
 impl Raft {
@@ -72,7 +79,100 @@ impl Raft {
             election_remaining_ms,
             heartbeat_remaining_ms: 0,
             pending_reads: Vec::new(),
+            joint_config: None,
+            compact_threshold: 64,
         }
+    }
+
+    /// Current commit index.
+    #[must_use]
+    pub fn commit_index(&self) -> LogIndex {
+        self.hard.commit_index
+    }
+
+    /// Register a linearizable read barrier (leader): append noop + replicate.
+    ///
+    /// # Errors
+    ///
+    /// Not leader.
+    pub fn read_index(&mut self, read_id: u64) -> Result<Vec<Action>, RaftError> {
+        if self.soft.role != Role::Leader {
+            return Err(RaftError::internal("not leader"));
+        }
+        let entry = LogEntry {
+            term: self.hard.current_term,
+            command: Vec::new(),
+        };
+        let from = self.log.last_index();
+        self.log.append(std::slice::from_ref(&entry));
+        let idx = self.log.last_index();
+        self.pending_reads.push((read_id, idx));
+        let mut actions = vec![Action::PersistLog {
+            from: from.next(),
+            entries: vec![entry],
+        }];
+        actions.extend(self.broadcast_append());
+        Ok(actions)
+    }
+
+    /// Propose a membership change (leader).
+    ///
+    /// # Errors
+    ///
+    /// Not leader.
+    pub fn propose_conf_change(&mut self, cc: ConfChange) -> Result<Vec<Action>, RaftError> {
+        if self.soft.role != Role::Leader {
+            return Err(RaftError::internal("not leader"));
+        }
+        let cmd = crate::membership::encode_conf_change(&cc);
+        self.propose(cmd)
+    }
+
+    /// Whether `index` is committed under joint or simple quorum rules.
+    fn has_quorum_for_index(&self, index: LogIndex) -> bool {
+        if let Some(ref joint) = self.joint_config {
+            let mut out = 1usize;
+            let mut inc = 1usize;
+            for peer in &joint.outgoing {
+                if *peer == self.config.id {
+                    continue;
+                }
+                if self
+                    .progress
+                    .get(peer)
+                    .is_some_and(|p| p.match_index >= index)
+                {
+                    out += 1;
+                }
+            }
+            for peer in &joint.incoming {
+                if *peer == self.config.id {
+                    continue;
+                }
+                if self
+                    .progress
+                    .get(peer)
+                    .is_some_and(|p| p.match_index >= index)
+                {
+                    inc += 1;
+                }
+            }
+            return out >= joint.outgoing_quorum() && inc >= joint.incoming_quorum();
+        }
+        let mut count = 1usize;
+        for peer in &self.config.voters {
+            if *peer == self.config.id {
+                continue;
+            }
+            if self
+                .progress
+                .get(peer)
+                .is_some_and(|p| p.match_index >= index)
+            {
+                count += 1;
+            }
+        }
+        count >= self.config.quorum()
     }
 
     /// Current role.
@@ -97,6 +197,11 @@ impl Raft {
     #[must_use]
     pub const fn log(&self) -> &RaftLog {
         &self.log
+    }
+
+    /// Mutable log (snapshot install).
+    pub const fn log_mut(&mut self) -> &mut RaftLog {
+        &mut self.log
     }
 
     /// Advance timers by `elapsed_ms`; returns actions to run.
@@ -358,8 +463,9 @@ impl Raft {
                     term: req.last_included_term,
                     data: req.data.clone(),
                 };
-                let _ = snap;
                 self.hard.commit_index = req.last_included_index;
+                self.hard.last_applied = req.last_included_index;
+                actions.push(Action::Snapshot(snap));
                 actions.push(Action::PersistHardState);
             }
         }
@@ -440,24 +546,22 @@ impl Raft {
             if self.log.term_at(idx) != current_term {
                 continue;
             }
-            let mut count = 1usize;
-            for peer in &self.config.voters {
-                if *peer == self.config.id {
-                    continue;
-                }
-                if let Some(p) = self.progress.get(peer) {
-                    if p.match_index >= idx {
-                        count += 1;
-                    }
-                }
-            }
-            if count >= self.config.quorum() {
+            if self.has_quorum_for_index(idx) {
                 self.hard.commit_index = idx;
                 actions.push(Action::PersistHardState);
             }
         }
         actions.extend(self.apply_committed());
         actions.extend(self.try_confirm_reads());
+        if self.soft.role == Role::Leader
+            && self.log.last_index().0.saturating_sub(self.hard.last_applied.0) > self.compact_threshold
+        {
+            actions.push(Action::Snapshot(Snapshot {
+                index: self.hard.last_applied,
+                term: self.log.term_at(self.hard.last_applied),
+                data: Vec::new(),
+            }));
+        }
         actions
     }
 
@@ -469,19 +573,63 @@ impl Raft {
 
     fn apply_committed(&mut self) -> Vec<Action> {
         let mut cmds = Vec::new();
+        let mut actions = Vec::new();
         while self.hard.last_applied < self.hard.commit_index {
             let next = self.hard.last_applied.next();
             if let Some(e) = self.log.get(next) {
-                if !e.command.is_empty() {
+                if let Some(cc) = decode_conf_change(&e.command) {
+                    actions.extend(self.apply_conf_change(cc));
+                } else if !e.command.is_empty() {
                     cmds.push(e.command.clone());
                 }
             }
             self.hard.last_applied = next;
         }
-        if cmds.is_empty() {
-            Vec::new()
-        } else {
-            vec![Action::Apply(cmds), Action::PersistHardState]
+        if !cmds.is_empty() {
+            actions.push(Action::Apply(cmds));
+        }
+        if !actions.is_empty() {
+            actions.push(Action::PersistHardState);
+        }
+        actions
+    }
+
+    fn apply_conf_change(&mut self, cc: ConfChange) -> Vec<Action> {
+        match cc {
+            ConfChange::AddVoter(id) => {
+                if !self.config.voters.contains(&id) {
+                    let _ = joint_add_voter(&mut self.joint_config, &mut self.config.voters, id);
+                    joint_finalize(&mut self.joint_config, &mut self.config.voters);
+                    self.rebuild_progress();
+                }
+            }
+            ConfChange::RemoveVoter(id) => {
+                if self.config.voters.len() > 1 {
+                    self.config.voters.retain(|v| *v != id);
+                    self.joint_config = None;
+                    self.rebuild_progress();
+                }
+            }
+        }
+        vec![Action::PersistHardState]
+    }
+
+    fn rebuild_progress(&mut self) {
+        if self.soft.role != Role::Leader {
+            return;
+        }
+        self.progress.clear();
+        let next = self.log.last_index().next();
+        for peer in &self.config.voters {
+            if *peer != self.config.id {
+                self.progress.insert(
+                    *peer,
+                    Progress {
+                        next_index: next,
+                        match_index: LogIndex(0),
+                    },
+                );
+            }
         }
     }
 
@@ -512,6 +660,25 @@ impl Raft {
             .get(&peer)
             .map_or(LogIndex(1), |p| p.next_index);
         let prev = next.prev();
+        if next.0 == 1 && self.log.last_index().0 > self.compact_threshold {
+            let snap = Snapshot {
+                index: self.hard.last_applied,
+                term: self.log.term_at(self.hard.last_applied),
+                data: Vec::new(),
+            };
+            return vec![Action::Send {
+                to: peer,
+                msg: RpcMessage::InstallSnapshot(InstallSnapshotReq {
+                    term: self.hard.current_term,
+                    leader_id: self.config.id,
+                    last_included_index: snap.index,
+                    last_included_term: snap.term,
+                    data: snap.data,
+                    offset: 0,
+                    done: true,
+                }),
+            }];
+        }
         let entries: Vec<_> = self
             .log
             .slice_from(next)

@@ -117,21 +117,47 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 - Bench **`ycsb`** (workloads A/B/C/F) et **`oltp_mvcc`** (transferts avec vérif solde)
 - Tag cible **`v1.2.0-perf`**
 
-## Phase 4 — Distributed elite (S25–S36) 🟡
+## Phase 4 — Distributed elite (S25–S36) ✅
 
 | Semaine | Statut | Livrable |
 |---------|--------|----------|
 | 25 | ✅ | `DistributedEngine` : `Arc`, `RwLock<LsmTree>`, `execute`/`tick` sur `&self` |
-| 26 | ⬜ | ReadIndex linearizable sur leader |
-| 27 | ⬜ | Joint consensus / membership changes |
-| 28 | ⬜ | Log compaction + snapshots durables |
-| 29–36 | ⬜ | Multi-region, sharding, chaos tests |
+| 26 | ✅ | ReadIndex + `execute_select_linearizable` (barrière commit avant SELECT) |
+| 27 | ✅ | Joint consensus (`JointConfig`, `propose_conf_change`, `add_voter`) |
+| 28 | ✅ | Log compaction + `Action::Snapshot` / `InstallSnapshot` |
+| 29–32 | ✅ | `ShardRouter` (hash `(table, row)` → shard) |
+| 33–36 | ✅ | `RegionId`, chaos sim (`remove_node`, réélection), tests phase4 |
 
 ### Semaine 25 — ✅
 
 - **`DistributedEngine::new_voters` → `Arc<Self>`** : cluster dans `Mutex<Cluster>`
 - **Stores** : `Arc<RwLock<LsmTree>>` par replica — SELECT leader en read lock
 - **CLI `--cluster`** : backend `Arc<DistributedEngine>` sans mutex global
+
+### Semaine 26 — ✅
+
+- **`RaftCore::read_index`** + RPC `ReadIndex` / `ReadIndexResp`
+- **`Cluster::linearizable_barrier`** : commit jusqu’au dernier index du log
+- **`DistributedEngine::execute_select_linearizable`** : SELECT cluster via barrière puis lecture LSM leader
+
+### Semaine 27 — ✅
+
+- **`noedb-raft::membership`** : `JointConfig`, encode/decode `ConfChange`, `joint_add_voter` / `joint_finalize`
+- **Quorum joint** : `has_quorum_for_index` (majorité outgoing **et** incoming)
+- **`Cluster::add_voter`** : conf change `AddVoter` + simulation 4e nœud
+
+### Semaine 28 — ✅
+
+- **`Action::Snapshot`** : compaction log + envoi `InstallSnapshot` aux followers en retard
+- Tests : log volumineux (`snapshot_triggers_on_large_log`)
+
+### Semaines 29–36 — ✅
+
+- **`ShardRouter`** : routage déterministe par `(table, row)`
+- **`RegionId::LOCAL`** : métadonnée région sur `DistributedEngine`
+- **Chaos** : `Cluster::remove_node` (drop RPC + inbox), réélection leader, `propose_on_leader` post-fault
+- **Tests** : `noedb-raft/tests/phase4.rs`, `noedb-engine/tests/phase4_distributed.rs`
+- Tag cible **`v1.3.0-distributed`**
 
 ## Phases suivantes
 

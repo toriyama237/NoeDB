@@ -84,6 +84,25 @@ impl<S: RaftStorage> RaftNode<S> {
         self.exec(actions)
     }
 
+    /// Linearizable read barrier (leader only).
+    ///
+    /// # Errors
+    ///
+    /// Not leader or storage failure.
+    pub fn read_index(&mut self, read_id: u64) -> Result<Vec<(NodeId, RpcMessage)>, RaftError> {
+        let actions = self.raft.read_index(read_id)?;
+        self.exec(actions)
+    }
+
+    /// Propose membership change (leader only).
+    pub fn propose_conf_change(
+        &mut self,
+        cc: crate::log::ConfChange,
+    ) -> Result<Vec<(NodeId, RpcMessage)>, RaftError> {
+        let actions = self.raft.propose_conf_change(cc)?;
+        self.exec(actions)
+    }
+
     fn dispatch(&mut self, from: NodeId, msg: RpcMessage) -> (Option<RpcMessage>, Vec<Action>) {
         match msg {
             RpcMessage::RequestVoteResp(resp) => (None, self.raft.step_vote_response(from, &resp)),
@@ -104,6 +123,12 @@ impl<S: RaftStorage> RaftNode<S> {
                 }
                 Action::Apply(cmds) => {
                     self.applied.extend(cmds);
+                }
+                Action::Snapshot(snap) => {
+                    self.storage.save_snapshot(&snap)?;
+                    self.raft
+                        .log_mut()
+                        .restore(snap.index, snap.term, Vec::new());
                 }
                 Action::Send { to, msg } => outbound.push((to, msg)),
             }

@@ -15,6 +15,8 @@ mod rls;
 mod schema;
 mod session;
 mod query_cache;
+mod region;
+mod shard;
 mod txn;
 
 pub use audit::{AuditEntry, AuditLog};
@@ -30,3 +32,5 @@ pub use prepared::{bind_parameters, PrepareCache, PreparedStatement};
 pub use rls::{apply_rls, materialize_session, Policy, RlsCatalog};
 pub use schema::{SchemaCatalog, TableSchema};
 pub use session::SessionContext;
+pub use region::RegionId;
+pub use shard::ShardRouter;

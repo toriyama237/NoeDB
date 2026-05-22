@@ -6,10 +6,11 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::config::RaftConfig;
 use crate::error::RaftError;
+use crate::log::ConfChange;
 use crate::node::MemNode;
 use crate::rpc::RpcMessage;
 use crate::storage::MemStorage;
-use crate::types::{NodeId, Role};
+use crate::types::{LogIndex, NodeId, Role};
 
 /// In-process multi-node cluster (no real network).
 pub struct Cluster {
@@ -67,9 +68,12 @@ impl Cluster {
         Ok(())
     }
 
-    /// Deliver all queued RPCs.
+    /// Deliver all queued RPCs (messages to removed nodes are dropped).
     pub fn deliver_all(&mut self) -> Result<(), RaftError> {
         while let Some((from, to, msg)) = self.inbox.pop_front() {
+            if !self.nodes.contains_key(&to) {
+                continue;
+            }
             let (resp, sends) = self.nodes.get_mut(&to).expect("node").step(from, msg)?;
             if let Some(r) = resp {
                 self.inbox.push_back((to, from, r));
@@ -151,5 +155,79 @@ impl Cluster {
     #[must_use]
     pub fn applied_at(&self, id: NodeId) -> &[Vec<u8>] {
         self.nodes.get(&id).expect("node").applied()
+    }
+
+    /// Commit index for a node.
+    #[must_use]
+    pub fn commit_index(&self, id: NodeId) -> LogIndex {
+        self.nodes.get(&id).expect("node").raft().commit_index()
+    }
+
+    /// Block until leader commits a linearizable read barrier (Week 26).
+    ///
+    /// # Errors
+    ///
+    /// No leader or barrier not committed in time.
+    pub fn linearizable_barrier(&mut self) -> Result<LogIndex, RaftError> {
+        let leader = self.leader().ok_or_else(|| RaftError::internal("no leader"))?;
+        let read_id = 1;
+        let sends = self.nodes.get_mut(&leader).expect("leader").read_index(read_id)?;
+        for (to, msg) in sends {
+            self.inbox.push_back((leader, to, msg));
+        }
+        let target = self.nodes.get(&leader).expect("leader").raft().log().last_index();
+        for _ in 0..48 {
+            self.drive_quiescent(8)?;
+            if self.commit_index(leader) >= target {
+                return Ok(target);
+            }
+        }
+        Err(RaftError::internal("read index barrier timeout"))
+    }
+
+    /// Add a voter via joint-conf change and replicate (Week 27).
+    ///
+    /// # Errors
+    ///
+    /// Cluster errors.
+    pub fn add_voter(&mut self, id: NodeId) -> Result<(), RaftError> {
+        if self.nodes.contains_key(&id) {
+            return Ok(());
+        }
+        let voters: Vec<_> = self.nodes.keys().copied().collect();
+        let cfg = RaftConfig::simulation(id, {
+            let mut v = voters;
+            if !v.contains(&id) {
+                v.push(id);
+            }
+            v.sort_unstable();
+            v
+        });
+        let node = MemNode::open(cfg, MemStorage::new())?;
+        self.nodes.insert(id, node);
+        self.run_rounds(8)?;
+        let leader = self.leader().ok_or_else(|| RaftError::internal("no leader"))?;
+        let sends = self
+            .nodes
+            .get_mut(&leader)
+            .expect("leader")
+            .propose_conf_change(ConfChange::AddVoter(id))?;
+        for (to, msg) in sends {
+            self.inbox.push_back((leader, to, msg));
+        }
+        self.drive_quiescent(32)?;
+        Ok(())
+    }
+
+    /// Voter count.
+    #[must_use]
+    pub fn voter_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Remove a node from the simulation (chaos / fault injection).
+    pub fn remove_node(&mut self, id: NodeId) {
+        self.nodes.remove(&id);
+        self.inbox.retain(|(_, to, _)| *to != id);
     }
 }

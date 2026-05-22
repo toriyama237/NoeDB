@@ -11,7 +11,7 @@ use crate::state::HardState;
 use crate::types::{LogIndex, Term};
 
 /// Snapshot metadata + opaque state-machine bytes.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
     /// Last index included in snapshot.
     pub index: LogIndex,

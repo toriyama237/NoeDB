@@ -40,5 +40,9 @@ harness = false
 name = "cluster"
 path = "tests/cluster.rs"
 
+[[test]]
+name = "phase4"
+path = "tests/phase4.rs"
+
 [lints]
 workspace = true

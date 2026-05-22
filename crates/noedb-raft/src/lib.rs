@@ -22,6 +22,7 @@ mod codec;
 mod config;
 mod error;
 mod log;
+mod membership;
 mod node;
 mod raft_core;
 mod rpc;
@@ -35,7 +36,8 @@ mod types;
 pub use codec::{decode_message, encode_message};
 pub use config::RaftConfig;
 pub use error::{RaftError, SecurityError, StorageError};
-pub use log::{Command, LogEntry, RaftLog};
+pub use log::{Command, ConfChange, LogEntry, RaftLog};
+pub use membership::{decode_conf_change, encode_conf_change, JointConfig};
 pub use node::{MemNode, RaftNode};
 pub use raft_core::{Action, Raft};
 pub use rpc::{

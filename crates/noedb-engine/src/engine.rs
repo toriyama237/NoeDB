@@ -21,8 +21,10 @@ use crate::machine::apply_command;
 use crate::prepared::{bind_parameters, PrepareCache};
 use crate::query_cache::QueryCache;
 use crate::rls::{apply_rls, RlsCatalog};
+use crate::region::RegionId;
 use crate::schema::SchemaCatalog;
 use crate::session::SessionContext;
+use crate::shard::ShardRouter;
 use crate::txn::{commit_to_storage, execute_select_in_txn, put_row_in_txn, txn_err};
 
 /// Default session id for single-client CLI / tests.
@@ -398,6 +400,8 @@ pub struct DistributedEngine {
     voter_ids: Vec<NodeId>,
     applied_watermark: Mutex<HashMap<NodeId, usize>>,
     cached_leader: Mutex<Option<NodeId>>,
+    region: RegionId,
+    shards: ShardRouter,
 }
 
 impl DistributedEngine {
@@ -409,6 +413,7 @@ impl DistributedEngine {
     pub fn new_voters(n: u64) -> Result<Arc<Self>, EngineError> {
         let cluster = Cluster::new_voters(n)?;
         let voter_ids = cluster.voter_ids();
+        let shard_n = voter_ids.len().max(1);
         let mut stores = HashMap::new();
         let mut applied_watermark = HashMap::new();
         for id in &voter_ids {
@@ -429,7 +434,39 @@ impl DistributedEngine {
             voter_ids,
             applied_watermark: Mutex::new(applied_watermark),
             cached_leader: Mutex::new(None),
+            region: RegionId::LOCAL,
+            shards: ShardRouter::new(shard_n),
         }))
+    }
+
+    /// Deployment region id.
+    #[must_use]
+    pub const fn region(&self) -> RegionId {
+        self.region
+    }
+
+    /// Shard router for horizontal partitioning.
+    #[must_use]
+    pub const fn shards(&self) -> &ShardRouter {
+        &self.shards
+    }
+
+    /// Add a Raft voter at runtime (joint conf change).
+    ///
+    /// # Errors
+    ///
+    /// Raft or cluster errors.
+    pub fn add_voter(&self, id: u64) -> Result<(), EngineError> {
+        self.cluster
+            .lock()
+            .add_voter(NodeId(id))
+            .map_err(EngineError::Raft)
+    }
+
+    /// Current voter count in the cluster.
+    #[must_use]
+    pub fn voter_count(&self) -> usize {
+        self.cluster.lock().voter_count()
     }
 
     /// Run simulation rounds (election / heartbeat).
@@ -507,16 +544,7 @@ impl DistributedEngine {
         validate_sql(sql)?;
         let stmt = noedb_parser::parse(sql)?;
         match &stmt {
-            Statement::Select(_) => {
-                let leader = self.ensure_leader()?;
-                let store = self
-                    .stores
-                    .get(&leader)
-                    .ok_or_else(|| EngineError::Raft(RaftError::internal("leader store missing")))?;
-                let tree = store.read();
-                let records = execute_sql(&stmt, &tree).map_err(EngineError::Exec)?;
-                Ok(QueryResult::from_records(&records))
-            }
+            Statement::Select(_) => self.execute_select_linearizable(&stmt),
             Statement::CreateIndex(idx) => {
                 if idx.columns.len() != 1 {
                     return Err(EngineError::Exec(ExecError::UnsupportedExpr));
@@ -547,6 +575,21 @@ impl DistributedEngine {
             .ok_or_else(|| EngineError::Raft(RaftError::internal("leader store missing")))?;
         let tree = store.read();
         explain_sql(&stmt, &tree).map_err(plan_err)
+    }
+
+    fn execute_select_linearizable(&self, stmt: &Statement) -> Result<QueryResult, EngineError> {
+        let leader = self.ensure_leader()?;
+        self.cluster
+            .lock()
+            .linearizable_barrier()
+            .map_err(EngineError::Raft)?;
+        let store = self
+            .stores
+            .get(&leader)
+            .ok_or_else(|| EngineError::Raft(RaftError::internal("leader store missing")))?;
+        let tree = store.read();
+        let records = execute_sql(&stmt, &tree).map_err(EngineError::Exec)?;
+        Ok(QueryResult::from_records(&records))
     }
 
     fn ensure_leader(&self) -> Result<NodeId, EngineError> {
