@@ -15,6 +15,7 @@ keywords.workspace = true
 noedb-storage = { workspace = true }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }
+dashmap = { workspace = true }
 
 [dev-dependencies]
 

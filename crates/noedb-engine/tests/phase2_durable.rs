@@ -12,15 +12,15 @@ fn committed_version_survives_reopen() {
             .as_nanos()
     ));
     {
-        let mut eng = LocalEngine::open(&dir).unwrap();
+        let eng = LocalEngine::open(&dir).unwrap();
         eng.execute("BEGIN").unwrap();
-        eng.put_row("t", "1", "v", b"first").unwrap();
+        eng.put_row_default("t", "1", "v", b"first").unwrap();
         eng.execute("COMMIT").unwrap();
         eng.execute("BEGIN").unwrap();
-        eng.put_row("t", "1", "v", b"second").unwrap();
+        eng.put_row_default("t", "1", "v", b"second").unwrap();
         eng.execute("COMMIT").unwrap();
     }
-    let mut eng = LocalEngine::open(&dir).unwrap();
+    let eng = LocalEngine::open(&dir).unwrap();
     let rows = eng.execute("SELECT v FROM t").unwrap().rows;
     assert_eq!(rows[0][0], "second");
     let _ = std::fs::remove_dir_all(dir);

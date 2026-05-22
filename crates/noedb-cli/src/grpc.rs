@@ -1,6 +1,6 @@
 //! gRPC SQL server and client (Phase 1 Week 3).
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use noedb_engine::{EngineError, LocalEngine, QueryResult};
 use noedb_grpc::{
@@ -17,11 +17,11 @@ use tonic::{Request, Response as GrpcResponse, Status};
 
 struct SqlServiceImpl {
     auth: ClusterAuth,
-    engine: Arc<Mutex<LocalEngine>>,
+    engine: Arc<LocalEngine>,
 }
 
 impl SqlServiceImpl {
-    fn new(auth: ClusterAuth, engine: Arc<Mutex<LocalEngine>>) -> Self {
+    fn new(auth: ClusterAuth, engine: Arc<LocalEngine>) -> Self {
         Self { auth, engine }
     }
 }
@@ -34,10 +34,7 @@ impl Sql for SqlServiceImpl {
     ) -> Result<GrpcResponse<SqlResponse>, Status> {
         verify_auth(&request, &self.auth)?;
         let query = request.into_inner().query;
-        let resp = {
-            let mut eng = self.engine.lock().map_err(|_| Status::internal("engine lock"))?;
-            dispatch_sql(&mut eng, &query)
-        };
+        let resp = dispatch_sql(&self.engine, &query);
         Ok(GrpcResponse::new(resp))
     }
 
@@ -47,14 +44,11 @@ impl Sql for SqlServiceImpl {
     ) -> Result<GrpcResponse<SqlResponse>, Status> {
         verify_auth(&request, &self.auth)?;
         let query = request.into_inner().query;
-        let resp = {
-            let eng = self.engine.lock().map_err(|_| Status::internal("engine lock"))?;
-            match eng.explain(&query) {
-                Ok(text) => SqlResponse {
-                    body: Some(noedb_grpc::generated::sql_response::Body::Explain(text)),
-                },
-                Err(e) => sql_error(&e),
-            }
+        let resp = match self.engine.explain(&query) {
+            Ok(text) => SqlResponse {
+                body: Some(noedb_grpc::generated::sql_response::Body::Explain(text)),
+            },
+            Err(e) => sql_error(&e),
         };
         Ok(GrpcResponse::new(resp))
     }
@@ -71,7 +65,7 @@ impl Sql for SqlServiceImpl {
     }
 }
 
-fn dispatch_sql(eng: &mut LocalEngine, query: &str) -> SqlResponse {
+fn dispatch_sql(eng: &LocalEngine, query: &str) -> SqlResponse {
     match eng.execute(query) {
         Ok(r) => result_set_response(r),
         Err(e) => sql_error(&e),
@@ -106,7 +100,7 @@ fn sql_error(e: &EngineError) -> SqlResponse {
 pub(crate) async fn run_grpc_server(
     addr: &str,
     auth: ClusterAuth,
-    engine: Arc<Mutex<LocalEngine>>,
+    engine: Arc<LocalEngine>,
     mtls: bool,
     certs: &noedb_tls::DevCertPem,
 ) -> Result<(), String> {

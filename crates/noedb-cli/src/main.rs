@@ -7,7 +7,7 @@ mod tls;
 
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use noedb_engine::{DistributedEngine, EngineError, LocalEngine, QueryResult};
 use noedb_protocol::{decode_request, encode_response, Request, Response};
@@ -16,7 +16,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 enum Backend {
-    Local(LocalEngine),
+    Local(Arc<LocalEngine>),
     Distributed(DistributedEngine),
 }
 
@@ -69,7 +69,7 @@ fn run_repl(args: &[String]) -> Result<(), String> {
         Backend::Local(LocalEngine::open(&dir).map_err(|e| e.to_string())?)
     };
     if matches!(backend, Backend::Distributed(_)) {
-        if let Backend::Distributed(ref mut e) = backend {
+        if let Backend::Distributed(ref mut e) = &mut backend {
             e.tick(80).map_err(|e| e.to_string())?;
         }
     }
@@ -164,9 +164,7 @@ fn run_server(args: &[String]) -> Result<(), String> {
     rt.block_on(async {
         let auth = ClusterAuth::from_passphrase("noedb-dev");
         let dir = data_dir(args);
-        let engine = Arc::new(Mutex::new(
-            LocalEngine::open(&dir).map_err(|e| e.to_string())?,
-        ));
+        let engine = LocalEngine::open(&dir).map_err(|e| e.to_string())?;
 
         if !legacy_tcp(args) && use_tls(args) {
             let node_id = node_id_arg(args);
@@ -341,7 +339,7 @@ where
 async fn handle_connection<S>(
     mut stream: S,
     auth: ClusterAuth,
-    engine: Arc<Mutex<LocalEngine>>,
+    engine: Arc<LocalEngine>,
 ) -> Result<(), String>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -361,10 +359,7 @@ where
         .await
         .map_err(|e| e.to_string())?;
     let req = decode_request(&auth, &frame).map_err(|e| e.to_string())?;
-    let resp = {
-        let mut eng = engine.lock().map_err(|e| e.to_string())?;
-        dispatch(&mut eng, req)
-    };
+    let resp = dispatch(&engine, req);
     let out = encode_response(&auth, &resp).map_err(|e| e.to_string())?;
     let len = u32::try_from(out.len()).map_err(|_| "response too large".to_string())?;
     stream
@@ -378,7 +373,7 @@ where
     Ok(())
 }
 
-fn dispatch(eng: &mut LocalEngine, req: Request) -> Response {
+fn dispatch(eng: &LocalEngine, req: Request) -> Response {
     match req {
         Request::Ping => Response::Pong,
         Request::Explain { query } => match eng.explain(&query) {

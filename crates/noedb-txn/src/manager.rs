@@ -1,7 +1,9 @@
 //! Central transaction coordinator.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 
+use dashmap::DashMap;
 use noedb_storage::mvcc::{gc_versions, CommitTs, MvccMemTable, ReadView, TimestampOracle};
 use parking_lot::Mutex;
 
@@ -24,12 +26,12 @@ pub struct CommitResult {
 pub struct TxnManager {
     oracle: TimestampOracle,
     mvcc: Mutex<MvccMemTable>,
-    next_id: Mutex<TxnId>,
+    next_id: AtomicU64,
     active: Mutex<BTreeMap<TxnId, Transaction>>,
     ssi: Mutex<SsiChecker>,
     deadlock: Mutex<DeadlockGuard>,
-    /// Per-session active txn (session_id → txn_id).
-    sessions: Mutex<BTreeMap<u64, TxnId>>,
+    /// Per-session active txn (sharded concurrent map).
+    sessions: DashMap<u64, TxnId>,
 }
 
 impl Default for TxnManager {
@@ -45,12 +47,18 @@ impl TxnManager {
         Self {
             oracle: TimestampOracle::new(),
             mvcc: Mutex::new(MvccMemTable::new()),
-            next_id: Mutex::new(1),
+            next_id: AtomicU64::new(1),
             active: Mutex::new(BTreeMap::new()),
             ssi: Mutex::new(SsiChecker::default()),
             deadlock: Mutex::new(DeadlockGuard::new()),
-            sessions: Mutex::new(BTreeMap::new()),
+            sessions: DashMap::new(),
         }
+    }
+
+    /// Whether `session_id` has an open transaction.
+    #[must_use]
+    pub fn in_txn(&self, session_id: u64) -> bool {
+        self.sessions.contains_key(&session_id)
     }
 
     /// Shared MVCC table (tests / GC).
@@ -66,26 +74,25 @@ impl TxnManager {
 
     /// `BEGIN` — assign `start_ts` atomically, capture active txn snapshot.
     pub fn begin(&self, session_id: u64) -> Result<TxnId, TxnError> {
-        let mut sessions = self.sessions.lock();
-        if sessions.contains_key(&session_id) {
+        if self.sessions.contains_key(&session_id) {
             return Err(TxnError::TxnAlreadyActive);
         }
 
         let start_ts = self.oracle.next();
-        let mut next = self.next_id.lock();
-        let id = *next;
-        *next = next.saturating_add(1);
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
 
         let txn = Transaction::new(id, start_ts);
         self.active.lock().insert(id, txn);
-        sessions.insert(session_id, id);
+        self.sessions.insert(session_id, id);
         Ok(id)
     }
 
     /// Build read view for session's active txn.
     pub fn read_view(&self, session_id: u64) -> Result<ReadView, TxnError> {
-        let sessions = self.sessions.lock();
-        let txn_id = *sessions.get(&session_id).ok_or(TxnError::NoActiveTxn)?;
+        let txn_id = *self
+            .sessions
+            .get(&session_id)
+            .ok_or(TxnError::NoActiveTxn)?;
         let active = self.active.lock();
         let txn = active.get(&txn_id).ok_or(TxnError::NoActiveTxn)?;
         let active_ids: BTreeSet<TxnId> = active
@@ -101,9 +108,10 @@ impl TxnManager {
     where
         F: FnOnce(&mut Transaction) -> R,
     {
-        let sessions = self.sessions.lock();
-        let txn_id = *sessions.get(&session_id).ok_or(TxnError::NoActiveTxn)?;
-        drop(sessions);
+        let txn_id = *self
+            .sessions
+            .get(&session_id)
+            .ok_or(TxnError::NoActiveTxn)?;
         let mut active = self.active.lock();
         let txn = active.get_mut(&txn_id).ok_or(TxnError::NoActiveTxn)?;
         if txn.state != TxnState::Active {
@@ -130,10 +138,10 @@ impl TxnManager {
 
     /// `COMMIT` — SSI check, apply write set with `commit_ts`, purge intents.
     pub fn commit(&self, session_id: u64) -> Result<CommitResult, TxnError> {
-        let txn_id = {
-            let sessions = self.sessions.lock();
-            *sessions.get(&session_id).ok_or(TxnError::NoActiveTxn)?
-        };
+        let txn_id = *self
+            .sessions
+            .get(&session_id)
+            .ok_or(TxnError::NoActiveTxn)?;
 
         self.deadlock.lock().poll(&self.active.lock(), txn_id)?;
 
@@ -169,7 +177,7 @@ impl TxnManager {
         self.ssi.lock().purge(txn_id);
 
         self.active.lock().remove(&txn_id);
-        self.sessions.lock().remove(&session_id);
+        self.sessions.remove(&session_id);
 
         let _ = (read_set,);
         Ok(CommitResult {
@@ -180,10 +188,11 @@ impl TxnManager {
 
     /// `ROLLBACK` — discard write set and intents.
     pub fn rollback(&self, session_id: u64) -> Result<(), TxnError> {
-        let txn_id = {
-            let mut sessions = self.sessions.lock();
-            sessions.remove(&session_id).ok_or(TxnError::NoActiveTxn)?
-        };
+        let txn_id = self
+            .sessions
+            .remove(&session_id)
+            .ok_or(TxnError::NoActiveTxn)?
+            .1;
 
         {
             let mut mvcc = self.mvcc.lock();

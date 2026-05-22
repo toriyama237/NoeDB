@@ -24,10 +24,13 @@ bincode = { workspace = true }
 thiserror = { workspace = true }
 lru = { workspace = true }
 parking_lot = { workspace = true }
+dashmap = { workspace = true }
 
 [dev-dependencies]
 noedb-parser = { workspace = true }
 criterion = { workspace = true }
+rayon = { workspace = true }
+
 
 [[bench]]
 name = "pipeline"

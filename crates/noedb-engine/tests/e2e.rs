@@ -13,7 +13,7 @@ fn local_select_literal() {
             .unwrap()
             .as_nanos()
     ));
-    let mut eng = LocalEngine::open(&dir).unwrap();
+    let eng = LocalEngine::open(&dir).unwrap();
     let out = eng.execute("SELECT 1").unwrap();
     assert_eq!(out.rows.len(), 1);
     let _ = std::fs::remove_dir_all(dir);

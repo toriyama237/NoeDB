@@ -21,12 +21,12 @@ pub use audit::{AuditEntry, AuditLog};
 pub use query_cache::QueryCache;
 pub use command::{Command, MAX_COMMAND_BYTES};
 pub use engine::{
-    validate_sql, DistributedEngine, LocalEngine, QueryResult, MAX_SQL_BYTES,
+    validate_sql, DistributedEngine, LocalEngine, QueryResult, DEFAULT_SESSION, MAX_SQL_BYTES,
 };
+pub use noedb_txn::TxnManager;
 pub use error::EngineError;
 pub use machine::{apply_command, row_key};
 pub use prepared::{bind_parameters, PrepareCache, PreparedStatement};
 pub use rls::{apply_rls, materialize_session, Policy, RlsCatalog};
 pub use schema::{SchemaCatalog, TableSchema};
 pub use session::SessionContext;
-pub use txn::TxnState;

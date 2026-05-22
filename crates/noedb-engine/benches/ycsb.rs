@@ -35,48 +35,48 @@ fn main() {
             .unwrap()
             .as_nanos()
     ));
-    let mut eng = LocalEngine::open_throughput(&dir).expect("open");
+    let eng = LocalEngine::open_throughput(&dir).expect("open");
 
     for i in 0..RECORDS {
-        eng.put_row("users", &row_key(i), "field0", b"v0")
+        eng.put_row_default("users", &row_key(i), "field0", b"v0")
             .expect("load");
     }
 
-    run_workload("A (50% read / 50% update)", &mut eng, |eng, i| {
+    run_workload("A (50% read / 50% update)", &eng, |eng, i| {
         let rk = row_key(i % RECORDS);
         if i % 2 == 0 {
             let _ = read_field(eng, &rk);
         } else {
-            eng.put_row("users", &rk, "field0", b"v1").expect("update");
+            eng.put_row_default("users", &rk, "field0", b"v1").expect("update");
         }
     });
 
-    run_workload("B (95% read / 5% update)", &mut eng, |eng, i| {
+    run_workload("B (95% read / 5% update)", &eng, |eng, i| {
         let rk = row_key(i % RECORDS);
         if i % 20 != 0 {
             let _ = read_field(eng, &rk);
         } else {
-            eng.put_row("users", &rk, "field0", b"v2").expect("update");
+            eng.put_row_default("users", &rk, "field0", b"v2").expect("update");
         }
     });
 
-    run_workload("C (100% read)", &mut eng, |eng, i| {
+    run_workload("C (100% read)", &eng, |eng, i| {
         let _ = read_field(eng, &row_key(i % RECORDS));
     });
 
-    run_workload("F (50% read / 50% insert)", &mut eng, |eng, i| {
+    run_workload("F (50% read / 50% insert)", &eng, |eng, i| {
         if i % 2 == 0 {
             let _ = read_field(eng, &row_key(i % RECORDS));
         } else {
             let k = format!("new{i}");
-            eng.put_row("users", &k, "field0", b"x").expect("insert");
+            eng.put_row_default("users", &k, "field0", b"x").expect("insert");
         }
     });
 
     let _ = std::fs::remove_dir_all(dir);
 }
 
-fn run_workload(name: &str, eng: &mut LocalEngine, mut op: impl FnMut(&mut LocalEngine, u32)) {
+fn run_workload(name: &str, eng: &LocalEngine, mut op: impl FnMut(&LocalEngine, u32)) {
     let start = Instant::now();
     for i in 0..OPS {
         op(eng, i);

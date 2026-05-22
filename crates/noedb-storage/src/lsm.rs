@@ -1,6 +1,6 @@
 //! Full LSM-tree engine orchestrating MemTable, WAL, SSTables (Week 16).
 
-use std::cell::RefCell;
+use parking_lot::Mutex;
 use std::collections::{HashMap, hash_map::Entry};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -62,7 +62,7 @@ pub struct LsmTree {
     pub(crate) level1: Vec<PathBuf>,
     config: LsmConfig,
     flushed_wal_segment: u64,
-    sst_cache: RefCell<HashMap<PathBuf, SstReader>>,
+    sst_cache: Mutex<HashMap<PathBuf, SstReader>>,
     pub(crate) wal_pending: usize,
 }
 
@@ -88,7 +88,7 @@ impl LsmTree {
             level1,
             config,
             flushed_wal_segment: 0,
-            sst_cache: RefCell::new(HashMap::new()),
+            sst_cache: Mutex::new(HashMap::new()),
             wal_pending: 0,
         })
     }
@@ -187,7 +187,7 @@ impl LsmTree {
     }
 
     fn get_from_sst(&self, path: &Path, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
-        let mut cache = self.sst_cache.borrow_mut();
+        let mut cache = self.sst_cache.lock();
         let reader = match cache.entry(path.to_path_buf()) {
             Entry::Vacant(slot) => slot.insert(SstReader::open(path)?),
             Entry::Occupied(slot) => slot.into_mut(),
@@ -196,7 +196,7 @@ impl LsmTree {
     }
 
     fn clear_sst_cache(&self) {
-        self.sst_cache.borrow_mut().clear();
+        self.sst_cache.lock().clear();
     }
 
     pub(crate) fn maybe_flush_and_compact(&mut self) -> Result<(), StorageError> {

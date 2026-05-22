@@ -2,23 +2,30 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
+use dashmap::DashMap;
 use noedb_ast::Statement;
 use noedb_planner::{
     apply_statement, execute_sql, explain_sql, ExecError, PlanError, Record, Value,
 };
 use noedb_raft::{Cluster, NodeId, RaftError, Role};
 use noedb_storage::{LsmConfig, LsmTree};
+use noedb_txn::TxnManager;
+use parking_lot::{Mutex, RwLock};
 
 use crate::audit::AuditLog;
 use crate::command::Command;
 use crate::error::EngineError;
 use crate::machine::apply_command;
 use crate::prepared::{bind_parameters, PrepareCache};
+use crate::query_cache::QueryCache;
 use crate::rls::{apply_rls, RlsCatalog};
 use crate::session::SessionContext;
-use crate::query_cache::QueryCache;
-use crate::txn::TxnState;
+use crate::txn::{commit_to_storage, execute_select_in_txn, put_row_in_txn, txn_err};
+
+/// Default session id for single-client CLI / tests.
+pub const DEFAULT_SESSION: u64 = 1;
 
 /// Maximum SQL text accepted by the engine (DoS bound).
 pub const MAX_SQL_BYTES: usize = 64 * 1024;
@@ -90,15 +97,15 @@ pub fn validate_sql(sql: &str) -> Result<(), EngineError> {
     Ok(())
 }
 
-/// Single-node engine (no Raft) — fast local development.
+/// Single-node engine (no Raft) — concurrent via interior mutability.
 pub struct LocalEngine {
-    tree: LsmTree,
-    session: SessionContext,
-    prepare: PrepareCache,
-    rls: RlsCatalog,
+    storage: Arc<RwLock<LsmTree>>,
+    sessions: DashMap<u64, SessionContext>,
+    prepare: Mutex<PrepareCache>,
+    rls: Mutex<RlsCatalog>,
     audit: AuditLog,
-    txn: TxnState,
-    cache: QueryCache,
+    txn: Arc<TxnManager>,
+    cache: Mutex<QueryCache>,
 }
 
 impl LocalEngine {
@@ -107,19 +114,8 @@ impl LocalEngine {
     /// # Errors
     ///
     /// Storage initialization failures.
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, EngineError> {
-        let data_dir = path.as_ref().to_path_buf();
-        let tree = LsmTree::open(&data_dir, LsmConfig::default())?;
-        let audit = AuditLog::open(&data_dir)?;
-        Ok(Self {
-            tree,
-            session: SessionContext::dev(),
-            prepare: PrepareCache::default(),
-            rls: RlsCatalog::default(),
-            audit,
-            txn: TxnState::new(1),
-            cache: QueryCache::default(),
-        })
+    pub fn open(path: impl AsRef<Path>) -> Result<Arc<Self>, EngineError> {
+        Self::open_with_config(path, LsmConfig::default())
     }
 
     /// Open with throughput-oriented LSM (group commit, large memtable).
@@ -127,42 +123,57 @@ impl LocalEngine {
     /// # Errors
     ///
     /// Storage initialization failures.
-    pub fn open_throughput(path: impl AsRef<Path>) -> Result<Self, EngineError> {
+    pub fn open_throughput(path: impl AsRef<Path>) -> Result<Arc<Self>, EngineError> {
+        Self::open_with_config(path, LsmConfig::throughput())
+    }
+
+    fn open_with_config(path: impl AsRef<Path>, config: LsmConfig) -> Result<Arc<Self>, EngineError> {
         let data_dir = path.as_ref().to_path_buf();
-        let tree = LsmTree::open(&data_dir, LsmConfig::throughput())?;
+        let tree = LsmTree::open(&data_dir, config)?;
         let audit = AuditLog::open(&data_dir)?;
-        Ok(Self {
-            tree,
-            session: SessionContext::dev(),
-            prepare: PrepareCache::default(),
-            rls: RlsCatalog::default(),
+        let sessions = DashMap::new();
+        sessions.insert(DEFAULT_SESSION, SessionContext::dev());
+        Ok(Arc::new(Self {
+            storage: Arc::new(RwLock::new(tree)),
+            sessions,
+            prepare: Mutex::new(PrepareCache::default()),
+            rls: Mutex::new(RlsCatalog::default()),
             audit,
-            txn: TxnState::new(1),
-            cache: QueryCache::default(),
-        })
+            txn: Arc::new(TxnManager::new()),
+            cache: Mutex::new(QueryCache::default()),
+        }))
     }
 
-    /// Current session role (`SET ROLE`).
+    /// Current session role (`SET ROLE`) for the default session.
     #[must_use]
-    pub fn session_role(&self) -> &str {
-        &self.session.role
+    pub fn session_role(&self) -> String {
+        self.session_role_for(DEFAULT_SESSION)
     }
 
-    /// Transaction manager (MVCC).
+    /// Role for a specific session.
     #[must_use]
-    pub const fn txn(&self) -> &TxnState {
+    pub fn session_role_for(&self, session_id: u64) -> String {
+        self.sessions
+            .get(&session_id)
+            .map(|s| s.role.clone())
+            .unwrap_or_else(|| "anonymous".into())
+    }
+
+    /// Transaction manager (MVCC, lock-free TSO).
+    #[must_use]
+    pub fn txn(&self) -> &Arc<TxnManager> {
         &self.txn
     }
 
-    /// Underlying LSM (tests).
+    /// Underlying LSM (shared, use read/write guards).
     #[must_use]
-    pub const fn store(&self) -> &LsmTree {
-        &self.tree
+    pub fn storage(&self) -> &Arc<RwLock<LsmTree>> {
+        &self.storage
     }
 
-    /// Mutable store (tests).
-    pub const fn store_mut(&mut self) -> &mut LsmTree {
-        &mut self.tree
+    /// Underlying LSM read guard (tests / benchmarks).
+    pub fn store(&self) -> parking_lot::RwLockReadGuard<'_, LsmTree> {
+        self.storage.read()
     }
 
     /// Insert a row cell (local only, not replicated).
@@ -171,14 +182,15 @@ impl LocalEngine {
     ///
     /// Storage write failure.
     pub fn put_row(
-        &mut self,
+        &self,
+        session_id: u64,
         table: &str,
         row: &str,
         column: &str,
         value: &[u8],
     ) -> Result<(), EngineError> {
-        if self.txn.in_txn() {
-            return self.txn.put_row(table, row, column, value);
+        if self.txn.in_txn(session_id) {
+            return put_row_in_txn(&self.txn, session_id, table, row, column, value);
         }
         let cmd = Command::Put {
             table: table.to_string(),
@@ -186,108 +198,157 @@ impl LocalEngine {
             column: column.to_string(),
             value: value.to_vec(),
         };
-        apply_command(&mut self.tree, &cmd)?;
-        self.cache.invalidate_table(table);
+        apply_command(&mut self.storage.write(), &cmd)?;
+        self.cache.lock().invalidate_table(table);
         Ok(())
     }
 
-    /// Parse and run SQL.
+    /// Convenience `put_row` on the default session.
+    pub fn put_row_default(
+        &self,
+        table: &str,
+        row: &str,
+        column: &str,
+        value: &[u8],
+    ) -> Result<(), EngineError> {
+        self.put_row(DEFAULT_SESSION, table, row, column, value)
+    }
+
+    /// Parse and run SQL on the default session.
     ///
     /// # Errors
     ///
     /// Validation, parse, or execution errors.
-    pub fn execute(&mut self, sql: &str) -> Result<QueryResult, EngineError> {
-        validate_sql(sql)?;
-        let stmt = noedb_parser::parse(sql)?;
-        self.dispatch(stmt, sql)
+    pub fn execute(&self, sql: &str) -> Result<QueryResult, EngineError> {
+        self.execute_session(DEFAULT_SESSION, sql)
     }
 
-    fn dispatch(&mut self, stmt: Statement, sql: &str) -> Result<QueryResult, EngineError> {
+    /// Parse and run SQL for a concurrent session (`&self` — Rayon-safe).
+    ///
+    /// # Errors
+    ///
+    /// Validation, parse, or execution errors.
+    pub fn execute_session(&self, session_id: u64, sql: &str) -> Result<QueryResult, EngineError> {
+        validate_sql(sql)?;
+        let stmt = noedb_parser::parse(sql)?;
+        self.dispatch(session_id, stmt, sql)
+    }
+
+    fn dispatch(
+        &self,
+        session_id: u64,
+        stmt: Statement,
+        sql: &str,
+    ) -> Result<QueryResult, EngineError> {
         match stmt {
             Statement::Prepare(p) => {
                 if !matches!(*p.inner, Statement::Select(_)) {
                     return Err(EngineError::InvalidSql("PREPARE only supports SELECT"));
                 }
-                self.prepare.insert(&p.name.value, *p.inner)?;
-                self.audit_record(sql, 0)?;
+                self.prepare.lock().insert(&p.name.value, *p.inner)?;
+                self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
             }
             Statement::Execute(e) => {
-                let prep = self
-                    .prepare
+                let cache = self.prepare.lock();
+                let prep = cache
                     .get(&e.name.value)
                     .ok_or(EngineError::InvalidSql("unknown prepared statement"))?;
                 let bound = bind_parameters(&prep.stmt, &e.params)?;
-                let bound = apply_rls(bound, &self.rls, &self.session.role);
-                self.run_data_statement(bound, sql)
+                let role = self.session_role_for(session_id);
+                let bound = apply_rls(bound, &self.rls.lock(), &role);
+                self.run_data_statement(session_id, bound, sql)
             }
             Statement::SetRole(s) => {
-                self.session.role = s.role;
-                self.audit_record(sql, 0)?;
+                if let Some(mut ctx) = self.sessions.get_mut(&session_id) {
+                    ctx.role = s.role;
+                } else {
+                    self.sessions.insert(
+                        session_id,
+                        SessionContext {
+                            tenant: "default".into(),
+                            role: s.role,
+                        },
+                    );
+                }
+                self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
             }
             Statement::EnableRls(e) => {
-                self.rls.enable(&e.table.value);
-                self.audit_record(sql, 0)?;
+                self.rls.lock().enable(&e.table.value);
+                self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
             }
             Statement::CreatePolicy(p) => {
-                self.rls.add_policy(&p);
-                self.audit_record(sql, 0)?;
+                self.rls.lock().add_policy(&p);
+                self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
             }
             Statement::BeginTxn(_) => {
-                self.txn.begin()?;
-                self.audit_record(sql, 0)?;
+                self.txn.begin(session_id).map_err(txn_err)?;
+                self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
             }
             Statement::CommitTxn(_) => {
-                self.txn.commit(&mut self.tree)?;
-                self.cache.invalidate_table("");
-                self.audit_record(sql, 0)?;
+                commit_to_storage(&self.txn, session_id, &mut self.storage.write())?;
+                self.cache.lock().invalidate_table("");
+                self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
             }
             Statement::RollbackTxn(_) => {
-                self.txn.rollback()?;
-                self.audit_record(sql, 0)?;
+                self.txn.rollback(session_id).map_err(txn_err)?;
+                self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
             }
             other => {
-                let other = apply_rls(other, &self.rls, &self.session.role);
-                self.run_data_statement(other, sql)
+                let role = self.session_role_for(session_id);
+                let other = apply_rls(other, &self.rls.lock(), &role);
+                self.run_data_statement(session_id, other, sql)
             }
         }
     }
 
-    fn run_data_statement(&mut self, stmt: Statement, sql: &str) -> Result<QueryResult, EngineError> {
-        let result = if self.txn.in_txn() && matches!(stmt, Statement::Select(_)) {
-            self.txn.execute_select(&stmt, &self.tree)?
+    fn run_data_statement(
+        &self,
+        session_id: u64,
+        stmt: Statement,
+        sql: &str,
+    ) -> Result<QueryResult, EngineError> {
+        let result = if self.txn.in_txn(session_id) && matches!(stmt, Statement::Select(_)) {
+            execute_select_in_txn(self.txn.clone(), session_id, &stmt, &self.storage)?
         } else if matches!(stmt, Statement::Select(_)) {
-            if let Some(hit) = self.cache.get(&self.session.role, sql) {
+            let role = self.session_role_for(session_id);
+            let cached = self.cache.lock().get(&role, sql);
+            if let Some(hit) = cached {
                 hit
             } else {
-                let records = apply_statement(&stmt, &mut self.tree)?;
+                let tree = self.storage.read();
+                let records = execute_sql(&stmt, &tree).map_err(EngineError::Exec)?;
                 let qr = QueryResult::from_records(&records);
-                self.cache.put(&self.session.role, sql, qr.clone());
+                self.cache.lock().put(&role, sql, qr.clone());
                 qr
             }
         } else {
             match &stmt {
-                Statement::Insert(i) => self.cache.invalidate_table(&i.table.value),
-                Statement::Update(u) => self.cache.invalidate_table(&u.table.value),
-                Statement::Delete(d) => self.cache.invalidate_table(&d.table.value),
+                Statement::Insert(i) => self.cache.lock().invalidate_table(&i.table.value),
+                Statement::Update(u) => self.cache.lock().invalidate_table(&u.table.value),
+                Statement::Delete(d) => self.cache.lock().invalidate_table(&d.table.value),
                 _ => {}
             }
-            let records = apply_statement(&stmt, &mut self.tree)?;
+            let records = apply_statement(&stmt, &mut self.storage.write())?;
             QueryResult::from_records(&records)
         };
-        self.audit_record(sql, u64::try_from(result.rows.len()).unwrap_or(0))?;
+        self.audit_record(session_id, sql, u64::try_from(result.rows.len()).unwrap_or(0))?;
         Ok(result)
     }
 
-    fn audit_record(&self, sql: &str, rows: u64) -> Result<(), EngineError> {
-        self.audit
-            .record(&self.session.tenant, &self.session.role, sql, rows)
+    fn audit_record(&self, session_id: u64, sql: &str, rows: u64) -> Result<(), EngineError> {
+        let (tenant, role) = self
+            .sessions
+            .get(&session_id)
+            .map(|s| (s.tenant.clone(), s.role.clone()))
+            .unwrap_or_else(|| ("default".into(), "anonymous".into()));
+        self.audit.record(&tenant, &role, sql, rows)
     }
 
     /// `EXPLAIN` for a `SELECT`.
@@ -298,8 +359,10 @@ impl LocalEngine {
     pub fn explain(&self, sql: &str) -> Result<String, EngineError> {
         validate_sql(sql)?;
         let stmt = noedb_parser::parse(sql)?;
-        let stmt = apply_rls(stmt, &self.rls, &self.session.role);
-        explain_sql(&stmt, &self.tree).map_err(plan_err)
+        let role = self.session_role_for(DEFAULT_SESSION);
+        let stmt = apply_rls(stmt, &self.rls.lock(), &role);
+        let tree = self.storage.read();
+        explain_sql(&stmt, &tree).map_err(plan_err)
     }
 }
 

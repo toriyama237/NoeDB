@@ -35,6 +35,9 @@ pub enum EngineError {
     /// Statement not supported on the distributed path.
     #[error("unsupported statement for distributed engine")]
     UnsupportedStatement,
+    /// MVCC / SSI conflict — safe to retry the transaction.
+    #[error("serialization failure: {0}")]
+    SerializationFailure(String),
 }
 
 impl From<ExecError> for EngineError {

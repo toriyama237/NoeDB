@@ -19,24 +19,19 @@ impl TimestampOracle {
         }
     }
 
-    /// Next commit timestamp (never repeats, never decreases).
+    /// Next commit timestamp via lock-free `fetch_add` (~1 ns).
     pub fn next(&self) -> CommitTs {
-        loop {
-            let cur = self.last.load(Ordering::Acquire);
-            let next = cur.saturating_add(1).max(1);
-            if self
-                .last
-                .compare_exchange(cur, next, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-            {
-                return next;
-            }
-        }
+        self.last.fetch_add(1, Ordering::SeqCst).saturating_add(1).max(1)
+    }
+
+    /// Raw TSO bump (alias for benchmarks).
+    pub fn fetch_add(&self, n: u64, order: Ordering) -> u64 {
+        self.last.fetch_add(n, order)
     }
 
     /// Current high-water mark (may lag behind concurrent `next()`).
     #[must_use]
     pub fn now(&self) -> CommitTs {
-        self.last.load(Ordering::Acquire)
+        self.last.load(Ordering::SeqCst)
     }
 }

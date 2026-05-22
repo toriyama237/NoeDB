@@ -9,9 +9,9 @@ use noedb_engine::{DistributedEngine, LocalEngine};
 
 fn bench_local_select(c: &mut Criterion) {
     let dir = std::env::temp_dir().join("noedb-bench-local");
-    let mut eng = LocalEngine::open(&dir).unwrap();
+    let eng = LocalEngine::open(&dir).unwrap();
     for i in 0..100u64 {
-        eng.put_row("users", &i.to_string(), "name", b"x").unwrap();
+        eng.put_row_default("users", &i.to_string(), "name", b"x").unwrap();
     }
     c.bench_function("engine/local_select_100_rows", |b| {
         b.iter(|| {

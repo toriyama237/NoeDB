@@ -2,9 +2,11 @@
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
+use std::sync::Arc;
+
 use noedb_engine::LocalEngine;
 
-fn temp_engine() -> (LocalEngine, std::path::PathBuf) {
+fn temp_engine() -> (Arc<LocalEngine>, std::path::PathBuf) {
     let dir = std::env::temp_dir().join(format!(
         "noedb-corpus-{}",
         std::time::SystemTime::now()
@@ -17,13 +19,13 @@ fn temp_engine() -> (LocalEngine, std::path::PathBuf) {
 
 #[test]
 fn corpus_twenty_queries() {
-    let (mut eng, dir) = temp_engine();
-    eng.put_row("users", "1", "id", b"1").unwrap();
-    eng.put_row("users", "1", "name", b"ada").unwrap();
-    eng.put_row("users", "2", "id", b"2").unwrap();
-    eng.put_row("users", "2", "name", b"bob").unwrap();
-    eng.put_row("orders", "9", "user_id", b"1").unwrap();
-    eng.put_row("orders", "9", "sku", b"book").unwrap();
+    let (eng, dir) = temp_engine();
+    eng.put_row_default("users", "1", "id", b"1").unwrap();
+    eng.put_row_default("users", "1", "name", b"ada").unwrap();
+    eng.put_row_default("users", "2", "id", b"2").unwrap();
+    eng.put_row_default("users", "2", "name", b"bob").unwrap();
+    eng.put_row_default("orders", "9", "user_id", b"1").unwrap();
+    eng.put_row_default("orders", "9", "sku", b"book").unwrap();
 
     let queries = [
         "SELECT 1",

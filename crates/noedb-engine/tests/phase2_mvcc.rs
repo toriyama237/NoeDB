@@ -1,8 +1,10 @@
 //! Phase 2 MVCC + transaction SQL integration tests.
 
-use noedb_engine::LocalEngine;
+use std::sync::Arc;
 
-fn temp_engine() -> (LocalEngine, std::path::PathBuf) {
+use noedb_engine::{LocalEngine, DEFAULT_SESSION};
+
+fn temp_engine() -> (Arc<LocalEngine>, std::path::PathBuf) {
     let dir = std::env::temp_dir().join(format!(
         "noedb-phase2-{}",
         std::time::SystemTime::now()
@@ -15,20 +17,20 @@ fn temp_engine() -> (LocalEngine, std::path::PathBuf) {
 
 #[test]
 fn begin_commit_sql() {
-    let (mut eng, dir) = temp_engine();
+    let (eng, dir) = temp_engine();
     eng.execute("BEGIN").unwrap();
-    eng.put_row("accounts", "1", "balance", b"500").unwrap();
+    eng.put_row_default("accounts", "1", "balance", b"500").unwrap();
     eng.execute("COMMIT").unwrap();
-    assert!(!eng.txn().in_txn());
+    assert!(!eng.txn().in_txn(DEFAULT_SESSION));
     let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
 fn read_your_writes_in_txn() {
-    let (mut eng, dir) = temp_engine();
-    eng.put_row("items", "1", "name", b"before").unwrap();
+    let (eng, dir) = temp_engine();
+    eng.put_row_default("items", "1", "name", b"before").unwrap();
     eng.execute("BEGIN").unwrap();
-    eng.put_row("items", "1", "name", b"after").unwrap();
+    eng.put_row_default("items", "1", "name", b"after").unwrap();
     let rows = eng.execute("SELECT name FROM items").unwrap().rows;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0][0], "after");
