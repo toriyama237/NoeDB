@@ -17,6 +17,7 @@ use crate::machine::apply_command;
 use crate::prepared::{bind_parameters, PrepareCache};
 use crate::rls::{apply_rls, RlsCatalog};
 use crate::session::SessionContext;
+use crate::query_cache::QueryCache;
 use crate::txn::TxnState;
 
 /// Maximum SQL text accepted by the engine (DoS bound).
@@ -97,6 +98,7 @@ pub struct LocalEngine {
     rls: RlsCatalog,
     audit: AuditLog,
     txn: TxnState,
+    cache: QueryCache,
 }
 
 impl LocalEngine {
@@ -116,6 +118,27 @@ impl LocalEngine {
             rls: RlsCatalog::default(),
             audit,
             txn: TxnState::new(1),
+            cache: QueryCache::default(),
+        })
+    }
+
+    /// Open with throughput-oriented LSM (group commit, large memtable).
+    ///
+    /// # Errors
+    ///
+    /// Storage initialization failures.
+    pub fn open_throughput(path: impl AsRef<Path>) -> Result<Self, EngineError> {
+        let data_dir = path.as_ref().to_path_buf();
+        let tree = LsmTree::open(&data_dir, LsmConfig::throughput())?;
+        let audit = AuditLog::open(&data_dir)?;
+        Ok(Self {
+            tree,
+            session: SessionContext::dev(),
+            prepare: PrepareCache::default(),
+            rls: RlsCatalog::default(),
+            audit,
+            txn: TxnState::new(1),
+            cache: QueryCache::default(),
         })
     }
 
@@ -164,6 +187,7 @@ impl LocalEngine {
             value: value.to_vec(),
         };
         apply_command(&mut self.tree, &cmd)?;
+        self.cache.invalidate_table(table);
         Ok(())
     }
 
@@ -219,6 +243,7 @@ impl LocalEngine {
             }
             Statement::CommitTxn(_) => {
                 self.txn.commit(&mut self.tree)?;
+                self.cache.invalidate_table("");
                 self.audit_record(sql, 0)?;
                 Ok(empty_ok())
             }
@@ -237,7 +262,22 @@ impl LocalEngine {
     fn run_data_statement(&mut self, stmt: Statement, sql: &str) -> Result<QueryResult, EngineError> {
         let result = if self.txn.in_txn() && matches!(stmt, Statement::Select(_)) {
             self.txn.execute_select(&stmt, &self.tree)?
+        } else if matches!(stmt, Statement::Select(_)) {
+            if let Some(hit) = self.cache.get(&self.session.role, sql) {
+                hit
+            } else {
+                let records = apply_statement(&stmt, &mut self.tree)?;
+                let qr = QueryResult::from_records(&records);
+                self.cache.put(&self.session.role, sql, qr.clone());
+                qr
+            }
         } else {
+            match &stmt {
+                Statement::Insert(i) => self.cache.invalidate_table(&i.table.value),
+                Statement::Update(u) => self.cache.invalidate_table(&u.table.value),
+                Statement::Delete(d) => self.cache.invalidate_table(&d.table.value),
+                _ => {}
+            }
             let records = apply_statement(&stmt, &mut self.tree)?;
             QueryResult::from_records(&records)
         };

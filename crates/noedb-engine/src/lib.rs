@@ -14,9 +14,11 @@ mod prepared;
 mod rls;
 mod schema;
 mod session;
+mod query_cache;
 mod txn;
 
 pub use audit::{AuditEntry, AuditLog};
+pub use query_cache::QueryCache;
 pub use command::{Command, MAX_COMMAND_BYTES};
 pub use engine::{
     validate_sql, DistributedEngine, LocalEngine, QueryResult, MAX_SQL_BYTES,

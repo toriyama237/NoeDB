@@ -22,6 +22,8 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 bincode = { workspace = true }
 thiserror = { workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
 
 [dev-dependencies]
 noedb-parser = { workspace = true }
@@ -33,6 +35,10 @@ harness = false
 
 [[bench]]
 name = "oltp_mvcc"
+harness = false
+
+[[bench]]
+name = "ycsb"
 harness = false
 
 [lints]
