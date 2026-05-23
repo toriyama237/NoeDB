@@ -173,6 +173,52 @@ mod tests {
     }
 
     #[test]
+    fn parse_window_frame_rows() {
+        use noedb_ast::{FrameBound, FrameMode};
+        let sql = "SELECT SUM(x) OVER (ORDER BY id ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) FROM t";
+        let stmt = parse(sql).unwrap();
+        let Statement::Select(s) = stmt else {
+            panic!();
+        };
+        let Expr::Function { over: Some(spec), .. } = &s.items[0].expr else {
+            panic!();
+        };
+        let frame = spec.frame.as_ref().expect("frame");
+        assert_eq!(frame.mode, FrameMode::Rows);
+        assert_eq!(frame.start, FrameBound::Preceding(2));
+        assert_eq!(frame.end, FrameBound::CurrentRow);
+    }
+
+    #[test]
+    fn parse_window_order_desc() {
+        let sql = "SELECT ROW_NUMBER() OVER (PARTITION BY grp ORDER BY id DESC) AS rn FROM t";
+        let stmt = parse(sql).unwrap();
+        let Statement::Select(s) = stmt else {
+            panic!();
+        };
+        let Expr::Function { over: Some(spec), .. } = &s.items[0].expr else {
+            panic!();
+        };
+        assert!(!spec.order_by[0].asc);
+    }
+
+    #[test]
+    fn parse_row_number_over() {
+        let stmt = parse("SELECT ROW_NUMBER() OVER (ORDER BY id) FROM t").unwrap();
+        let Statement::Select(s) = stmt else {
+            panic!();
+        };
+        assert!(matches!(
+            &s.items[0].expr,
+            Expr::Function {
+                name,
+                args,
+                over: Some(spec),
+                ..
+            } if name.value == "ROW_NUMBER" && args.is_empty() && spec.order_by.len() == 1
+        ));
+    }
+
     fn ast_equality_on_parsed_select_item() {
         let stmt = parse("SELECT name AS n FROM users").unwrap();
         let Statement::Select(s) = stmt else {
@@ -226,3 +272,4 @@ mod tests {
         let _ = s.where_clause.as_ref().unwrap().span();
     }
 }
+

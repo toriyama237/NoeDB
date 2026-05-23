@@ -39,7 +39,9 @@ static KW_LEN_04: &[(&str, Keyword)] = &[
     ("LEFT", Keyword::Left),
     ("LIKE", Keyword::Like),
     ("NULL", Keyword::Null),
+    ("OVER", Keyword::Over),
     ("ROLE", Keyword::Role),
+    ("ROWS", Keyword::Rows),
     ("SOME", Keyword::Some),
     ("THEN", Keyword::Then),
     ("TRUE", Keyword::True),
@@ -64,8 +66,8 @@ static KW_LEN_05: &[(&str, Keyword)] = &[
     ("LIMIT", Keyword::Limit),
     ("ORDER", Keyword::Order),
     ("OUTER", Keyword::Outer),
+    ("RANGE", Keyword::Range),
     ("RIGHT", Keyword::Right),
-    ("ROLE", Keyword::Role),
     ("TABLE", Keyword::Table),
     ("UNION", Keyword::Union),
     ("USING", Keyword::Using),
@@ -110,7 +112,13 @@ static KW_LEN_08: &[(&str, Keyword)] = &[
     ("SECURITY", Keyword::Security),
 ];
 
-static KW_LEN_09: &[(&str, Keyword)] = &[("INTERSECT", Keyword::Intersect)];
+static KW_LEN_09: &[(&str, Keyword)] = &[
+    ("FOLLOWING", Keyword::Following),
+    ("INTERSECT", Keyword::Intersect),
+    ("PARTITION", Keyword::Partition),
+    ("PRECEDING", Keyword::Preceding),
+    ("UNBOUNDED", Keyword::Unbounded),
+];
 
 static KW_LEN_10: &[(&str, Keyword)] = &[
     ("CONSTRAINT", Keyword::Constraint),

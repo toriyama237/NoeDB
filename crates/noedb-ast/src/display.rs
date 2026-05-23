@@ -5,6 +5,7 @@ use core::fmt;
 use noedb_lexer::{Keyword, Operator};
 
 use crate::expr::{BinaryOp, Expr, Literal, SelectItem, UnaryOp};
+use crate::window::{FrameBound, FrameMode, WindowFrame, WindowSpec};
 use crate::name::{ColumnRef, Ident, TableRef};
 use crate::stmt::{
     ColumnDef, CreateIndexStmt, CreateTableStmt, DeleteStmt, DropTableStmt, InsertStmt, Join,
@@ -70,6 +71,13 @@ fn keyword_display(kw: Keyword) -> &'static str {
         Keyword::Role => "ROLE",
         Keyword::Using => "USING",
         Keyword::CurrentUser => "CURRENT_USER",
+        Keyword::Over => "OVER",
+        Keyword::Partition => "PARTITION",
+        Keyword::Range => "RANGE",
+        Keyword::Rows => "ROWS",
+        Keyword::Unbounded => "UNBOUNDED",
+        Keyword::Preceding => "PRECEDING",
+        Keyword::Following => "FOLLOWING",
         _ => "KEYWORD",
     }
 }
@@ -192,6 +200,111 @@ impl fmt::Display for Expr {
             Self::Paren(inner, _) => write!(f, "({inner})"),
             Self::Parameter { index, .. } => write!(f, "${index}"),
             Self::CurrentUser { .. } => write_keyword(f, Keyword::CurrentUser),
+            Self::Function {
+                name,
+                args,
+                over,
+                ..
+            } => {
+                write_ident(f, name)?;
+                write!(f, "(")?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{arg}")?;
+                }
+                write!(f, ")")?;
+                if let Some(spec) = over {
+                    write!(f, " {spec}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl fmt::Display for WindowSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_keyword(f, Keyword::Over)?;
+        write!(f, " (")?;
+        if !self.partition_by.is_empty() {
+            write_keyword(f, Keyword::Partition)?;
+            write_keyword(f, Keyword::By)?;
+            write!(f, " ")?;
+            for (i, e) in self.partition_by.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{e}")?;
+            }
+        }
+        if !self.order_by.is_empty() {
+            if !self.partition_by.is_empty() {
+                write!(f, " ")?;
+            }
+            write_keyword(f, Keyword::Order)?;
+            write_keyword(f, Keyword::By)?;
+            for (i, key) in self.order_by.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                } else {
+                    write!(f, " ")?;
+                }
+                write!(f, "{}", key.expr)?;
+                write!(f, " ")?;
+                if key.asc {
+                    write_keyword(f, Keyword::Asc)?;
+                } else {
+                    write_keyword(f, Keyword::Desc)?;
+                }
+            }
+        }
+        if let Some(frame) = &self.frame {
+            write!(f, " ")?;
+            write_frame(f, frame)?;
+        }
+        write!(f, ")")
+    }
+}
+
+fn write_frame(f: &mut fmt::Formatter<'_>, frame: &WindowFrame) -> fmt::Result {
+    match frame.mode {
+        FrameMode::Rows => write_keyword(f, Keyword::Rows)?,
+        FrameMode::Range => write_keyword(f, Keyword::Range)?,
+    }
+    write_keyword(f, Keyword::Between)?;
+    write!(f, " ")?;
+    write_frame_bound(f, frame.start)?;
+    write_keyword(f, Keyword::And)?;
+    write!(f, " ")?;
+    write_frame_bound(f, frame.end)
+}
+
+fn write_frame_bound(f: &mut fmt::Formatter<'_>, bound: FrameBound) -> fmt::Result {
+    match bound {
+        FrameBound::UnboundedPreceding => {
+            write_keyword(f, Keyword::Unbounded)?;
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Preceding)
+        }
+        FrameBound::Preceding(n) => {
+            write!(f, "{n} ")?;
+            write_keyword(f, Keyword::Preceding)
+        }
+        FrameBound::CurrentRow => {
+            write_keyword(f, Keyword::Current)?;
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Row)
+        }
+        FrameBound::Following(n) => {
+            write!(f, "{n} ")?;
+            write_keyword(f, Keyword::Following)
+        }
+        FrameBound::UnboundedFollowing => {
+            write_keyword(f, Keyword::Unbounded)?;
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Following)
         }
     }
 }

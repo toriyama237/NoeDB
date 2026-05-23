@@ -24,8 +24,12 @@ mod display;
 mod expr;
 mod name;
 mod stmt;
+mod window;
 
 pub use crate::expr::{BinaryOp, Expr, Literal, SelectItem, UnaryOp};
+pub use crate::window::{
+    FrameBound, FrameMode, OrderKey, WindowFrame, WindowFunc, WindowSpec,
+};
 pub use crate::name::{ColumnRef, Ident, TableRef};
 pub use crate::stmt::{
     BeginTxnStmt, ColumnDef, CommitTxnStmt, CreateIndexStmt, CreatePolicyStmt, CreateTableStmt,

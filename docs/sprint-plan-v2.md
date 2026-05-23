@@ -174,11 +174,39 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 - **Tests** : `noedb-raft/tests/phase4.rs`, `noedb-engine/tests/phase4_distributed.rs`
 - Tag cible **`v1.3.0-distributed`**
 
+## Phase 5 — Query engine v2 (S37–S44)
+
+| Semaine | Statut | Livrable |
+|---------|--------|----------|
+| 37 | ✅ | Fenêtres : `ROW_NUMBER`, `RANK`, `DENSE_RANK` + `OVER (PARTITION BY … ORDER BY …)` |
+| 38 | ✅ | Agrégats fenêtre (`SUM`/`AVG` `OVER`) + cadre `ROWS`/`RANGE` |
+| 39 | ⬜ | Sous-requêtes corrélées + décorrélation |
+| 40 | ⬜ | CTE (`WITH`) + récursif |
+| 41 | ⬜ | `UNION` / `INTERSECT` / `EXCEPT` |
+| 42 | ⬜ | Types étendus + casts |
+| 43 | ⬜ | Statistiques colonnes + costing v2 |
+| 44 | ⬜ | Bench TPC-H lite + tag `v1.4.0-query` |
+
+### Semaine 37 — ✅
+
+- **Lexer** : `OVER`, `PARTITION`, `ORDER`, `ROWS`, `RANGE`, `UNBOUNDED`, `PRECEDING`, `FOLLOWING`
+- **AST** : `Expr::Function { over: Option<WindowSpec> }`, `WindowFunc`, `OrderKey`
+- **Parser** : appels `name()` + postfixe `OVER (…)`
+- **Planner** : `LogicalPlan::Window` / `PhysicalPlan::Window`, `wrap_window` avant `Project`
+- **Executor** : `window_exec::apply_windows` (partition, tri, ranking)
+- **Tests** : `noedb-parser` (parse `OVER`), `noedb-engine/tests/phase5_window.rs`
+
+### Semaine 38 — ✅
+
+- **AST** : `WindowFunc::Sum` / `Avg`, `WindowFrame`, `FrameBound`, `FrameMode`
+- **Parser** : `ROWS|RANGE BETWEEN … AND …` (`UNBOUNDED`, `n PRECEDING`/`FOLLOWING`, `CURRENT ROW`)
+- **Planner** : `WindowCompute.arg` pour `SUM(col)` / `AVG(col)`
+- **Executor** : cadre par défaut (running sum si `ORDER BY`, partition entière sinon) + agrégats sur fenêtre
+- **Tests** : running `SUM`, `SUM` partition, `AVG` glissant, parse frame
+
 ## Phases suivantes
 
 | Phase | Semaines | Thème |
 |-------|----------|-------|
-| 4 | 25–36 | Distributed elite (suite) |
-| 5 | 37–44 | Query engine v2 |
 | 6 | 45–48 | Observabilité & fiabilité |
 | 7 | 49–52 | Ecosystem & **v2.0.0** |

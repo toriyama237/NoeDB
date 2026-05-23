@@ -2,7 +2,7 @@
 
 use noedb_ast::{Expr, SelectItem};
 
-use crate::logical::AggFunc;
+use crate::logical::{AggFunc, WindowCompute};
 
 /// Executable physical plan.
 #[derive(Debug, Clone, PartialEq)]
@@ -98,5 +98,12 @@ pub enum PhysicalPlan {
         limit: u64,
         /// Skip rows.
         offset: u64,
+    },
+    /// Window / analytic functions.
+    Window {
+        /// Child operator.
+        input: Box<Self>,
+        /// Window computations.
+        windows: Vec<WindowCompute>,
     },
 }

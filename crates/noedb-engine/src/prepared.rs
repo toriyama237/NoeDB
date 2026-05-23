@@ -176,6 +176,19 @@ fn walk_expr(expr: &Expr, f: &mut dyn FnMut(&Expr)) {
             walk_expr(low, f);
             walk_expr(high, f);
         }
+        Expr::Function { args, over, .. } => {
+            for arg in args {
+                walk_expr(arg, f);
+            }
+            if let Some(spec) = over {
+                for part in &spec.partition_by {
+                    walk_expr(part, f);
+                }
+                for key in &spec.order_by {
+                    walk_expr(&key.expr, f);
+                }
+            }
+        }
         Expr::Paren(inner, _) => walk_expr(inner, f),
         _ => {}
     }

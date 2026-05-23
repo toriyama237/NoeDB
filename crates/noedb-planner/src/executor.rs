@@ -88,9 +88,12 @@ enum ExecState {
         limit: u64,
         child: Box<Executor>,
     },
+    Window {
+        rows: std::vec::IntoIter<RowMap>,
+    },
 }
 
-type RowMap = Vec<(String, Value)>;
+pub(crate) type RowMap = Vec<(String, Value)>;
 
 impl Executor {
     /// Build an executor for `plan`.
@@ -191,6 +194,13 @@ impl Executor {
                     return Ok(Some(Record { fields }));
                 }
                 ExecState::Sort { rows } => {
+                    let Some(row) = rows.next() else {
+                        self.state = ExecState::Done;
+                        return Ok(None);
+                    };
+                    return Ok(Some(Record { fields: row }));
+                }
+                ExecState::Window { rows } => {
                     let Some(row) = rows.next() else {
                         self.state = ExecState::Done;
                         return Ok(None);
@@ -444,6 +454,13 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
                 child: Box::new(child),
             })
         }
+        PhysicalPlan::Window { input, windows } => {
+            let rows = execute_to_rows(*input, ctx)?;
+            let rows = crate::window_exec::apply_windows(rows, &windows)?;
+            Ok(ExecState::Window {
+                rows: rows.into_iter(),
+            })
+        }
     }
 }
 
@@ -481,7 +498,7 @@ fn merge_rows(left: &RowMap, right: &RowMap) -> RowMap {
     out
 }
 
-fn compare_rows(a: &RowMap, b: &RowMap, keys: &[(String, bool)]) -> std::cmp::Ordering {
+pub(crate) fn compare_rows(a: &RowMap, b: &RowMap, keys: &[(String, bool)]) -> std::cmp::Ordering {
     for (col, asc) in keys {
         let va = a.iter().find(|(n, _)| n == col).map(|(_, v)| v.as_bytes());
         let vb = b.iter().find(|(n, _)| n == col).map(|(_, v)| v.as_bytes());

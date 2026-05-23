@@ -21,6 +21,8 @@ mod parallel;
 mod physical;
 mod simd_pred;
 mod value;
+mod window;
+mod window_exec;
 
 pub use adaptive::ExecutionFeedback;
 pub use build::build;

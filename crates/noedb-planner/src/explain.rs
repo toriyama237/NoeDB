@@ -117,6 +117,11 @@ impl ExplainWriter {
                     .push(format!("{pad}Limit(limit={limit}, offset={offset})"));
                 self.write_plan(input, indent + 1);
             }
+            PhysicalPlan::Window { input, windows } => {
+                self.lines
+                    .push(format!("{pad}Window(funcs={})", windows.len()));
+                self.write_plan(input, indent + 1);
+            }
         }
     }
 

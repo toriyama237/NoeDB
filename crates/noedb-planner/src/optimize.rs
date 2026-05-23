@@ -88,6 +88,10 @@ fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
             limit,
             offset,
         },
+        LogicalPlan::Window { input, windows } => LogicalPlan::Window {
+            input: Box::new(pushdown_predicates(*input)),
+            windows,
+        },
         LogicalPlan::Scan { .. } => plan,
     }
 }
@@ -166,6 +170,10 @@ fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
             input: Box::new(to_physical(*input, ctx)),
             limit,
             offset,
+        },
+        LogicalPlan::Window { input, windows } => PhysicalPlan::Window {
+            input: Box::new(to_physical(*input, ctx)),
+            windows,
         },
     }
 }
@@ -246,6 +254,21 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
             Some(dedup(cols))
         }
         PhysicalPlan::Limit { input, .. } => collect_columns(input),
+        PhysicalPlan::Window { input, windows } => {
+            let mut cols = collect_columns(input).unwrap_or_default();
+            for win in windows {
+                if let Some(arg) = &win.arg {
+                    cols.extend(columns_in_expr(arg));
+                }
+                for expr in &win.spec.partition_by {
+                    cols.extend(columns_in_expr(expr));
+                }
+                for key in &win.spec.order_by {
+                    cols.extend(columns_in_expr(&key.expr));
+                }
+            }
+            Some(dedup(cols))
+        }
     }
 }
 
@@ -323,6 +346,10 @@ fn apply_columns(plan: PhysicalPlan, columns: Option<Vec<String>>) -> PhysicalPl
             input: Box::new(apply_columns(*input, columns)),
             limit,
             offset,
+        },
+        PhysicalPlan::Window { input, windows } => PhysicalPlan::Window {
+            input: Box::new(apply_columns(*input, columns)),
+            windows,
         },
     }
 }

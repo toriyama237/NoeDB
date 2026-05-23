@@ -52,5 +52,9 @@ pub fn lower(logical: LogicalPlan) -> PhysicalPlan {
             limit,
             offset,
         },
+        LogicalPlan::Window { input, windows } => PhysicalPlan::Window {
+            input: Box::new(lower(*input)),
+            windows,
+        },
     }
 }

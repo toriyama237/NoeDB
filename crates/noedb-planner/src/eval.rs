@@ -22,7 +22,8 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
         Expr::Between { .. }
         | Expr::In { .. }
         | Expr::Parameter { .. }
-        | Expr::CurrentUser { .. } => Err(ExecError::UnsupportedExpr),
+        | Expr::CurrentUser { .. }
+        | Expr::Function { .. } => Err(ExecError::UnsupportedExpr),
         Expr::Paren(inner, _) => eval_expr(inner, row),
     }
 }

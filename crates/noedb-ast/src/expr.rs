@@ -3,6 +3,7 @@
 use noedb_lexer::Span;
 
 use crate::name::{ColumnRef, Ident};
+use crate::window::WindowSpec;
 
 /// A literal value.
 #[derive(Debug, Clone, PartialEq)]
@@ -132,6 +133,17 @@ pub enum Expr {
         /// Source span.
         span: Span,
     },
+    /// SQL function call (`name(args…) [OVER (…)]`).
+    Function {
+        /// Function name (`ROW_NUMBER`, `COUNT`, …).
+        name: Ident,
+        /// Call arguments (empty for `ROW_NUMBER()`).
+        args: Vec<Expr>,
+        /// Window specification when used as analytic function.
+        over: Option<WindowSpec>,
+        /// Span covering the whole call.
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -157,7 +169,8 @@ impl Expr {
             | Self::Between { span, .. }
             | Self::Paren(_, span)
             | Self::Parameter { span, .. }
-            | Self::CurrentUser { span } => *span,
+            | Self::CurrentUser { span }
+            | Self::Function { span, .. } => *span,
         }
     }
 }

@@ -75,5 +75,8 @@ pub fn estimate(plan: &PhysicalPlan, stats: &PlanStats) -> f64 {
         PhysicalPlan::Limit { input, limit, .. } => {
             estimate(input, stats).min(*limit as f64 * SEQ_SCAN_ROW_COST)
         }
+        PhysicalPlan::Window { input, windows } => {
+            estimate(input, stats) + windows.len() as f64 * stats.default_rows as f64 * 0.8
+        }
     }
 }

@@ -1,6 +1,9 @@
 //! Expression parsing with Pratt precedence.
 
-use noedb_ast::{BinaryOp, ColumnRef, Expr, Ident, Literal, UnaryOp};
+use noedb_ast::{
+    BinaryOp, ColumnRef, Expr, FrameBound, FrameMode, Ident, Literal, OrderKey, UnaryOp,
+    WindowFrame, WindowSpec,
+};
 use noedb_lexer::{Keyword, Operator, Punctuation, Token};
 
 use crate::error::ParseError;
@@ -97,6 +100,21 @@ fn parse_expr_prec(p: &mut Parser<'_>, min: Prec) -> Result<Expr, ParseError> {
                 negated: false,
                 span: Parser::merge_span(start, end),
             };
+            continue;
+        }
+
+        if p.match_keyword(Keyword::Over) {
+            let Expr::Function { over, span, .. } = &mut left else {
+                return Err(ParseError::UnexpectedToken {
+                    span: p.peek().span,
+                    context: "OVER after non-function",
+                });
+            };
+            let start = *span;
+            let spec = parse_window_spec(p)?;
+            let end = p.peek().span;
+            *over = Some(spec);
+            *span = Parser::merge_span(start, end);
             continue;
         }
 
@@ -260,7 +278,7 @@ fn parse_atom(p: &mut Parser<'_>) -> Result<Expr, ParseError> {
         Token::Keyword(Keyword::False) => Ok(Expr::Literal(Literal::Boolean(false, tok.span))),
         Token::Ident | Token::QuotedIdent(_) | Token::Keyword(_) => {
             p.pos -= 1;
-            parse_column_ref(p)
+            parse_ident_expr(p)
         }
         Token::Punct(Punctuation::Star) => Ok(Expr::Column(ColumnRef::Star { span: tok.span })),
         _ => Err(ParseError::UnexpectedToken {
@@ -270,8 +288,33 @@ fn parse_atom(p: &mut Parser<'_>) -> Result<Expr, ParseError> {
     }
 }
 
-fn parse_column_ref(p: &mut Parser<'_>) -> Result<Expr, ParseError> {
+fn parse_ident_expr(p: &mut Parser<'_>) -> Result<Expr, ParseError> {
+    let start = p.peek().span;
     let first = p.parse_ident()?;
+    if matches!(p.peek_kind(), Token::Punct(Punctuation::LParen)) {
+        p.bump();
+        let mut args = Vec::new();
+        if !matches!(p.peek_kind(), Token::Punct(Punctuation::RParen)) {
+            loop {
+                args.push(parse_expr(p)?);
+                if !matches!(p.peek_kind(), Token::Punct(Punctuation::Comma)) {
+                    break;
+                }
+                p.bump();
+            }
+        }
+        let end = p.expect_punct(Punctuation::RParen)?;
+        return Ok(Expr::Function {
+            name: first,
+            args,
+            over: None,
+            span: Parser::merge_span(start, end),
+        });
+    }
+    parse_column_from_ident(p, first)
+}
+
+fn parse_column_from_ident(p: &mut Parser<'_>, first: Ident) -> Result<Expr, ParseError> {
     if matches!(p.peek_kind(), Token::Punct(Punctuation::Dot)) {
         p.bump();
         if matches!(p.peek_kind(), Token::Punct(Punctuation::Star)) {
@@ -292,6 +335,110 @@ fn parse_column_ref(p: &mut Parser<'_>) -> Result<Expr, ParseError> {
         table: None,
         column: first,
     }))
+}
+
+fn parse_window_spec(p: &mut Parser<'_>) -> Result<WindowSpec, ParseError> {
+    let mut spec = WindowSpec::new();
+    p.expect_punct(Punctuation::LParen)?;
+    if p.match_keyword(Keyword::Partition) {
+        p.expect_keyword(Keyword::By)?;
+        spec.partition_by = parse_comma_exprs(p)?;
+    }
+    if p.match_keyword(Keyword::Order) {
+        p.expect_keyword(Keyword::By)?;
+        loop {
+            let expr = parse_expr(p)?;
+            let asc = if p.match_keyword(Keyword::Desc) {
+                false
+            } else {
+                let _ = p.match_keyword(Keyword::Asc);
+                true
+            };
+            spec.order_by.push(OrderKey { expr, asc });
+            if !matches!(p.peek_kind(), Token::Punct(Punctuation::Comma)) {
+                break;
+            }
+            p.bump();
+        }
+    }
+    if matches!(
+        p.peek_kind(),
+        Token::Keyword(Keyword::Rows | Keyword::Range)
+    ) {
+        spec.frame = Some(parse_window_frame(p)?);
+    }
+    p.expect_punct(Punctuation::RParen)?;
+    Ok(spec)
+}
+
+fn parse_window_frame(p: &mut Parser<'_>) -> Result<WindowFrame, ParseError> {
+    let mode = match p.peek_kind() {
+        Token::Keyword(Keyword::Rows) => {
+            p.bump();
+            FrameMode::Rows
+        }
+        Token::Keyword(Keyword::Range) => {
+            p.bump();
+            FrameMode::Range
+        }
+        _ => {
+            return Err(ParseError::UnexpectedToken {
+                span: p.peek().span,
+                context: "ROWS or RANGE",
+            });
+        }
+    };
+    p.expect_keyword(Keyword::Between)?;
+    let start = parse_frame_bound(p)?;
+    p.expect_keyword(Keyword::And)?;
+    let end = parse_frame_bound(p)?;
+    Ok(WindowFrame { mode, start, end })
+}
+
+fn parse_frame_bound(p: &mut Parser<'_>) -> Result<FrameBound, ParseError> {
+    if p.match_keyword(Keyword::Unbounded) {
+        if p.match_keyword(Keyword::Preceding) {
+            return Ok(FrameBound::UnboundedPreceding);
+        }
+        p.expect_keyword(Keyword::Following)?;
+        return Ok(FrameBound::UnboundedFollowing);
+    }
+    if p.match_keyword(Keyword::Current) {
+        p.expect_keyword(Keyword::Row)?;
+        return Ok(FrameBound::CurrentRow);
+    }
+    let n = parse_frame_offset(p)?;
+    if p.match_keyword(Keyword::Preceding) {
+        return Ok(FrameBound::Preceding(n));
+    }
+    p.expect_keyword(Keyword::Following)?;
+    Ok(FrameBound::Following(n))
+}
+
+fn parse_frame_offset(p: &mut Parser<'_>) -> Result<u64, ParseError> {
+    let tok = p.peek();
+    match tok.kind {
+        Token::Integer(v) if v >= 0 => {
+            p.bump();
+            Ok(u64::try_from(v).unwrap_or(u64::MAX))
+        }
+        _ => Err(ParseError::UnexpectedToken {
+            span: tok.span,
+            context: "frame offset",
+        }),
+    }
+}
+
+fn parse_comma_exprs(p: &mut Parser<'_>) -> Result<Vec<Expr>, ParseError> {
+    let mut out = Vec::new();
+    loop {
+        out.push(parse_expr(p)?);
+        if !matches!(p.peek_kind(), Token::Punct(Punctuation::Comma)) {
+            break;
+        }
+        p.bump();
+    }
+    Ok(out)
 }
 
 fn parse_in_list(p: &mut Parser<'_>) -> Result<Vec<Expr>, ParseError> {

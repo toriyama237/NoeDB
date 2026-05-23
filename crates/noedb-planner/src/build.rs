@@ -3,6 +3,7 @@
 use noedb_ast::{SelectStmt, Statement};
 
 use crate::logical::LogicalPlan;
+use crate::window::wrap_window;
 use crate::PlanError;
 
 /// Build a logical plan from a parsed `SELECT`.
@@ -37,9 +38,10 @@ pub fn build_select(stmt: &SelectStmt) -> Result<LogicalPlan, PlanError> {
         };
     }
 
+    let (mut plan, items) = wrap_window(plan, &stmt.items);
     plan = LogicalPlan::Project {
         input: Box::new(plan),
-        items: stmt.items.clone(),
+        items,
     };
 
     Ok(plan)
