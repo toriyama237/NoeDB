@@ -128,6 +128,7 @@ impl fmt::Display for ColumnRef {
 }
 
 impl fmt::Display for Expr {
+    #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Literal(l) => write!(f, "{l}"),
@@ -177,6 +178,23 @@ impl fmt::Display for Expr {
                     }
                     write!(f, "{v}")?;
                 }
+                write!(f, ")")
+            }
+            Self::InSubquery {
+                expr,
+                query,
+                negated,
+                ..
+            } => {
+                write!(f, "{expr}")?;
+                if *negated {
+                    write!(f, " ")?;
+                    write_keyword(f, Keyword::Not)?;
+                }
+                write!(f, " ")?;
+                write_keyword(f, Keyword::In)?;
+                write!(f, " (")?;
+                write!(f, "{query}")?;
                 write!(f, ")")
             }
             Self::Between {

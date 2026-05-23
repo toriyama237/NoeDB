@@ -219,6 +219,7 @@ mod tests {
         ));
     }
 
+    #[test]
     fn ast_equality_on_parsed_select_item() {
         let stmt = parse("SELECT name AS n FROM users").unwrap();
         let Statement::Select(s) = stmt else {

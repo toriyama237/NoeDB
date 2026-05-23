@@ -180,7 +180,7 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 |---------|--------|----------|
 | 37 | ✅ | Fenêtres : `ROW_NUMBER`, `RANK`, `DENSE_RANK` + `OVER (PARTITION BY … ORDER BY …)` |
 | 38 | ✅ | Agrégats fenêtre (`SUM`/`AVG` `OVER`) + cadre `ROWS`/`RANGE` |
-| 39 | ⬜ | Sous-requêtes corrélées + décorrélation |
+| 39 | ✅ | Sous-requêtes `IN (SELECT …)` : décorrélation + `SemiJoin` |
 | 40 | ⬜ | CTE (`WITH`) + récursif |
 | 41 | ⬜ | `UNION` / `INTERSECT` / `EXCEPT` |
 | 42 | ⬜ | Types étendus + casts |

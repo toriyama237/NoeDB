@@ -56,5 +56,20 @@ pub fn lower(logical: LogicalPlan) -> PhysicalPlan {
             input: Box::new(lower(*input)),
             windows,
         },
+        LogicalPlan::SemiJoin {
+            left,
+            right,
+            left_key,
+            right_key,
+            corr_on,
+            negated,
+        } => PhysicalPlan::SemiJoin {
+            left: Box::new(lower(*left)),
+            right: Box::new(lower(*right)),
+            left_key,
+            right_key,
+            corr_on,
+            negated,
+        },
     }
 }

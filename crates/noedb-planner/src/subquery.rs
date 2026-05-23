@@ -1,0 +1,233 @@
+//! Subquery decorrelation (Phase 5 Week 39).
+
+use noedb_ast::{BinaryOp, ColumnRef, Expr, SelectStmt};
+
+use crate::build::build_select;
+use crate::logical::LogicalPlan;
+use crate::PlanError;
+
+/// One `IN (SELECT …)` predicate extracted from `WHERE`.
+#[derive(Debug, Clone)]
+pub struct InSubqueryPred {
+    /// Left-hand side (`expr IN …`).
+    pub outer_expr: Expr,
+    /// Subquery AST.
+    pub query: SelectStmt,
+    /// `NOT IN` flag.
+    pub negated: bool,
+}
+
+/// Remove `IN (SELECT …)` predicates from `WHERE`, returning the rest and extracted subs.
+#[must_use]
+pub fn peel_in_subqueries(expr: Option<Expr>) -> (Option<Expr>, Vec<InSubqueryPred>) {
+    let Some(expr) = expr else {
+        return (None, Vec::new());
+    };
+    let mut subs = Vec::new();
+    let rest = peel_expr(expr, &mut subs);
+    (rest, subs)
+}
+
+fn peel_expr(expr: Expr, subs: &mut Vec<InSubqueryPred>) -> Option<Expr> {
+    match expr {
+        Expr::InSubquery {
+            expr,
+            query,
+            negated,
+            ..
+        } => {
+            subs.push(InSubqueryPred {
+                outer_expr: *expr,
+                query: *query,
+                negated,
+            });
+            None
+        }
+        Expr::Binary {
+            op: BinaryOp::And,
+            left,
+            right,
+            span,
+        } => {
+            let l = peel_expr(*left, subs);
+            let r = peel_expr(*right, subs);
+            match (l, r) {
+                (None, None) => None,
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (Some(a), Some(b)) => Some(Expr::Binary {
+                    op: BinaryOp::And,
+                    left: Box::new(a),
+                    right: Box::new(b),
+                    span,
+                }),
+            }
+        }
+        other => Some(other),
+    }
+}
+
+/// Apply decorrelated semi-joins for each extracted `IN (SELECT …)`.
+pub fn apply_in_subqueries(
+    plan: LogicalPlan,
+    preds: &[InSubqueryPred],
+    outer: &SelectStmt,
+) -> Result<LogicalPlan, PlanError> {
+    let mut plan = plan;
+    let outer_tables = table_names(outer);
+    for pred in preds {
+        plan = decorrelate_one(plan, pred, &outer_tables)?;
+    }
+    Ok(plan)
+}
+
+fn decorrelate_one(
+    plan: LogicalPlan,
+    pred: &InSubqueryPred,
+    outer_tables: &[String],
+) -> Result<LogicalPlan, PlanError> {
+    let left_key = expr_column_name(&pred.outer_expr)
+        .ok_or(PlanError::UnsupportedStatement)?;
+    let inner_key = subquery_column_name(&pred.query)?;
+
+    let inner_tables = table_names(&pred.query);
+    let (corr, inner_where) =
+        split_correlated_where(pred.query.where_clause.clone(), outer_tables, &inner_tables);
+
+    let mut inner_stmt = pred.query.clone();
+    inner_stmt.where_clause = inner_where;
+    let inner_plan = build_select(&inner_stmt)?;
+
+    let corr_on = and_exprs(corr);
+
+    Ok(LogicalPlan::SemiJoin {
+        left: Box::new(plan),
+        right: Box::new(inner_plan),
+        left_key,
+        right_key: inner_key,
+        corr_on,
+        negated: pred.negated,
+    })
+}
+
+fn table_names(stmt: &SelectStmt) -> Vec<String> {
+    let mut names = Vec::new();
+    if let Some(t) = &stmt.from {
+        push_table_ref(t, &mut names);
+    }
+    for j in &stmt.joins {
+        push_table_ref(&j.table, &mut names);
+    }
+    names
+}
+
+fn push_table_ref(t: &noedb_ast::TableRef, names: &mut Vec<String>) {
+    names.push(t.name.value.clone());
+    if let Some(a) = &t.alias {
+        names.push(a.value.clone());
+    }
+}
+
+fn expr_column_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Column(ColumnRef::Named { column, .. }) => Some(column.value.clone()),
+        _ => None,
+    }
+}
+
+fn subquery_column_name(query: &SelectStmt) -> Result<String, PlanError> {
+    let item = query.items.first().ok_or(PlanError::UnsupportedStatement)?;
+    if let Expr::Column(ColumnRef::Named { column, .. }) = &item.expr {
+        Ok(column.value.clone())
+    } else if let Some(alias) = &item.alias {
+        Ok(alias.value.clone())
+    } else {
+        Err(PlanError::UnsupportedStatement)
+    }
+}
+
+fn split_correlated_where(
+    where_clause: Option<Expr>,
+    outer_tables: &[String],
+    inner_tables: &[String],
+) -> (Vec<Expr>, Option<Expr>) {
+    let Some(expr) = where_clause else {
+        return (Vec::new(), None);
+    };
+    let mut corr = Vec::new();
+    let mut rest = Vec::new();
+    for part in flatten_and(expr) {
+        if is_correlation_eq(&part, outer_tables, inner_tables) {
+            corr.push(part);
+        } else {
+            rest.push(part);
+        }
+    }
+    (corr, and_exprs_opt(rest))
+}
+
+fn flatten_and(expr: Expr) -> Vec<Expr> {
+    match expr {
+        Expr::Binary {
+            op: BinaryOp::And,
+            left,
+            right,
+            ..
+        } => {
+            let mut v = flatten_and(*left);
+            v.extend(flatten_and(*right));
+            v
+        }
+        other => vec![other],
+    }
+}
+
+fn is_correlation_eq(expr: &Expr, outer_tables: &[String], inner_tables: &[String]) -> bool {
+    let Expr::Binary {
+        op: BinaryOp::Eq,
+        left,
+        right,
+        ..
+    } = expr
+    else {
+        return false;
+    };
+    let lo = column_qualifier(left);
+    let ro = column_qualifier(right);
+    matches!(
+        (&lo, &ro),
+        (Some(o), Some(i)) if outer_tables.contains(o) && inner_tables.contains(i)
+    ) || matches!(
+        (&lo, &ro),
+        (Some(i), Some(o)) if inner_tables.contains(i) && outer_tables.contains(o)
+    )
+}
+
+fn column_qualifier(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Column(ColumnRef::Named {
+            table: Some(t), ..
+        }) => Some(t.value.clone()),
+        _ => None,
+    }
+}
+
+fn and_exprs(mut exprs: Vec<Expr>) -> Option<Expr> {
+    if exprs.is_empty() {
+        return None;
+    }
+    let first = exprs.remove(0);
+    Some(exprs.into_iter().fold(first, |acc, e| {
+        let span = acc.span();
+        Expr::Binary {
+            op: BinaryOp::And,
+            left: Box::new(acc),
+            right: Box::new(e),
+            span,
+        }
+    }))
+}
+
+fn and_exprs_opt(exprs: Vec<Expr>) -> Option<Expr> {
+    and_exprs(exprs)
+}

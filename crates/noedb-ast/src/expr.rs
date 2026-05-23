@@ -3,6 +3,7 @@
 use noedb_lexer::Span;
 
 use crate::name::{ColumnRef, Ident};
+use crate::stmt::SelectStmt;
 use crate::window::WindowSpec;
 
 /// A literal value.
@@ -106,6 +107,17 @@ pub enum Expr {
         /// Span covering the whole predicate.
         span: Span,
     },
+    /// `expr [NOT] IN (SELECT …)` — decorrelated at plan time (Phase 5 Week 39).
+    InSubquery {
+        /// Left-hand expression (usually a column).
+        expr: Box<Expr>,
+        /// Subquery returning one column.
+        query: Box<SelectStmt>,
+        /// Whether `NOT IN` was used.
+        negated: bool,
+        /// Span covering the whole predicate.
+        span: Span,
+    },
     /// `expr [NOT] BETWEEN low AND high`.
     Between {
         /// Subject expression.
@@ -166,6 +178,7 @@ impl Expr {
             | Self::Unary { span, .. }
             | Self::IsNull { span, .. }
             | Self::In { span, .. }
+            | Self::InSubquery { span, .. }
             | Self::Between { span, .. }
             | Self::Paren(_, span)
             | Self::Parameter { span, .. }

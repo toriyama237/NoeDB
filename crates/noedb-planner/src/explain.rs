@@ -28,6 +28,7 @@ impl ExplainWriter {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn write_plan(&mut self, plan: &PhysicalPlan, indent: usize) {
         let pad = "  ".repeat(indent);
         match plan {
@@ -121,6 +122,21 @@ impl ExplainWriter {
                 self.lines
                     .push(format!("{pad}Window(funcs={})", windows.len()));
                 self.write_plan(input, indent + 1);
+            }
+            PhysicalPlan::SemiJoin {
+                left,
+                right,
+                left_key,
+                right_key,
+                negated,
+                ..
+            } => {
+                let op = if *negated { "NOT IN" } else { "IN" };
+                self.lines.push(format!(
+                    "{pad}SemiJoin({op}, keys={left_key}={right_key})"
+                ));
+                self.write_plan(left, indent + 1);
+                self.write_plan(right, indent + 1);
             }
         }
     }

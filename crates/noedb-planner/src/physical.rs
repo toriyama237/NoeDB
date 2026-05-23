@@ -106,4 +106,19 @@ pub enum PhysicalPlan {
         /// Window computations.
         windows: Vec<WindowCompute>,
     },
+    /// Semi-join (`IN (SELECT …)` decorrelation, Week 39).
+    SemiJoin {
+        /// Outer input.
+        left: Box<Self>,
+        /// Subquery input.
+        right: Box<Self>,
+        /// Outer key column.
+        left_key: String,
+        /// Inner key column.
+        right_key: String,
+        /// Optional correlation predicate on merged rows.
+        corr_on: Option<Expr>,
+        /// `NOT IN`.
+        negated: bool,
+    },
 }

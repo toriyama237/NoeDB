@@ -74,6 +74,21 @@ pub enum LogicalPlan {
         /// Window computations to apply.
         windows: Vec<WindowCompute>,
     },
+    /// Semi-join for decorrelated `IN (SELECT …)` (Phase 5 Week 39).
+    SemiJoin {
+        /// Outer (left) input.
+        left: Box<Self>,
+        /// Subquery (right) input.
+        right: Box<Self>,
+        /// Outer join key column name.
+        left_key: String,
+        /// Inner projected column name.
+        right_key: String,
+        /// Correlation equalities (`WHERE` from subquery), evaluated on merged rows.
+        corr_on: Option<Expr>,
+        /// `NOT IN` semantics.
+        negated: bool,
+    },
 }
 
 /// One analytic function in a `Window` operator.

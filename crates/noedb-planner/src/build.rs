@@ -3,6 +3,7 @@
 use noedb_ast::{SelectStmt, Statement};
 
 use crate::logical::LogicalPlan;
+use crate::subquery::{apply_in_subqueries, peel_in_subqueries};
 use crate::window::wrap_window;
 use crate::PlanError;
 
@@ -31,12 +32,15 @@ pub fn build_select(stmt: &SelectStmt) -> Result<LogicalPlan, PlanError> {
         };
     }
 
-    if let Some(pred) = &stmt.where_clause {
+    let (where_rest, in_subs) = peel_in_subqueries(stmt.where_clause.clone());
+    if let Some(pred) = where_rest {
         plan = LogicalPlan::Filter {
             input: Box::new(plan),
-            predicate: pred.clone(),
+            predicate: pred,
         };
     }
+
+    plan = apply_in_subqueries(plan, &in_subs, stmt)?;
 
     let (mut plan, items) = wrap_window(plan, &stmt.items);
     plan = LogicalPlan::Project {

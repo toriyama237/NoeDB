@@ -21,6 +21,7 @@ mod parallel;
 mod physical;
 mod simd_pred;
 mod value;
+mod subquery;
 mod window;
 mod window_exec;
 

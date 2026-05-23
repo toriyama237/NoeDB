@@ -92,6 +92,21 @@ fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
             input: Box::new(pushdown_predicates(*input)),
             windows,
         },
+        LogicalPlan::SemiJoin {
+            left,
+            right,
+            left_key,
+            right_key,
+            corr_on,
+            negated,
+        } => LogicalPlan::SemiJoin {
+            left: Box::new(pushdown_predicates(*left)),
+            right: Box::new(pushdown_predicates(*right)),
+            left_key,
+            right_key,
+            corr_on,
+            negated,
+        },
         LogicalPlan::Scan { .. } => plan,
     }
 }
@@ -174,6 +189,21 @@ fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
         LogicalPlan::Window { input, windows } => PhysicalPlan::Window {
             input: Box::new(to_physical(*input, ctx)),
             windows,
+        },
+        LogicalPlan::SemiJoin {
+            left,
+            right,
+            left_key,
+            right_key,
+            corr_on,
+            negated,
+        } => PhysicalPlan::SemiJoin {
+            left: Box::new(to_physical(*left, ctx)),
+            right: Box::new(to_physical(*right, ctx)),
+            left_key,
+            right_key,
+            corr_on,
+            negated,
         },
     }
 }
@@ -269,6 +299,25 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
             }
             Some(dedup(cols))
         }
+        PhysicalPlan::SemiJoin {
+            left,
+            right,
+            left_key,
+            right_key,
+            corr_on,
+            ..
+        } => {
+            let mut cols = collect_columns(left).unwrap_or_default();
+            if collect_columns(right).is_some() {
+                // Inner columns are not projected; only keys + correlation expr.
+            }
+            cols.push(left_key.clone());
+            if let Some(pred) = corr_on {
+                cols.extend(columns_in_expr(pred));
+            }
+            cols.push(right_key.clone());
+            Some(dedup(cols))
+        }
     }
 }
 
@@ -350,6 +399,21 @@ fn apply_columns(plan: PhysicalPlan, columns: Option<Vec<String>>) -> PhysicalPl
         PhysicalPlan::Window { input, windows } => PhysicalPlan::Window {
             input: Box::new(apply_columns(*input, columns)),
             windows,
+        },
+        PhysicalPlan::SemiJoin {
+            left,
+            right,
+            left_key,
+            right_key,
+            corr_on,
+            negated,
+        } => PhysicalPlan::SemiJoin {
+            left: Box::new(apply_columns(*left, columns.clone())),
+            right: Box::new(apply_columns(*right, columns)),
+            left_key,
+            right_key,
+            corr_on,
+            negated,
         },
     }
 }

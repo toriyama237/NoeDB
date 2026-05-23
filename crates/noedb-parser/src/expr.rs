@@ -8,6 +8,7 @@ use noedb_lexer::{Keyword, Operator, Punctuation, Token};
 
 use crate::error::ParseError;
 use crate::parser::Parser;
+use crate::select::parse_select_subquery;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
@@ -47,27 +48,17 @@ fn parse_expr_prec(p: &mut Parser<'_>, min: Prec) -> Result<Expr, ParseError> {
             let start = left.span();
             p.bump(); // NOT
             p.expect_keyword(Keyword::In)?;
-            let values = parse_in_list(p)?;
+            let (values, subquery) = parse_in_rhs(p)?;
             let end = p.peek().span;
-            left = Expr::In {
-                expr: Box::new(left),
-                values,
-                negated: true,
-                span: Parser::merge_span(start, end),
-            };
+            left = in_expr_from_rhs(left, values, subquery, true, Parser::merge_span(start, end));
             continue;
         }
 
         if p.match_keyword(Keyword::In) {
             let start = left.span();
-            let values = parse_in_list(p)?;
+            let (values, subquery) = parse_in_rhs(p)?;
             let end = p.peek().span;
-            left = Expr::In {
-                expr: Box::new(left),
-                values,
-                negated: false,
-                span: Parser::merge_span(start, end),
-            };
+            left = in_expr_from_rhs(left, values, subquery, false, Parser::merge_span(start, end));
             continue;
         }
 
@@ -441,8 +432,36 @@ fn parse_comma_exprs(p: &mut Parser<'_>) -> Result<Vec<Expr>, ParseError> {
     Ok(out)
 }
 
-fn parse_in_list(p: &mut Parser<'_>) -> Result<Vec<Expr>, ParseError> {
+fn in_expr_from_rhs(
+    left: Expr,
+    values: Vec<Expr>,
+    subquery: Option<noedb_ast::SelectStmt>,
+    negated: bool,
+    span: noedb_lexer::Span,
+) -> Expr {
+    if let Some(query) = subquery {
+        return Expr::InSubquery {
+            expr: Box::new(left),
+            query: Box::new(query),
+            negated,
+            span,
+        };
+    }
+    Expr::In {
+        expr: Box::new(left),
+        values,
+        negated,
+        span,
+    }
+}
+
+fn parse_in_rhs(p: &mut Parser<'_>) -> Result<(Vec<Expr>, Option<noedb_ast::SelectStmt>), ParseError> {
     p.expect_punct(Punctuation::LParen)?;
+    if matches!(p.peek_kind(), Token::Keyword(Keyword::Select)) {
+        let query = parse_select_subquery(p)?;
+        p.expect_punct(Punctuation::RParen)?;
+        return Ok((Vec::new(), Some(query)));
+    }
     let mut values = Vec::new();
     if !matches!(p.peek_kind(), Token::Punct(Punctuation::RParen)) {
         loop {
@@ -454,7 +473,7 @@ fn parse_in_list(p: &mut Parser<'_>) -> Result<Vec<Expr>, ParseError> {
         }
     }
     p.expect_punct(Punctuation::RParen)?;
-    Ok(values)
+    Ok((values, None))
 }
 
 pub(crate) fn parse_optional_alias(p: &mut Parser<'_>) -> Result<Option<Ident>, ParseError> {

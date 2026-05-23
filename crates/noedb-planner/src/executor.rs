@@ -91,6 +91,9 @@ enum ExecState {
     Window {
         rows: std::vec::IntoIter<RowMap>,
     },
+    SemiJoin {
+        rows: std::vec::IntoIter<RowMap>,
+    },
 }
 
 pub(crate) type RowMap = Vec<(String, Value)>;
@@ -200,7 +203,7 @@ impl Executor {
                     };
                     return Ok(Some(Record { fields: row }));
                 }
-                ExecState::Window { rows } => {
+                ExecState::Window { rows } | ExecState::SemiJoin { rows } => {
                     let Some(row) = rows.next() else {
                         self.state = ExecState::Done;
                         return Ok(None);
@@ -461,7 +464,68 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
                 rows: rows.into_iter(),
             })
         }
+        PhysicalPlan::SemiJoin {
+            left,
+            right,
+            left_key,
+            right_key,
+            corr_on,
+            negated,
+        } => {
+            let left_rows = execute_to_rows(*left, ctx)?;
+            let right_rows = execute_to_rows(*right, ctx)?;
+            let rows = semi_join_rows(
+                left_rows,
+                &right_rows,
+                &left_key,
+                &right_key,
+                corr_on.as_ref(),
+                negated,
+            )?;
+            Ok(ExecState::SemiJoin {
+                rows: rows.into_iter(),
+            })
+        }
     }
+}
+
+fn semi_join_rows(
+    left_rows: Vec<RowMap>,
+    right_rows: &[RowMap],
+    left_key: &str,
+    right_key: &str,
+    corr_on: Option<&Expr>,
+    negated: bool,
+) -> Result<Vec<RowMap>, ExecError> {
+    let mut out = Vec::new();
+    'left: for lrow in left_rows {
+        let Some(lkey) = join_key_value(&lrow, left_key) else {
+            continue;
+        };
+        for rrow in right_rows {
+            let Some(rkey) = join_key_value(rrow, right_key) else {
+                continue;
+            };
+            if lkey != rkey {
+                continue;
+            }
+            let merged = merge_rows(&lrow, rrow);
+            if let Some(pred) = corr_on {
+                if !eval_predicate(pred, &merged)? {
+                    continue;
+                }
+            }
+            if negated {
+                continue 'left;
+            }
+            out.push(lrow);
+            continue 'left;
+        }
+        if negated {
+            out.push(lrow);
+        }
+    }
+    Ok(out)
 }
 
 fn execute_to_rows<S: StorageEngine<Error = StorageError>>(

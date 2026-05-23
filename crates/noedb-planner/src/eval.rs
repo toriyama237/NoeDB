@@ -19,8 +19,25 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
             let is_null = matches!(v, Value::Null);
             Ok(Value::Bool(if *negated { !is_null } else { is_null }))
         }
+        Expr::In {
+            expr,
+            values,
+            negated,
+            ..
+        } => {
+            let v = eval_expr(expr, row)?;
+            let mut found = false;
+            for val_expr in values {
+                let val = eval_expr(val_expr, row)?;
+                if v.sql_eq(&val).unwrap_or(false) {
+                    found = true;
+                    break;
+                }
+            }
+            Ok(Value::Bool(if *negated { !found } else { found }))
+        }
         Expr::Between { .. }
-        | Expr::In { .. }
+        | Expr::InSubquery { .. }
         | Expr::Parameter { .. }
         | Expr::CurrentUser { .. }
         | Expr::Function { .. } => Err(ExecError::UnsupportedExpr),

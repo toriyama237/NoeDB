@@ -7,7 +7,16 @@ use crate::error::ParseError;
 use crate::expr::{parse_expr, parse_optional_alias};
 use crate::parser::Parser;
 
+/// Parse `SELECT` for use inside `IN (SELECT …)` (no trailing EOF).
+pub(crate) fn parse_select_subquery(p: &mut Parser<'_>) -> Result<SelectStmt, ParseError> {
+    parse_select_inner(p, false)
+}
+
 pub(crate) fn parse_select(p: &mut Parser<'_>) -> Result<SelectStmt, ParseError> {
+    parse_select_inner(p, true)
+}
+
+fn parse_select_inner(p: &mut Parser<'_>, expect_eof: bool) -> Result<SelectStmt, ParseError> {
     let start = p.expect_keyword(Keyword::Select)?;
     let distinct = p.match_keyword(Keyword::Distinct);
 
@@ -40,7 +49,9 @@ pub(crate) fn parse_select(p: &mut Parser<'_>) -> Result<SelectStmt, ParseError>
         None
     };
 
-    p.expect_eof()?;
+    if expect_eof {
+        p.expect_eof()?;
+    }
 
     let end = if p.pos > 0 {
         p.tokens[p.pos - 1].span
@@ -96,6 +107,7 @@ fn is_table_alias_boundary(next: Option<&Token>) -> bool {
             Keyword::Inner | Keyword::Left | Keyword::Join
         )) | Some(Token::Keyword(Keyword::Where))
             | Some(Token::Keyword(Keyword::On))
+            | Some(Token::Punct(Punctuation::RParen))
             | Some(Token::Eof)
     )
 }

@@ -126,6 +126,17 @@ fn substitute_expr(expr: &Expr, params: &[Literal]) -> Expr {
             negated: *negated,
             span: *span,
         },
+        Expr::InSubquery {
+            expr,
+            query,
+            negated,
+            span,
+        } => Expr::InSubquery {
+            expr: Box::new(substitute_expr(expr, params)),
+            query: Box::new(substitute_select(query, params)),
+            negated: *negated,
+            span: *span,
+        },
         Expr::Between {
             expr,
             low,
@@ -141,6 +152,27 @@ fn substitute_expr(expr: &Expr, params: &[Literal]) -> Expr {
         },
         Expr::Paren(inner, span) => Expr::Paren(Box::new(substitute_expr(inner, params)), *span),
         other => other.clone(),
+    }
+}
+
+fn substitute_select(stmt: &noedb_ast::SelectStmt, params: &[Literal]) -> noedb_ast::SelectStmt {
+    noedb_ast::SelectStmt {
+        distinct: stmt.distinct,
+        items: stmt
+            .items
+            .iter()
+            .map(|i| noedb_ast::SelectItem {
+                expr: substitute_expr(&i.expr, params),
+                alias: i.alias.clone(),
+            })
+            .collect(),
+        from: stmt.from.clone(),
+        joins: stmt.joins.clone(),
+        where_clause: stmt
+            .where_clause
+            .as_ref()
+            .map(|e| substitute_expr(e, params)),
+        span: stmt.span,
     }
 }
 
@@ -167,6 +199,15 @@ fn walk_expr(expr: &Expr, f: &mut dyn FnMut(&Expr)) {
             walk_expr(expr, f);
             for v in values {
                 walk_expr(v, f);
+            }
+        }
+        Expr::InSubquery { expr, query, .. } => {
+            walk_expr(expr, f);
+            if let Some(w) = &query.where_clause {
+                walk_expr(w, f);
+            }
+            for item in &query.items {
+                walk_expr(&item.expr, f);
             }
         }
         Expr::Between {
