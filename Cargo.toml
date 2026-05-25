@@ -69,7 +69,7 @@ rand = "0.8"
 criterion = { version = "0.8", default-features = false, features = ["html_reports"] }
 parking_lot = "0.12"
 rayon = "1.10"
-lz4_flex = "0.11"
+lz4_flex = "0.13"
 lru = "0.16"
 dashmap = "6.1"
 
