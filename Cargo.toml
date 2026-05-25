@@ -55,7 +55,7 @@ protoc-bin-vendored = "3"
 # Phase 4 Raft + networking
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-pki-types = "1.9"
-rcgen = "0.13"
+rcgen = "0.14"
 tokio-rustls = "0.26"
 
 tokio = { version = "1.43", features = ["sync", "time", "rt-multi-thread", "macros", "io-util", "net"] }
