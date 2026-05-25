@@ -65,7 +65,7 @@ bytes = "1.10"
 thiserror = "2.0"
 crc32fast = "1.4"
 tracing = "0.1"
-rand = "0.8"
+rand = "0.10"
 criterion = { version = "0.8", default-features = false, features = ["html_reports"] }
 parking_lot = "0.12"
 rayon = "1.10"
