@@ -174,7 +174,7 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 - **Tests** : `noedb-raft/tests/phase4.rs`, `noedb-engine/tests/phase4_distributed.rs`
 - Tag cible **`v1.3.0-distributed`**
 
-## Phase 5 — Query engine v2 (S37–S44)
+## Phase 5 — Query engine v2 (S37–S44) ✅
 
 | Semaine | Statut | Livrable |
 |---------|--------|----------|
@@ -185,7 +185,7 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 | 41 | ✅ | `UNION` / `INTERSECT` / `EXCEPT` |
 | 42 | ✅ | Types étendus + casts |
 | 43 | ✅ | Statistiques colonnes + costing v2 |
-| 44 | ⬜ | Bench TPC-H lite + tag `v1.4.0-query` |
+| 44 | ✅ | Bench TPC-H lite + tag `v1.4.0-query` |
 
 ### Semaine 37 — ✅
 
@@ -239,6 +239,12 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 - **SQL** : `ANALYZE TABLE name`
 - **EXPLAIN** : estimations `rows≈N` sur scans
 - **Tests** : `phase5_stats.rs`
+
+### Semaine 44 — ✅
+
+- **Bench** : `cargo bench -p noedb-engine --bench tpch_lite` (Q03/Q06/Q07/Q08/Q09/Q10/Q12)
+- **Tests** : `phase5_tpch_lite.rs` (corpus analytique miniature)
+- **Tag** : `v1.4.0-query` (fin Phase 5 query engine v2)
 
 ## Phases suivantes
 

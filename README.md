@@ -256,6 +256,8 @@ open target/criterion/report/index.html
 
 The `one_million_tokens` bench targets ~1M tokens per run (~**21 ms** / ~47 Melem/s
 on release builds as of v0.2). LSM benches: `cargo bench -p noedb-storage --bench lsm`.
+Analytical **TPC-H lite** workload (joins, CTEs, subqueries, windows):
+`cargo bench -p noedb-engine --bench tpch_lite`.
 
 ---
 

@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0-query] - 2026-05-20
+
+### Added
+- **Phase 5 query engine v2** complete: window functions, `IN (SELECT …)` decorrelation,
+  CTEs (`WITH RECURSIVE`), set ops (`UNION` / `INTERSECT` / `EXCEPT`), `CAST`, column
+  statistics (`ANALYZE TABLE`), and cost model v2 with `EXPLAIN rows≈N`.
+- **TPC-H lite** benchmark: `cargo bench -p noedb-engine --bench tpch_lite` (7 analytical
+  queries on a miniature star schema).
+
 ## [1.0.1] - 2026-05-20
 
 ### Performance

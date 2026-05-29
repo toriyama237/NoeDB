@@ -44,5 +44,9 @@ harness = false
 name = "ycsb"
 harness = false
 
+[[bench]]
+name = "tpch_lite"
+harness = false
+
 [lints]
 workspace = true
