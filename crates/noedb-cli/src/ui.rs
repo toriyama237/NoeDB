@@ -1,4 +1,4 @@
-//! Branded terminal UI for demos and `NOEDB_STUDIO=1`.
+//! Branded terminal UI — NoeDB Studio (cyber / infra tool aesthetic).
 
 use std::io::{self, Write};
 
@@ -17,6 +17,10 @@ pub(crate) fn plain_mode(args: &[String]) -> bool {
     args.iter().any(|a| a == "--plain")
 }
 
+pub(crate) fn skip_banner() -> bool {
+    std::env::var("NOEDB_SKIP_BANNER").is_ok_and(|v| v != "0" && !v.is_empty())
+}
+
 pub(crate) fn maybe_clear_screen(studio: bool) {
     if studio
         || std::env::var("NOEDB_CLEAR").is_ok_and(|v| v != "0" && !v.is_empty())
@@ -27,46 +31,45 @@ pub(crate) fn maybe_clear_screen(studio: bool) {
 }
 
 pub(crate) fn print_banner(distributed: bool, data_dir: &str) {
-    let mode = if distributed {
-        "Raft cluster · 3 nodes"
-    } else {
-        "Local LSM engine"
-    };
-    let data = truncate_path(data_dir, 44);
+    let mode_tag = if distributed { "CLUSTER" } else { "LOCAL" };
+    let data = truncate_path(data_dir, 52);
+    let ok = format!("{ESC}[1;32m[OK]{ESC}[0m");
+    let active = format!("{ESC}[1;32m[Active]{ESC}[0m");
+    let dim = format!("{ESC}[2m");
+    let reset = format!("{ESC}[0m");
+    let cyan = format!("{ESC}[1;36m");
+    let gray = format!("{ESC}[90m");
 
     println!(
         "
-{ESC}[1;36m
-    ███╗   ██╗ ██████╗ ███████╗██████╗ ██████╗
-    ████╗  ██║██╔═══██╗██╔════╝██╔══██╗██   ██╗
-    ██╔██╗ ██║██║   ██║█████╗  ██║  ██║██   ██║
-    ██║╚██╗██║██║   ██║██╔══╝  ██║  ██║██   ██║
-    ██║ ╚████║╚██████╔╝███████╗██████╔╝██████╔╝
-    ╚═╝  ╚═══╝ ╚═════╝ ╚══════╝╚═════╝ ╚═════╝
-{ESC}[0m
-{ESC}[2m  ┌──────────────────────────────────────────────────────────────┐
-  │{ESC}[0m {ESC}[1;33mDistributed SQL engine{ESC}[0m{ESC}[2m · Rust · Raft · LSM · from Cameroon 🇨🇲      │
-  │  Lexer → Parser → Planner → Storage · v{VERSION:<6}              │
-  └──────────────────────────────────────────────────────────────┘{ESC}[0m
-  {ESC}[36mmode{ESC}[0m   {ESC}[1m{mode:<24}{ESC}[0m  {ESC}[36mdata{ESC}[0m  {ESC}[2m{data}{ESC}[0m
-"
+{cyan}  ███╗   ██╗  ██████╗   ███████╗  ██████╗   ██████╗ {reset}
+{cyan}  ████╗  ██║ ██╔═══██╗ ██╔════╝  ██╔══██╗  ██╔══██╗{reset}
+{cyan}  ██╔██╗ ██║ ██║   ██║ █████╗    ██║  ██║  ██████╔╝{reset}
+{cyan}  ██║╚██╗██║ ██║   ██║ ██╔══╝    ██║  ██║  ██╔══██╗{reset}
+{cyan}  ██║ ╚████║ ╚██████╔╝ ███████╗  ██████╔╝  ██████╔╝{reset}
+{cyan}  ╚═╝  ╚═══╝  ╚═════╝  ╚══════╝  ╚═════╝   ╚═════╝ {reset}
+{gray}  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀{reset}
+{gray}  ┌────────────────────────────────────────────────────────────────┐{reset}
+{gray}  │{reset} Distributed SQL Engine {gray}│{reset} Rust 🦀 • Raft ⎈ • LSM 🗄️ • Made in CM 🇨🇲
+{gray}  │{reset} Core Modules: Lexer {ok} • Parser {ok} • Planner {ok} • Storage {active} {gray}│{reset} Engine v{VERSION} {ok}
+{gray}  │{reset} Session {gray}│{reset} mode {cyan}{mode_tag}{reset} {gray}│{reset} data {dim}{data}{reset}
+{gray}  └────────────────────────────────────────────────────────────────┘{reset}
+{gray}  ┌─ [ QUICKSTART & COMMANDS ] ────────────────────────────────────┐{reset}
+{gray}  │{reset} SELECT 1;                                    {gray}(basic query){reset}
+{gray}  │{reset} CREATE TABLE t (id TEXT); INSERT INTO t VALUES ('42');
+{gray}  │{reset} \\explain SELECT * FROM t;                  {gray}(query plan){reset}
+{gray}  │{reset} \\help                                       {gray}(show panel again){reset}
+{gray}  └────────────────────────────────────────────────────────────────┘{reset}
+",
+        dim = dim,
     );
 }
-
-pub(crate) fn print_quickstart() {
-    println!(
-        "
-  {ESC}[1;36mTry{ESC}[0m
-    {ESC}[2mSELECT 1;{ESC}[0m
-    {ESC}[2mCREATE TABLE t (id TEXT); INSERT INTO t VALUES ('42');{ESC}[0m
-    {ESC}[2m\\explain SELECT * FROM t;{ESC}[0m
-  {ESC}[1;36mMeta{ESC}[0m  {ESC}[2m\\help · \\q · \\clear{ESC}[0m
-"
-    );
+pub(crate) fn studio_prompt() -> String {
+    format!("{ESC}[1;36mnoedb{ESC}[0m> ")
 }
 
-pub(crate) fn print_prompt() {
-    print!("{ESC}[1;36mnoedb{ESC}[0m{ESC}[2m›{ESC}[0m ");
+pub(crate) fn print_prompt_plain() {
+    print!("noedb> ");
     let _ = io::stdout().flush();
 }
 
@@ -118,13 +121,13 @@ fn print_table(r: &QueryResult) {
         s
     };
 
-    println!("{ESC}[2m{}{ESC}[0m", rule("┌", "┬", "┐"));
+    println!("{ESC}[90m{}{ESC}[0m", rule("┌", "┬", "┐"));
     print_row(&r.columns, &widths, &format!("{ESC}[1;33m"), &format!("{ESC}[0m"));
-    println!("{ESC}[2m{}{ESC}[0m", rule("├", "┼", "┤"));
+    println!("{ESC}[90m{}{ESC}[0m", rule("├", "┼", "┤"));
     for row in &r.rows {
         print_row(row, &widths, "", "");
     }
-    println!("{ESC}[2m{}{ESC}[0m", rule("└", "┴", "┘"));
+    println!("{ESC}[90m{}{ESC}[0m", rule("└", "┴", "┘"));
     println!("{ESC}[2m  {} row(s){ESC}[0m", r.rows.len());
 }
 
@@ -144,7 +147,7 @@ fn print_row(cells: &[String], widths: &[usize], prefix: &str, suffix: &str) {
 
 pub(crate) fn print_error(msg: &str, studio: bool) {
     if studio {
-        eprintln!("{ESC}[1;31m✗ error{ESC}[0m {ESC}[2m{msg}{ESC}[0m");
+        eprintln!("{ESC}[1;31m✗ ERROR{ESC}[0m {ESC}[2m{msg}{ESC}[0m");
     } else {
         eprintln!("error: {msg}");
     }
@@ -152,10 +155,11 @@ pub(crate) fn print_error(msg: &str, studio: bool) {
 
 pub(crate) fn print_explain(text: &str, studio: bool) {
     if studio {
-        println!("{ESC}[1;33mplan{ESC}[0m");
+        println!("{ESC}[1;33m┌─ QUERY PLAN ─────────────────────────────────{ESC}[0m");
         for line in text.lines() {
-            println!("  {ESC}[2m{line}{ESC}[0m");
+            println!("{ESC}[90m│{ESC}[0m  {ESC}[2m{line}{ESC}[0m");
         }
+        println!("{ESC}[1;33m└──────────────────────────────────────────────{ESC}[0m");
     } else {
         println!("{text}");
     }
@@ -165,14 +169,14 @@ pub(crate) fn print_help(studio: bool) {
     if studio {
         println!(
             "
-  {ESC}[1;36mCommands{ESC}[0m
-    {ESC}[2m\\q{ESC}[0m              quit
-    {ESC}[2m\\help{ESC}[0m           this panel
-    {ESC}[2m\\clear{ESC}[0m          clear screen
-    {ESC}[2m\\explain SELECT …{ESC}[0m   query plan
-
-  {ESC}[1;36mSQL{ESC}[0m
-    One statement per line, or several separated by {ESC}[2m;{ESC}[0m
+{ESC}[90m┌─ [ COMMAND REFERENCE ] ─────────────────────────────────────────{ESC}[0m
+{ESC}[90m│{ESC}[0m  {ESC}[1;36m\\q{ESC}[0m                 {ESC}[2mExit the SQL shell{ESC}[0m
+{ESC}[90m│{ESC}[0m  {ESC}[1;36m\\help{ESC}[0m              {ESC}[2mShow this reference panel{ESC}[0m
+{ESC}[90m│{ESC}[0m  {ESC}[1;36m\\clear{ESC}[0m             {ESC}[2mClear screen and redraw dashboard{ESC}[0m
+{ESC}[90m│{ESC}[0m  {ESC}[1;36m\\explain SELECT …{ESC}[0m   {ESC}[2mDisplay optimizer plan{ESC}[0m
+{ESC}[90m│{ESC}[0m
+{ESC}[90m│{ESC}[0m  {ESC}[1;33mSQL{ESC}[0m  One statement per line, or several separated by {ESC}[2m;{ESC}[0m
+{ESC}[90m└──────────────────────────────────────────────────────────────────{ESC}[0m
 "
         );
     } else {
@@ -186,7 +190,7 @@ pub(crate) fn print_help(studio: bool) {
 pub(crate) fn print_goodbye(studio: bool) {
     if studio {
         println!(
-            "\n  {ESC}[2mMerci — NoeDB v{VERSION} · github.com/toriyama237/NoeDB{ESC}[0m\n"
+            "\n  {ESC}[90m[session closed] NoeDB v{VERSION} · github.com/toriyama237/NoeDB{ESC}[0m\n"
         );
     }
 }

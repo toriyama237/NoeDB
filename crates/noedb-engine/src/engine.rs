@@ -319,7 +319,8 @@ impl LocalEngine {
             }
             Statement::CreateTable(t) => {
                 let ts = self.txn.oracle().next();
-                self.schema.lock().create_table(&t.name.value, ts);
+                let cols: Vec<String> = t.columns.iter().map(|c| c.name.value.clone()).collect();
+                self.schema.lock().create_table(&t.name.value, ts, cols);
                 self.cache.lock().invalidate_table("");
                 self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
@@ -380,13 +381,22 @@ impl LocalEngine {
             }
         } else {
             match &stmt {
-                Statement::Insert(i) => self.cache.lock().invalidate_table(&i.table.value),
-                Statement::Update(u) => self.cache.lock().invalidate_table(&u.table.value),
-                Statement::Delete(d) => self.cache.lock().invalidate_table(&d.table.value),
-                _ => {}
+                Statement::Insert(i) => {
+                    self.cache.lock().invalidate_table(&i.table.value);
+                    let schema = self.schema.lock();
+                    crate::dml::execute_insert(i, &schema, &mut self.storage.write())?;
+                    QueryResult::from_records(&[])
+                }
+                other => {
+                    match other {
+                        Statement::Update(u) => self.cache.lock().invalidate_table(&u.table.value),
+                        Statement::Delete(d) => self.cache.lock().invalidate_table(&d.table.value),
+                        _ => {}
+                    }
+                    let records = apply_statement(other, &mut self.storage.write())?;
+                    QueryResult::from_records(&records)
+                }
             }
-            let records = apply_statement(&stmt, &mut self.storage.write())?;
-            QueryResult::from_records(&records)
         };
         self.audit_record(
             session_id,

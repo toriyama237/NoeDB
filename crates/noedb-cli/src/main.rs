@@ -12,7 +12,7 @@ mod otel;
 mod tls;
 mod ui;
 
-use std::io::{self, Write};
+use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -124,66 +124,101 @@ fn run_repl(args: &[String]) -> Result<(), String> {
     };
 
     ui::maybe_clear_screen(studio);
-    if studio {
+    if studio && !ui::skip_banner() {
         ui::print_banner(distributed, &dir.display().to_string());
-        ui::print_quickstart();
-    } else {
-        println!("NoeDB v{0} — interactive SQL shell (type SQL here, not shell commands).", env!("CARGO_PKG_VERSION"));
+    } else if !studio {
+        println!(
+            "NoeDB v{} — interactive SQL shell (type SQL here, not shell commands).",
+            env!("CARGO_PKG_VERSION")
+        );
         println!("  Examples:  SELECT 1;   \\explain SELECT 1   \\q");
     }
 
+    if studio {
+        run_studio_repl(&backend, distributed, &dir.display().to_string())?;
+    } else {
+        run_plain_repl(&backend)?;
+    }
+    ui::print_goodbye(studio);
+    Ok(())
+}
+
+fn run_plain_repl(backend: &Backend) -> Result<(), String> {
     let stdin = io::stdin();
     let mut line = String::new();
     loop {
-        if studio {
-            ui::print_prompt();
-        } else {
-            print!("noedb> ");
-            io::stdout().flush().map_err(|e| e.to_string())?;
-        }
+        ui::print_prompt_plain();
         line.clear();
         if stdin.read_line(&mut line).map_err(|e| e.to_string())? == 0 {
             break;
         }
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if trimmed.starts_with('#') || trimmed.starts_with("cargo ") || trimmed.starts_with("git ")
-        {
-            ui::print_error("this is the SQL REPL — run shell commands in another terminal", studio);
-            continue;
-        }
-        if trimmed == "\\q" || trimmed.eq_ignore_ascii_case("quit") {
+        if !dispatch_line(backend, &line, false)? {
             break;
         }
-        if trimmed == "\\help" {
-            ui::print_help(studio);
-            continue;
+    }
+    Ok(())
+}
+
+fn run_studio_repl(backend: &Backend, distributed: bool, data_dir: &str) -> Result<(), String> {
+    use rustyline::error::ReadlineError;
+    use rustyline::DefaultEditor;
+
+    let mut rl = DefaultEditor::new().map_err(|e| e.to_string())?;
+    let prompt = ui::studio_prompt();
+    loop {
+        let line = match rl.readline(&prompt) {
+            Ok(l) => l,
+            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => break,
+            Err(e) => return Err(e.to_string()),
+        };
+        if !line.trim().is_empty() {
+            let _ = rl.add_history_entry(line.as_str());
         }
-        if trimmed == "\\clear" {
+        if !dispatch_line(backend, &line, true)? {
+            break;
+        }
+        if line.trim() == "\\clear" {
             ui::maybe_clear_screen(true);
-            if studio {
-                ui::print_banner(distributed, &dir.display().to_string());
-            }
-            continue;
-        }
-        if let Some(sql) = trimmed.strip_prefix("\\explain ") {
-            match backend.explain(sql) {
-                Ok(text) => ui::print_explain(&text, studio),
-                Err(e) => ui::print_error(&e.to_string(), studio),
-            }
-            continue;
-        }
-        for sql in split_statements(trimmed) {
-            match backend.execute(&sql) {
-                Ok(result) => ui::print_result(&result, studio),
-                Err(e) => ui::print_error(&e.to_string(), studio),
-            }
+            ui::print_banner(distributed, data_dir);
         }
     }
-    ui::print_goodbye(studio);
     Ok(())
+}
+
+fn dispatch_line(backend: &Backend, line: &str, studio: bool) -> Result<bool, String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return Ok(true);
+    }
+    if trimmed.starts_with('#') || trimmed.starts_with("cargo ") || trimmed.starts_with("git ") {
+        ui::print_error("this is the SQL REPL — run shell commands in another terminal", studio);
+        return Ok(true);
+    }
+    if trimmed == "\\q" || trimmed.eq_ignore_ascii_case("quit") {
+        return Ok(false);
+    }
+    if trimmed == "\\help" {
+        ui::print_help(studio);
+        return Ok(true);
+    }
+    if trimmed == "\\clear" {
+        return Ok(true);
+    }
+    if let Some(sql) = trimmed.strip_prefix("\\explain ") {
+        let sql = sql.trim().trim_end_matches(';').trim();
+        match backend.explain(sql) {
+            Ok(text) => ui::print_explain(&text, studio),
+            Err(e) => ui::print_error(&e.to_string(), studio),
+        }
+        return Ok(true);
+    }
+    for sql in split_statements(trimmed) {
+        match backend.execute(&sql) {
+            Ok(result) => ui::print_result(&result, studio),
+            Err(e) => ui::print_error(&e.to_string(), studio),
+        }
+    }
+    Ok(true)
 }
 
 /// Split on `;` into non-empty statements (REPL convenience; not string-aware).

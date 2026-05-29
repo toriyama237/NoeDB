@@ -30,6 +30,7 @@ mod window;
 mod window_exec;
 
 pub use adaptive::ExecutionFeedback;
+pub use eval::{eval_expr, eval_predicate};
 pub use build::build;
 pub use cost::{estimate, index_beats_seq_scan, PlanStats, INDEX_LOOKUP_COST, SEQ_SCAN_ROW_COST};
 pub use executor::{execute, ExecutionContext, Executor};

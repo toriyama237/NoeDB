@@ -9,6 +9,8 @@ use noedb_storage::CommitTs;
 pub struct TableSchema {
     /// Table name.
     pub name: String,
+    /// Column names in DDL order.
+    pub columns: Vec<String>,
     /// Schema version at creation / last DDL.
     pub version_ts: CommitTs,
 }
@@ -24,11 +26,28 @@ pub struct SchemaCatalog {
 
 impl SchemaCatalog {
     /// Register `CREATE TABLE` at `version_ts`.
-    pub fn create_table(&mut self, name: impl Into<String>, version_ts: CommitTs) {
+    pub fn create_table(
+        &mut self,
+        name: impl Into<String>,
+        version_ts: CommitTs,
+        columns: Vec<String>,
+    ) {
         let name = name.into();
         self.epoch = self.epoch.max(version_ts);
-        self.tables
-            .insert(name.clone(), TableSchema { name, version_ts });
+        self.tables.insert(
+            name.clone(),
+            TableSchema {
+                name,
+                columns,
+                version_ts,
+            },
+        );
+    }
+
+    /// Column names for a registered table.
+    #[must_use]
+    pub fn columns_for(&self, table: &str) -> Option<&[String]> {
+        self.tables.get(table).map(|t| t.columns.as_slice())
     }
 
     /// Roll back a table created in the current txn (not yet committed to LSM).

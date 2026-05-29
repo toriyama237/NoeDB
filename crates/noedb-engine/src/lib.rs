@@ -18,6 +18,7 @@
 
 mod audit;
 mod command;
+mod dml;
 mod engine;
 mod error;
 mod machine;

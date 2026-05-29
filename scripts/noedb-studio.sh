@@ -1,89 +1,86 @@
 #!/usr/bin/env bash
-# NoeDB Studio — branded launcher for demos / LinkedIn / talks.
-# Usage:
-#   ./scripts/noedb-studio.sh              # full-screen REPL in this terminal
-#   ./scripts/noedb-studio.sh --window     # new terminal window (Linux/macOS)
+# NoeDB Studio — professional launcher (demos, LinkedIn, talks).
+#
+#   ./scripts/noedb-studio.sh              # full-screen REPL
+#   ./scripts/noedb-studio.sh --window     # new terminal window
 #   ./scripts/noedb-studio.sh --cluster    # 3-node Raft REPL
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# ── colours ──────────────────────────────────────────────────────────────────
-if [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
-  ncolors=$(tput colors 2>/dev/null || echo 0)
+# ── ANSI palette ─────────────────────────────────────────────────────────────
+if [[ -t 1 ]]; then
+  ESC=$'\033'
+  BOLD="${ESC}[1m" DIM="${ESC}[2m" RESET="${ESC}[0m"
+  CYAN="${ESC}[1;36m" GRAY="${ESC}[90m" GREEN="${ESC}[1;32m"
 else
-  ncolors=0
-fi
-if [[ "$ncolors" -ge 8 ]]; then
-  BOLD=$(tput bold); DIM=$(tput dim); RESET=$(tput sgr0)
-  CYAN=$(tput setaf 6); GOLD=$(tput setaf 3); GREEN=$(tput setaf 2)
-else
-  BOLD=""; DIM=""; RESET=""; CYAN=""; GOLD=""; GREEN=""
+  ESC="" BOLD="" DIM="" RESET="" CYAN="" GRAY="" GREEN=""
 fi
 
 VERSION="2.0.0"
 [[ -f Cargo.toml ]] && VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
 
-launch_inner() {
-  export NOEDB_STUDIO=1
-  export NOEDB_CLEAR=1
-  export RUST_LOG="${RUST_LOG:-warn}"
+print_startup() {
+  clear 2>/dev/null || printf '%s[2J%s[H' "$ESC" "$ESC"
 
-  clear 2>/dev/null || printf '\033[2J\033[H'
+  printf '%s\n' \
+    "${CYAN}${BOLD}" \
+    "  ███╗   ██╗  ██████╗   ███████╗  ██████╗   ██████╗ " \
+    "  ████╗  ██║ ██╔═══██╗ ██╔════╝  ██╔══██╗  ██╔══██╗" \
+    "  ██╔██╗ ██║ ██║   ██║ █████╗    ██║  ██║  ██████╔╝" \
+    "  ██║╚██╗██║ ██║   ██║ ██╔══╝    ██║  ██║  ██╔══██╗" \
+    "  ██║ ╚████║ ╚██████╔╝ ███████╗  ██████╔╝  ██████╔╝" \
+    "  ╚═╝  ╚═══╝  ╚═════╝  ╚══════╝  ╚═════╝   ╚═════╝ " \
+    "${GRAY}  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀${RESET}" \
+    "${RESET}"
 
-  cat <<EOF
-${CYAN}${BOLD}
-    ███╗   ██╗ ██████╗ ███████╗██████╗ ██████╗
-    ████╗  ██║██╔═══██╗██╔════╝██╔══██╗██   ██╗
-    ██╔██╗ ██║██║   ██║█████╗  ██║  ██║██   ██║
-    ██║╚██╗██║██║   ██║██╔══╝  ██║  ██║██   ██║
-    ██║ ╚████║╚██████╔╝███████╗██████╔╝██████╔╝
-    ╚═╝  ╚═══╝ ╚═════╝ ╚══════╝╚═════╝ ╚═════╝
-${RESET}${DIM}  ─────────────────────────────────────────────────────────────
-  ${GOLD}NoeDB Studio${RESET}${DIM} · distributed SQL · Rust · Raft · LSM · v${VERSION}
-  ─────────────────────────────────────────────────────────────${RESET}
+  OK="${GREEN}[OK]${RESET}"
+  ACTIVE="${GREEN}[Active]${RESET}"
 
-EOF
+  printf '%s\n' \
+    "${GRAY}  ┌────────────────────────────────────────────────────────────────┐${RESET}" \
+    "${GRAY}  │${RESET} Distributed SQL Engine ${GRAY}│${RESET} Rust 🦀 • Raft ⎈ • LSM 🗄️ • Made in CM 🇨🇲" \
+    "${GRAY}  │${RESET} Core Modules: Lexer ${OK} • Parser ${OK} • Planner ${OK} • Storage ${ACTIVE} ${GRAY}│${RESET} Engine v${VERSION} ${OK}" \
+    "${GRAY}  └────────────────────────────────────────────────────────────────┘${RESET}" \
+    "${GRAY}  ┌─ [ QUICKSTART & COMMANDS ] ────────────────────────────────────┐${RESET}" \
+    "${GRAY}  │${RESET} SELECT 1;                                    ${DIM}(basic query)${RESET}" \
+    "${GRAY}  │${RESET} CREATE TABLE t (id TEXT); INSERT INTO t VALUES ('42');" \
+    "${GRAY}  │${RESET} \\explain SELECT * FROM t;                  ${DIM}(query plan)${RESET}" \
+    "${GRAY}  │${RESET} \\help                                       ${DIM}(show panel again)${RESET}" \
+    "${GRAY}  └────────────────────────────────────────────────────────────────┘${RESET}" \
+    ""
 
-  steps=(
-    "noedb-lexer   tokenizing SQL surface"
-    "noedb-parser  building AST"
-    "noedb-planner cost-based optimizer"
-    "noedb-storage LSM + MVCC online"
-    "noedb-raft    consensus ready"
-  )
-  i=0
-  for step in "${steps[@]}"; do
-    i=$((i + 1))
-    name="${step%% *}"
-    desc="${step#* }"
+  steps=("Lexer" "Parser" "Planner" "Storage" "Raft")
+  for i in "${!steps[@]}"; do
+    name="${steps[$i]}"
     bar=""
     for ((b=1; b<=20; b++)); do
-      if (( b <= i * 4 )); then bar+="█"; else bar+="░"; fi
+      if (( b <= (i + 1) * 4 )); then bar+="█"; else bar+="░"; fi
     done
-    printf "  ${CYAN}[%s]${RESET} ${DIM}%-14s${RESET} %s\r" "$bar" "$name" "$desc"
-    sleep 0.08
+    printf "  ${CYAN}[%s]${RESET} ${DIM}%-8s${RESET} boot…\r" "$bar" "$name"
+    sleep 0.06
   done
-  printf "\n  ${GREEN}✓${RESET} ${BOLD}Engine online${RESET} — dropping into SQL shell…\n\n"
-  sleep 0.25
-
-  # Prefer release binary when built; fall back to dev build.
-  if [[ -x "$ROOT/target/release/noedb" ]]; then
-    exec "$ROOT/target/release/noedb" --studio "$@"
-  fi
-  exec cargo run -q -p noedb-cli -- --studio "$@"
+  printf "\n  ${GREEN}✓${RESET} ${BOLD}All modules online${RESET}\n\n"
 }
 
-# ── optional new window ──────────────────────────────────────────────────────
+launch_inner() {
+  export NOEDB_STUDIO=1
+  export NOEDB_SKIP_BANNER=1
+  export RUST_LOG="${RUST_LOG:-warn}"
+
+  print_startup
+
+  exec cargo run --release -p noedb-cli --quiet -- --studio "$@"
+}
+
 WINDOW=0
 ARGS=()
 for arg in "$@"; do
-  if [[ "$arg" == "--window" || "$arg" == "-w" ]]; then
-    WINDOW=1
-  else
-    ARGS+=("$arg")
-  fi
+  case "$arg" in
+    --window|-w) WINDOW=1 ;;
+    *) ARGS+=("$arg") ;;
+  esac
 done
 
 if (( WINDOW )); then
@@ -94,7 +91,7 @@ if (( WINDOW )); then
   elif [[ "$(uname -s)" == "Darwin" ]] && command -v osascript >/dev/null 2>&1; then
     exec osascript -e "tell application \"Terminal\" to do script \"cd '$ROOT' && '$0' ${ARGS[*]}\""
   else
-    echo "No supported terminal emulator — running in this shell." >&2
+    echo "No terminal emulator found — running in this shell." >&2
   fi
 fi
 

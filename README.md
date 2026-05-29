@@ -1,5 +1,9 @@
 <div align="center">
 
+<p align="center">
+  <img src="docs/assets/noedb-studio.png" alt="NoeDB Studio — distributed SQL engine CLI" width="920" />
+</p>
+
 # NoeDB
 
 [![CI](https://github.com/toriyama237/NoeDB/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/toriyama237/NoeDB/actions/workflows/ci.yml)
