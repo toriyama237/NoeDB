@@ -32,7 +32,7 @@ impl ExplainWriter {
     fn write_plan(&mut self, plan: &PhysicalPlan, indent: usize) {
         let pad = "  ".repeat(indent);
         match plan {
-            PhysicalPlan::SeqScan { table, columns } => {
+            PhysicalPlan::SeqScan { table, columns, .. } => {
                 let cols = columns
                     .as_ref()
                     .map_or_else(|| "*".into(), |c| c.join(", "));
@@ -137,6 +137,13 @@ impl ExplainWriter {
                 ));
                 self.write_plan(left, indent + 1);
                 self.write_plan(right, indent + 1);
+            }
+            PhysicalPlan::CteScan { name, columns, .. } => {
+                let cols = columns
+                    .as_ref()
+                    .map_or_else(|| "*".into(), |c| c.join(", "));
+                self.lines
+                    .push(format!("{pad}CteScan(name={name}, columns=[{cols}])"));
             }
         }
     }

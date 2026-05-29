@@ -65,6 +65,7 @@ fn bench_seq_scan(c: &mut Criterion) {
     let physical = lower(LogicalPlan::Filter {
         input: Box::new(LogicalPlan::Scan {
             table: "users".into(),
+            prefix: "users".into(),
         }),
         predicate,
     });

@@ -26,6 +26,8 @@ pub struct ExecutionContext<'a, S: StorageEngine<Error = StorageError> = LsmTree
     pub store: &'a S,
     /// Base LSM for secondary index catalog lookups.
     pub index_catalog: &'a LsmTree,
+    /// Materialized `WITH` CTE rows keyed by name (Week 40).
+    pub cte_tables: Option<&'a HashMap<String, Vec<RowMap>>>,
 }
 
 impl<'a> ExecutionContext<'a, LsmTree> {
@@ -36,6 +38,7 @@ impl<'a> ExecutionContext<'a, LsmTree> {
         Self {
             store,
             index_catalog: store,
+            cte_tables: None,
         }
     }
 }
@@ -242,14 +245,37 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
     ctx: &ExecutionContext<'_, S>,
 ) -> Result<ExecState, ExecError> {
     match plan {
-        PhysicalPlan::SeqScan { table, columns: _ } if table.is_empty() => {
+        PhysicalPlan::SeqScan { table, columns: _, .. } if table.is_empty() => {
             Ok(ExecState::LiteralProject {
                 items: vec![],
                 emitted: false,
             })
         }
-        PhysicalPlan::SeqScan { table, columns } => {
-            let rows = load_table_rows(ctx.store, &table, columns.as_deref());
+        PhysicalPlan::SeqScan { table, prefix, columns } => {
+            let storage_cols = columns.as_ref().map(|cols| {
+                cols.iter()
+                    .map(|c| {
+                        c.rsplit_once('.')
+                            .map_or_else(|| c.clone(), |(_, bare)| bare.to_string())
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let rows = prefix_rows(
+                load_table_rows(ctx.store, &table, storage_cols.as_deref()),
+                &prefix,
+            );
+            Ok(ExecState::SeqScan {
+                rows: rows.into_iter(),
+            })
+        }
+        PhysicalPlan::CteScan { name, prefix, columns } => {
+            let rows = ctx
+                .cte_tables
+                .and_then(|t| t.get(&name))
+                .cloned()
+                .unwrap_or_default();
+            let rows = prefix_rows(rows, &prefix);
+            let rows = prune_cte_rows(&rows, columns.as_deref());
             Ok(ExecState::SeqScan {
                 rows: rows.into_iter(),
             })
@@ -624,6 +650,36 @@ fn load_row_by_id<S: StorageEngine<Error = StorageError>>(
     }
 }
 
+fn prefix_rows(rows: Vec<RowMap>, prefix: &str) -> Vec<RowMap> {
+    if prefix.is_empty() {
+        return rows;
+    }
+    rows.into_iter()
+        .map(|row| {
+            row.into_iter()
+                .map(|(n, v)| (format!("{prefix}.{n}"), v))
+                .collect()
+        })
+        .collect()
+}
+
+fn prune_cte_rows(rows: &[RowMap], columns: Option<&[String]>) -> Vec<RowMap> {
+    let Some(cols) = columns else {
+        return rows.to_vec();
+    };
+    rows.iter()
+        .map(|row| {
+            cols.iter()
+                .filter_map(|c| {
+                    row.iter()
+                        .find(|(n, _)| n == c)
+                        .map(|(n, v)| (n.clone(), v.clone()))
+                })
+                .collect()
+        })
+        .collect()
+}
+
 fn table_cell_key(table: &str, row_id: &[u8], column: &[u8]) -> Vec<u8> {
     let mut key = table.as_bytes().to_vec();
     key.push(0);
@@ -687,10 +743,12 @@ mod join_tests {
         let plan = PhysicalPlan::HashJoin {
             left: Box::new(PhysicalPlan::SeqScan {
                 table: "users".into(),
+                prefix: "u".into(),
                 columns: None,
             }),
             right: Box::new(PhysicalPlan::SeqScan {
                 table: "orders".into(),
+                prefix: "o".into(),
                 columns: None,
             }),
             on: on_expr,

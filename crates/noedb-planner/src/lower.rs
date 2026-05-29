@@ -7,8 +7,9 @@ use crate::physical::PhysicalPlan;
 #[must_use]
 pub fn lower(logical: LogicalPlan) -> PhysicalPlan {
     match logical {
-        LogicalPlan::Scan { table } => PhysicalPlan::SeqScan {
+        LogicalPlan::Scan { table, prefix } => PhysicalPlan::SeqScan {
             table,
+            prefix,
             columns: None,
         },
         LogicalPlan::Filter { input, predicate } => PhysicalPlan::Filter {
@@ -70,6 +71,11 @@ pub fn lower(logical: LogicalPlan) -> PhysicalPlan {
             right_key,
             corr_on,
             negated,
+        },
+        LogicalPlan::CteScan { name, prefix } => PhysicalPlan::CteScan {
+            name,
+            prefix,
+            columns: None,
         },
     }
 }

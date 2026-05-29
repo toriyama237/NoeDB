@@ -63,6 +63,7 @@ fn max_param_index(stmt: &Statement) -> u16 {
 fn substitute_params(stmt: &Statement, params: &[Literal]) -> Statement {
     match stmt {
         Statement::Select(s) => Statement::Select(noedb_ast::SelectStmt {
+            with_clause: s.with_clause.as_ref().map(|w| substitute_with(w, params)),
             distinct: s.distinct,
             items: s
                 .items
@@ -157,6 +158,7 @@ fn substitute_expr(expr: &Expr, params: &[Literal]) -> Expr {
 
 fn substitute_select(stmt: &noedb_ast::SelectStmt, params: &[Literal]) -> noedb_ast::SelectStmt {
     noedb_ast::SelectStmt {
+        with_clause: stmt.with_clause.as_ref().map(|w| substitute_with(w, params)),
         distinct: stmt.distinct,
         items: stmt
             .items
@@ -176,14 +178,74 @@ fn substitute_select(stmt: &noedb_ast::SelectStmt, params: &[Literal]) -> noedb_
     }
 }
 
+fn substitute_with(
+    with: &noedb_ast::WithClause,
+    params: &[Literal],
+) -> noedb_ast::WithClause {
+    noedb_ast::WithClause {
+        recursive: with.recursive,
+        ctes: with
+            .ctes
+            .iter()
+            .map(|c| noedb_ast::CteDef {
+                name: c.name.clone(),
+                body: match &c.body {
+                    noedb_ast::CteBody::Select(s) => {
+                        noedb_ast::CteBody::Select(substitute_select(s, params))
+                    }
+                    noedb_ast::CteBody::Union {
+                        anchor,
+                        all,
+                        recursive,
+                    } => noedb_ast::CteBody::Union {
+                        anchor: Box::new(substitute_select(anchor, params)),
+                        all: *all,
+                        recursive: Box::new(substitute_select(recursive, params)),
+                    },
+                },
+                span: c.span,
+            })
+            .collect(),
+        span: with.span,
+    }
+}
+
 fn walk_stmt(stmt: &Statement, f: &mut dyn FnMut(&Expr)) {
     if let Statement::Select(s) = stmt {
+        if let Some(with) = &s.with_clause {
+            for cte in &with.ctes {
+                walk_cte_body(&cte.body, f);
+            }
+        }
         for item in &s.items {
             walk_expr(&item.expr, f);
         }
         if let Some(w) = &s.where_clause {
             walk_expr(w, f);
         }
+    }
+}
+
+fn walk_cte_body(body: &noedb_ast::CteBody, f: &mut dyn FnMut(&Expr)) {
+    match body {
+        noedb_ast::CteBody::Select(s) => walk_select_stmt(s, f),
+        noedb_ast::CteBody::Union {
+            anchor,
+            recursive,
+            ..
+        } => {
+            walk_select_stmt(anchor, f);
+            walk_select_stmt(recursive, f);
+        }
+    }
+}
+
+fn walk_select_stmt(s: &noedb_ast::SelectStmt, f: &mut dyn FnMut(&Expr)) {
+    for item in &s.items {
+        walk_expr(&item.expr, f);
+    }
+    if let Some(w) = &s.where_clause {
+        walk_expr(w, f);
     }
 }
 

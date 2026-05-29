@@ -34,7 +34,8 @@ pub use crate::name::{ColumnRef, Ident, TableRef};
 pub use crate::stmt::{
     BeginTxnStmt, ColumnDef, CommitTxnStmt, CreateIndexStmt, CreatePolicyStmt, CreateTableStmt,
     DeleteStmt, DropTableStmt, EnableRlsStmt, ExecuteStmt, InsertStmt, Join, JoinKind, PrepareStmt,
-    RollbackTxnStmt, SelectStmt, SetRoleStmt, SqlType, Statement, UpdateStmt,
+    RollbackTxnStmt, SelectStmt, SetRoleStmt, SqlType, Statement, UpdateStmt, CteBody, CteDef,
+    WithClause,
 };
 
 #[cfg(test)]
@@ -46,6 +47,7 @@ mod tests {
     #[test]
     fn select_stmt_span_round_trips() {
         let stmt = Statement::Select(SelectStmt {
+            with_clause: None,
             distinct: false,
             items: vec![SelectItem {
                 expr: Expr::Column(ColumnRef::Named {

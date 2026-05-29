@@ -18,6 +18,8 @@ pub enum LogicalPlan {
     Scan {
         /// Table name from `FROM`.
         table: String,
+        /// Column prefix (`alias` or table name) for qualified row keys.
+        prefix: String,
     },
     /// Row filter (`WHERE`).
     Filter {
@@ -88,6 +90,13 @@ pub enum LogicalPlan {
         corr_on: Option<Expr>,
         /// `NOT IN` semantics.
         negated: bool,
+    },
+    /// Scan a materialized CTE by name (Phase 5 Week 40).
+    CteScan {
+        /// CTE name from `WITH`.
+        name: String,
+        /// Column prefix (`alias` or CTE name).
+        prefix: String,
     },
 }
 

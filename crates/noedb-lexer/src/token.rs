@@ -90,6 +90,7 @@ pub enum Keyword {
     Prepare,
     Primary,
     Range,
+    Recursive,
     References,
     Right,
     Role,

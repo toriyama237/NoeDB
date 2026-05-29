@@ -2,7 +2,6 @@
 
 use noedb_ast::{BinaryOp, ColumnRef, Expr, SelectStmt};
 
-use crate::build::build_select;
 use crate::logical::LogicalPlan;
 use crate::PlanError;
 
@@ -72,11 +71,12 @@ pub fn apply_in_subqueries(
     plan: LogicalPlan,
     preds: &[InSubqueryPred],
     outer: &SelectStmt,
+    cte_scope: &std::collections::HashSet<String>,
 ) -> Result<LogicalPlan, PlanError> {
     let mut plan = plan;
     let outer_tables = table_names(outer);
     for pred in preds {
-        plan = decorrelate_one(plan, pred, &outer_tables)?;
+        plan = decorrelate_one(plan, pred, &outer_tables, cte_scope)?;
     }
     Ok(plan)
 }
@@ -85,6 +85,7 @@ fn decorrelate_one(
     plan: LogicalPlan,
     pred: &InSubqueryPred,
     outer_tables: &[String],
+    cte_scope: &std::collections::HashSet<String>,
 ) -> Result<LogicalPlan, PlanError> {
     let left_key = expr_column_name(&pred.outer_expr)
         .ok_or(PlanError::UnsupportedStatement)?;
@@ -96,7 +97,7 @@ fn decorrelate_one(
 
     let mut inner_stmt = pred.query.clone();
     inner_stmt.where_clause = inner_where;
-    let inner_plan = build_select(&inner_stmt)?;
+    let inner_plan = crate::build::build_select_scoped(&inner_stmt, cte_scope)?;
 
     let corr_on = and_exprs(corr);
 

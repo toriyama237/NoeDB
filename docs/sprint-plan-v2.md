@@ -181,7 +181,7 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 | 37 | ✅ | Fenêtres : `ROW_NUMBER`, `RANK`, `DENSE_RANK` + `OVER (PARTITION BY … ORDER BY …)` |
 | 38 | ✅ | Agrégats fenêtre (`SUM`/`AVG` `OVER`) + cadre `ROWS`/`RANGE` |
 | 39 | ✅ | Sous-requêtes `IN (SELECT …)` : décorrélation + `SemiJoin` |
-| 40 | ⬜ | CTE (`WITH`) + récursif |
+| 40 | ✅ | CTE (`WITH`) + `WITH RECURSIVE` + `CteScan` |
 | 41 | ⬜ | `UNION` / `INTERSECT` / `EXCEPT` |
 | 42 | ⬜ | Types étendus + casts |
 | 43 | ⬜ | Statistiques colonnes + costing v2 |
@@ -203,6 +203,20 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 - **Planner** : `WindowCompute.arg` pour `SUM(col)` / `AVG(col)`
 - **Executor** : cadre par défaut (running sum si `ORDER BY`, partition entière sinon) + agrégats sur fenêtre
 - **Tests** : running `SUM`, `SUM` partition, `AVG` glissant, parse frame
+
+### Semaine 39 — ✅
+
+- **AST** : `Expr::InSubquery`, décorrélation au planificateur
+- **Planner** : `SemiJoin` logique/physique, peel `IN (SELECT …)` du `WHERE`
+- **Tests** : `phase5_subquery.rs` (non corrélé, corrélé, `NOT IN`)
+
+### Semaine 40 — ✅
+
+- **Lexer** : `RECURSIVE`
+- **AST** : `WithClause`, `CteDef`, `CteBody` (`SELECT` ou `UNION ALL`)
+- **Parser** : `WITH [RECURSIVE] name AS (…)`
+- **Planner** : matérialisation CTE en RAM, `CteScan`, récursion fixpoint
+- **Tests** : `phase5_cte.rs` (simple, chaînée, hiérarchie récursive)
 
 ## Phases suivantes
 

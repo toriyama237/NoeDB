@@ -27,9 +27,50 @@ pub struct Join {
     pub span: Span,
 }
 
+/// Body of a `WITH … AS (…)` common table expression.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
+pub enum CteBody {
+    /// Single `SELECT`.
+    Select(SelectStmt),
+    /// `anchor UNION [ALL] recursive` (Phase 5 Week 40).
+    Union {
+        /// Non-recursive anchor query.
+        anchor: Box<SelectStmt>,
+        /// Whether `ALL` was specified (`UNION ALL`).
+        all: bool,
+        /// Recursive member referencing the CTE name.
+        recursive: Box<SelectStmt>,
+    },
+}
+
+/// One named CTE in a `WITH` clause.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CteDef {
+    /// CTE name (`WITH name AS …`).
+    pub name: Ident,
+    /// Parenthesized query body.
+    pub body: CteBody,
+    /// Span covering `name AS (…)`.
+    pub span: Span,
+}
+
+/// `WITH [RECURSIVE] …` clause on a `SELECT`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WithClause {
+    /// Whether `RECURSIVE` was specified.
+    pub recursive: bool,
+    /// CTE definitions in source order.
+    pub ctes: Vec<CteDef>,
+    /// Span covering the whole clause.
+    pub span: Span,
+}
+
 /// `SELECT` statement.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectStmt {
+    /// Optional leading `WITH` clause.
+    pub with_clause: Option<WithClause>,
     /// Whether `DISTINCT` was specified.
     pub distinct: bool,
     /// Projection list.

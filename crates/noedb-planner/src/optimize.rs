@@ -107,18 +107,19 @@ fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
             corr_on,
             negated,
         },
-        LogicalPlan::Scan { .. } => plan,
+        LogicalPlan::CteScan { .. } | LogicalPlan::Scan { .. } => plan,
     }
 }
 
 fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
     match plan {
-        LogicalPlan::Scan { table } => PhysicalPlan::SeqScan {
+        LogicalPlan::Scan { table, prefix } => PhysicalPlan::SeqScan {
             table,
+            prefix,
             columns: None,
         },
         LogicalPlan::Filter { input, predicate } => {
-            if let LogicalPlan::Scan { ref table } = *input {
+            if let LogicalPlan::Scan { ref table, .. } = *input {
                 if let Some((column, key)) = extract_equality_predicate(&predicate) {
                     if SecondaryIndex::exists(ctx.store, table, &column) {
                         return PhysicalPlan::IndexScan {
@@ -205,6 +206,11 @@ fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
             corr_on,
             negated,
         },
+        LogicalPlan::CteScan { name, prefix } => PhysicalPlan::CteScan {
+            name,
+            prefix,
+            columns: None,
+        },
     }
 }
 
@@ -233,7 +239,9 @@ fn pushdown_columns(plan: PhysicalPlan) -> PhysicalPlan {
 
 fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
     match plan {
-        PhysicalPlan::SeqScan { .. } | PhysicalPlan::IndexScan { .. } => None,
+        PhysicalPlan::SeqScan { .. } | PhysicalPlan::IndexScan { .. } | PhysicalPlan::CteScan { .. } => {
+            None
+        }
         PhysicalPlan::Filter { input, predicate } => {
             let mut cols = collect_columns(input).unwrap_or_default();
             cols.extend(columns_in_expr(predicate));
@@ -266,9 +274,10 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
             cols.push(right_key.clone());
             Some(dedup(cols))
         }
-        PhysicalPlan::NestedLoopJoin { left, right, .. } => {
+        PhysicalPlan::NestedLoopJoin { left, right, on } => {
             let mut cols = collect_columns(left).unwrap_or_default();
             cols.extend(collect_columns(right).unwrap_or_default());
+            cols.extend(columns_in_expr(on));
             Some(dedup(cols))
         }
         PhysicalPlan::Aggregate {
@@ -321,9 +330,14 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn apply_columns(plan: PhysicalPlan, columns: Option<Vec<String>>) -> PhysicalPlan {
     match plan {
-        PhysicalPlan::SeqScan { table, .. } => PhysicalPlan::SeqScan { table, columns },
+        PhysicalPlan::SeqScan { table, prefix, .. } => PhysicalPlan::SeqScan {
+            table,
+            prefix,
+            columns,
+        },
         PhysicalPlan::IndexScan {
             table,
             column,
@@ -415,6 +429,11 @@ fn apply_columns(plan: PhysicalPlan, columns: Option<Vec<String>>) -> PhysicalPl
             corr_on,
             negated,
         },
+        PhysicalPlan::CteScan { name, prefix, .. } => PhysicalPlan::CteScan {
+            name,
+            prefix,
+            columns,
+        },
     }
 }
 
@@ -461,6 +480,10 @@ fn literal_bytes(expr: &Expr) -> Option<Vec<u8>> {
 
 fn columns_in_expr(expr: &Expr) -> Vec<String> {
     match expr {
+        Expr::Column(ColumnRef::Named {
+            table: Some(t),
+            column,
+        }) => vec![format!("{}.{}", t.value, column.value)],
         Expr::Column(ColumnRef::Named { column, .. }) => vec![column.value.clone()],
         Expr::Unary { expr, .. } | Expr::IsNull { expr, .. } => columns_in_expr(expr),
         Expr::Binary { left, right, .. } => {
@@ -533,6 +556,7 @@ mod tests {
         let logical = LogicalPlan::Filter {
             input: Box::new(LogicalPlan::Scan {
                 table: "users".into(),
+                prefix: "users".into(),
             }),
             predicate: pred,
         };

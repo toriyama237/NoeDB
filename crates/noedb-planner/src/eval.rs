@@ -58,13 +58,41 @@ pub fn eval_predicate(expr: &Expr, row: &[(String, Value)]) -> Result<bool, Exec
 
 fn eval_column(col: &ColumnRef, row: &[(String, Value)]) -> Result<Value, ExecError> {
     match col {
-        ColumnRef::Named { column, .. } => row
-            .iter()
-            .find(|(n, _)| n == &column.value)
-            .map(|(_, v)| v.clone())
-            .ok_or_else(|| ExecError::UnknownColumn {
-                name: column.value.clone(),
-            }),
+        ColumnRef::Named {
+            table: Some(t),
+            column,
+        } => {
+            let qual = format!("{}.{}", t.value, column.value);
+            if let Some((_, v)) = row.iter().find(|(n, _)| n == &qual) {
+                return Ok(v.clone());
+            }
+            row.iter()
+                .find(|(n, _)| n == &column.value)
+                .map(|(_, v)| v.clone())
+                .ok_or(ExecError::UnknownColumn {
+                    name: qual,
+                })
+        }
+        ColumnRef::Named { column, .. } => {
+            if let Some((_, v)) = row.iter().find(|(n, _)| n == &column.value) {
+                return Ok(v.clone());
+            }
+            let mut matches = row.iter().filter(|(n, _)| {
+                n.rsplit_once('.')
+                    .is_some_and(|(_, bare)| bare == column.value)
+            });
+            let Some((_, v)) = matches.next() else {
+                return Err(ExecError::UnknownColumn {
+                    name: column.value.clone(),
+                });
+            };
+            if matches.next().is_some() {
+                return Err(ExecError::UnknownColumn {
+                    name: column.value.clone(),
+                });
+            }
+            Ok(v.clone())
+        }
         ColumnRef::Star { .. } | ColumnRef::QualifiedStar { .. } => Err(ExecError::UnsupportedExpr),
     }
 }

@@ -35,6 +35,10 @@ pub fn extract_equi_join(expr: &Expr) -> Option<EquiJoinKeys> {
 
 fn column_name(expr: &Expr) -> Option<String> {
     match expr {
+        Expr::Column(ColumnRef::Named {
+            table: Some(t),
+            column,
+        }) => Some(format!("{}.{}", t.value, column.value)),
         Expr::Column(ColumnRef::Named { column, .. }) => Some(column.value.clone()),
         _ => None,
     }

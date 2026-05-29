@@ -9,7 +9,7 @@ use crate::window::{FrameBound, FrameMode, WindowFrame, WindowSpec};
 use crate::name::{ColumnRef, Ident, TableRef};
 use crate::stmt::{
     ColumnDef, CreateIndexStmt, CreateTableStmt, DeleteStmt, DropTableStmt, InsertStmt, Join,
-    JoinKind, SelectStmt, SqlType, Statement, UpdateStmt,
+    JoinKind, SelectStmt, SqlType, Statement, UpdateStmt, WithClause,
 };
 
 fn write_ident(f: &mut fmt::Formatter<'_>, ident: &Ident) -> fmt::Result {
@@ -74,6 +74,7 @@ fn keyword_display(kw: Keyword) -> &'static str {
         Keyword::Over => "OVER",
         Keyword::Partition => "PARTITION",
         Keyword::Range => "RANGE",
+        Keyword::Recursive => "RECURSIVE",
         Keyword::Rows => "ROWS",
         Keyword::Unbounded => "UNBOUNDED",
         Keyword::Preceding => "PRECEDING",
@@ -395,6 +396,9 @@ impl fmt::Display for Join {
 
 impl fmt::Display for SelectStmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(with) = &self.with_clause {
+            write!(f, "{with} ")?;
+        }
         write_keyword(f, Keyword::Select)?;
         if self.distinct {
             write!(f, " ")?;
@@ -421,6 +425,53 @@ impl fmt::Display for SelectStmt {
             write!(f, " {w}")?;
         }
         Ok(())
+    }
+}
+
+impl fmt::Display for WithClause {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_keyword(f, Keyword::With)?;
+        if self.recursive {
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Recursive)?;
+        }
+        for (i, cte) in self.ctes.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            } else {
+                write!(f, " ")?;
+            }
+            write_ident(f, &cte.name)?;
+            write!(f, " ")?;
+            write_keyword(f, Keyword::As)?;
+            write!(f, " (")?;
+            write!(f, "{}", cte.body)?;
+            write!(f, ")")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for crate::stmt::CteBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use crate::stmt::CteBody;
+        match self {
+            CteBody::Select(s) => write!(f, "{s}"),
+            CteBody::Union {
+                anchor,
+                all,
+                recursive,
+            } => {
+                write!(f, "{anchor}")?;
+                write!(f, " ")?;
+                write_keyword(f, Keyword::Union)?;
+                if *all {
+                    write!(f, " ")?;
+                    write_keyword(f, Keyword::All)?;
+                }
+                write!(f, " {recursive}")
+            }
+        }
     }
 }
 

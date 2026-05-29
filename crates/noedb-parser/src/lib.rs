@@ -220,6 +220,15 @@ mod tests {
     }
 
     #[test]
+    fn parse_with_simple_cte() {
+        let stmt = parse("WITH c AS (SELECT 1 AS x) SELECT x FROM c").unwrap();
+        let Statement::Select(s) = stmt else {
+            panic!("expected select");
+        };
+        assert!(s.with_clause.is_some());
+    }
+
+    #[test]
     fn ast_equality_on_parsed_select_item() {
         let stmt = parse("SELECT name AS n FROM users").unwrap();
         let Statement::Select(s) = stmt else {

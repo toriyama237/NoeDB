@@ -21,6 +21,7 @@ mod parallel;
 mod physical;
 mod simd_pred;
 mod value;
+mod cte;
 mod subquery;
 mod window;
 mod window_exec;
@@ -40,6 +41,8 @@ pub use value::{Record, Value};
 
 use noedb_ast::Statement;
 use noedb_storage::{LsmTree, StorageEngine, StorageError};
+
+use std::collections::HashMap;
 
 /// Turn a [`Statement`] into a [`LogicalPlan`].
 ///
@@ -69,6 +72,16 @@ pub fn execute_sql_on<S: StorageEngine<Error = StorageError>>(
     exec_store: &S,
     index_store: &LsmTree,
 ) -> Result<Vec<Record>, ExecError> {
+    let cte_tables = if let Statement::Select(s) = stmt {
+        s.with_clause
+            .as_ref()
+            .map(|with| cte::materialize_with_clause(with, exec_store, index_store))
+            .transpose()?
+            .unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
+
     let logical = plan(stmt)?;
     let ctx = PlanContext::new(index_store);
     let physical = optimize(logical, &ctx);
@@ -77,6 +90,11 @@ pub fn execute_sql_on<S: StorageEngine<Error = StorageError>>(
         &ExecutionContext {
             store: exec_store,
             index_catalog: index_store,
+            cte_tables: if cte_tables.is_empty() {
+                None
+            } else {
+                Some(&cte_tables)
+            },
         },
     )
 }
@@ -224,6 +242,24 @@ mod tests {
         put_row(&mut tree, "users", "2", "name", b"bob");
         let rows = execute_sql(&stmt, &tree).unwrap();
         assert_eq!(rows.len(), 2);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn execute_cte_join_on_parent_id() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "nodes", "a", "id", b"1");
+        put_row(&mut tree, "nodes", "a", "parent_id", b"0");
+        put_row(&mut tree, "nodes", "b", "id", b"2");
+        put_row(&mut tree, "nodes", "b", "parent_id", b"1");
+        let stmt = noedb_parser::parse(
+            "WITH tree AS (SELECT id FROM nodes WHERE id = '1') \
+             SELECT n.id FROM nodes n INNER JOIN tree t ON n.parent_id = t.id",
+        )
+        .unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields[0].1, Value::Bytes(b"2".to_vec()));
         let _ = std::fs::remove_dir_all(dir);
     }
 

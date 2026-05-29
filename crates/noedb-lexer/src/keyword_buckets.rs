@@ -117,6 +117,7 @@ static KW_LEN_09: &[(&str, Keyword)] = &[
     ("INTERSECT", Keyword::Intersect),
     ("PARTITION", Keyword::Partition),
     ("PRECEDING", Keyword::Preceding),
+    ("RECURSIVE", Keyword::Recursive),
     ("UNBOUNDED", Keyword::Unbounded),
 ];
 

@@ -40,7 +40,7 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn dispatch_statement(&mut self) -> Result<Statement, ParseError> {
         match self.peek_kind() {
-            Token::Keyword(Keyword::Select) => {
+            Token::Keyword(Keyword::Select | Keyword::With) => {
                 crate::select::parse_select(self).map(Statement::Select)
             }
             Token::Keyword(Keyword::Insert) => {

@@ -87,6 +87,7 @@ static KEYWORD_TABLE: &[(&str, Keyword)] = &[
     ("PREPARE", Keyword::Prepare),
     ("PRIMARY", Keyword::Primary),
     ("RANGE", Keyword::Range),
+    ("RECURSIVE", Keyword::Recursive),
     ("REFERENCES", Keyword::References),
     ("RIGHT", Keyword::Right),
     ("ROLE", Keyword::Role),

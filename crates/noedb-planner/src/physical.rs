@@ -11,6 +11,8 @@ pub enum PhysicalPlan {
     SeqScan {
         /// Table name.
         table: String,
+        /// Column prefix for qualified keys in merged joins.
+        prefix: String,
         /// Column pruning (Week 26); `None` = all columns.
         columns: Option<Vec<String>>,
     },
@@ -120,5 +122,14 @@ pub enum PhysicalPlan {
         corr_on: Option<Expr>,
         /// `NOT IN`.
         negated: bool,
+    },
+    /// Scan rows materialized for a `WITH` CTE (Week 40).
+    CteScan {
+        /// CTE name.
+        name: String,
+        /// Column prefix (`alias` or CTE name).
+        prefix: String,
+        /// Column pruning.
+        columns: Option<Vec<String>>,
     },
 }
