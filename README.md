@@ -188,7 +188,16 @@ let rows = cluster.execute("SELECT name FROM users")?;
 ```
 
 ```bash
-cargo run -p noedb-cli              # REPL (local LSM)
+# 🎬 Demo LinkedIn / talk — shell branded + tables SQL
+./scripts/noedb-studio.sh
+
+# Nouvelle fenêtre terminal (Linux/macOS)
+./scripts/noedb-studio.sh --window
+
+# Mode cluster Raft
+./scripts/noedb-studio.sh --cluster
+
+cargo run -p noedb-cli              # REPL classique
 cargo run -p noedb-cli -- --cluster # REPL over 3-node Raft sim
 cargo run -p noedb-cli -- --server --data-dir /tmp/noedb-dev   # gRPC :5434 + TLS
 cargo run -p noedb-cli -- --server --legacy-tcp --listen 127.0.0.1:5433

@@ -10,6 +10,7 @@ mod grpc;
 #[cfg(feature = "otel")]
 mod otel;
 mod tls;
+mod ui;
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -108,28 +109,38 @@ fn main() {
 }
 
 fn run_repl(args: &[String]) -> Result<(), String> {
+    let studio = ui::studio_enabled(args);
     let distributed = args.iter().any(|a| a == "--cluster");
+    let dir = data_dir(args);
     let backend = if distributed {
         let eng = DistributedEngine::new_voters(3).map_err(|e| e.to_string())?;
         eng.tick(80).map_err(|e| e.to_string())?;
         maybe_spawn_metrics(args, eng.metrics())?;
         Backend::Distributed(eng)
     } else {
-        let dir = data_dir(args);
         let eng = LocalEngine::open(&dir).map_err(|e| e.to_string())?;
         maybe_spawn_metrics(args, eng.metrics())?;
         Backend::Local(eng)
     };
-    println!("NoeDB v1.0 — interactive SQL shell (not your shell — type SQL here).");
-    println!("  One statement per line, or several separated by ';'");
-    println!("  Examples:  SELECT 1;");
-    println!("             \\explain SELECT name FROM users WHERE id = '1'");
-    println!("             \\q");
+
+    ui::maybe_clear_screen(studio);
+    if studio {
+        ui::print_banner(distributed, &dir.display().to_string());
+        ui::print_quickstart();
+    } else {
+        println!("NoeDB v{0} — interactive SQL shell (type SQL here, not shell commands).", env!("CARGO_PKG_VERSION"));
+        println!("  Examples:  SELECT 1;   \\explain SELECT 1   \\q");
+    }
+
     let stdin = io::stdin();
     let mut line = String::new();
     loop {
-        print!("noedb> ");
-        io::stdout().flush().map_err(|e| e.to_string())?;
+        if studio {
+            ui::print_prompt();
+        } else {
+            print!("noedb> ");
+            io::stdout().flush().map_err(|e| e.to_string())?;
+        }
         line.clear();
         if stdin.read_line(&mut line).map_err(|e| e.to_string())? == 0 {
             break;
@@ -140,30 +151,38 @@ fn run_repl(args: &[String]) -> Result<(), String> {
         }
         if trimmed.starts_with('#') || trimmed.starts_with("cargo ") || trimmed.starts_with("git ")
         {
-            eprintln!("hint: run shell commands in another terminal; this is the SQL REPL.");
+            ui::print_error("this is the SQL REPL — run shell commands in another terminal", studio);
             continue;
         }
         if trimmed == "\\q" || trimmed.eq_ignore_ascii_case("quit") {
             break;
         }
         if trimmed == "\\help" {
-            print_help();
+            ui::print_help(studio);
+            continue;
+        }
+        if trimmed == "\\clear" {
+            ui::maybe_clear_screen(true);
+            if studio {
+                ui::print_banner(distributed, &dir.display().to_string());
+            }
             continue;
         }
         if let Some(sql) = trimmed.strip_prefix("\\explain ") {
             match backend.explain(sql) {
-                Ok(text) => println!("{text}"),
-                Err(e) => eprintln!("error: {e}"),
+                Ok(text) => ui::print_explain(&text, studio),
+                Err(e) => ui::print_error(&e.to_string(), studio),
             }
             continue;
         }
         for sql in split_statements(trimmed) {
             match backend.execute(&sql) {
-                Ok(result) => print_result(&result),
-                Err(e) => eprintln!("error: {e}"),
+                Ok(result) => ui::print_result(&result, studio),
+                Err(e) => ui::print_error(&e.to_string(), studio),
             }
         }
     }
+    ui::print_goodbye(studio);
     Ok(())
 }
 
@@ -447,30 +466,9 @@ fn err_response(e: &EngineError) -> Response {
     }
 }
 
-fn print_result(r: &QueryResult) {
-    if r.columns.is_empty() && r.rows.is_empty() {
-        println!("OK");
-        return;
-    }
-    println!("{}", r.columns.join("\t"));
-    for row in &r.rows {
-        println!("{}", row.join("\t"));
-    }
-}
-
-fn print_help() {
-    println!("\\q          quit");
-    println!("\\help       this message");
-    println!("\\explain    show plan for SELECT (one statement)");
-    println!("SELECT ...;  one query per line, or use ';' between statements");
-    println!("Server: cargo run -p noedb-cli -- --server  (gRPC+mTLS on :5434 by default)");
-    println!("        cargo run -p noedb-cli -- --server --legacy-tcp  (bincode on :5433)");
-    println!("Ping:   cargo run -p noedb-cli -- --ping");
-}
-
 fn data_dir(args: &[String]) -> PathBuf {
     args.iter()
-        .position(|a| a == "--data")
+        .position(|a| a == "--data" || a == "--data-dir")
         .and_then(|i| args.get(i + 1))
         .map_or_else(|| std::env::temp_dir().join("noedb-data"), PathBuf::from)
 }

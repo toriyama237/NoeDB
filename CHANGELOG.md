@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to match `noedb-cli` layout.
 
 ### Added
-- **OpenTelemetry**: `noedb-cli --features otel -- --otel-endpoint http://127.0.0.1:4317`.
+- **NoeDB Studio**: `./scripts/noedb-studio.sh` — branded bash launcher + `--studio` REPL
+  (ASCII banner, boot animation, table output, `noedb›` prompt).
 - **YCSB smoke**: `post_v2_ycsb.rs` (workloads A/B/C/F at miniature scale).
 - **Grafana**: starter dashboard `docs/grafana/noedb-overview.json`.
 - **CI**: mdBook build + GitHub Pages deploy (`.github/workflows/docs.yml`).
