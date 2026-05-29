@@ -1,6 +1,6 @@
 //! Logical relational algebra (Week 17).
 
-use noedb_ast::{Expr, SelectItem, WindowFunc, WindowSpec};
+use noedb_ast::{Expr, SelectItem, SetOpKind, WindowFunc, WindowSpec};
 
 /// Hash aggregate function (Week 23).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,6 +97,17 @@ pub enum LogicalPlan {
         name: String,
         /// Column prefix (`alias` or CTE name).
         prefix: String,
+    },
+    /// Compound set operation (`UNION` / `INTERSECT` / `EXCEPT`, Week 41).
+    SetOp {
+        /// Left input.
+        left: Box<Self>,
+        /// Right input.
+        right: Box<Self>,
+        /// Operator kind.
+        op: SetOpKind,
+        /// `ALL` semantics (bag union / preserve duplicates).
+        all: bool,
     },
 }
 

@@ -76,6 +76,7 @@ fn substitute_params(stmt: &Statement, params: &[Literal]) -> Statement {
             from: s.from.clone(),
             joins: s.joins.clone(),
             where_clause: s.where_clause.as_ref().map(|e| substitute_expr(e, params)),
+            compound: s.compound.as_ref().map(|c| substitute_compound(c, params)),
             span: s.span,
         }),
         other => other.clone(),
@@ -177,7 +178,22 @@ fn substitute_select(stmt: &noedb_ast::SelectStmt, params: &[Literal]) -> noedb_
             .where_clause
             .as_ref()
             .map(|e| substitute_expr(e, params)),
+        compound: stmt
+            .compound
+            .as_ref()
+            .map(|c| substitute_compound(c, params)),
         span: stmt.span,
+    }
+}
+
+fn substitute_compound(
+    c: &noedb_ast::CompoundSelect,
+    params: &[Literal],
+) -> noedb_ast::CompoundSelect {
+    noedb_ast::CompoundSelect {
+        op: c.op,
+        all: c.all,
+        right: Box::new(substitute_select(&c.right, params)),
     }
 }
 
@@ -239,6 +255,9 @@ fn walk_cte_body(body: &noedb_ast::CteBody, f: &mut dyn FnMut(&Expr)) {
 }
 
 fn walk_select_stmt(s: &noedb_ast::SelectStmt, f: &mut dyn FnMut(&Expr)) {
+    if let Some(c) = &s.compound {
+        walk_select_stmt(&c.right, f);
+    }
     for item in &s.items {
         walk_expr(&item.expr, f);
     }

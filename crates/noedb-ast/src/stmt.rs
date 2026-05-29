@@ -66,6 +66,28 @@ pub struct WithClause {
     pub span: Span,
 }
 
+/// Set operation between two `SELECT` branches (Phase 5 Week 41).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SetOpKind {
+    /// `UNION`.
+    Union,
+    /// `INTERSECT`.
+    Intersect,
+    /// `EXCEPT`.
+    Except,
+}
+
+/// Right-hand branch of a compound `SELECT` (`UNION` / `INTERSECT` / `EXCEPT`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompoundSelect {
+    /// Set operator.
+    pub op: SetOpKind,
+    /// Whether `ALL` was specified.
+    pub all: bool,
+    /// Right query (may itself chain further compounds).
+    pub right: Box<SelectStmt>,
+}
+
 /// `SELECT` statement.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectStmt {
@@ -81,6 +103,8 @@ pub struct SelectStmt {
     pub joins: Vec<Join>,
     /// Optional `WHERE` predicate.
     pub where_clause: Option<Expr>,
+    /// Optional trailing compound (`UNION` / `INTERSECT` / `EXCEPT`).
+    pub compound: Option<CompoundSelect>,
     /// Span covering the whole statement.
     pub span: Span,
 }

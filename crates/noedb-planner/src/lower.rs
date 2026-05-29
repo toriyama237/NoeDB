@@ -77,5 +77,16 @@ pub fn lower(logical: LogicalPlan) -> PhysicalPlan {
             prefix,
             columns: None,
         },
+        LogicalPlan::SetOp {
+            left,
+            right,
+            op,
+            all,
+        } => PhysicalPlan::SetOp {
+            left: Box::new(lower(*left)),
+            right: Box::new(lower(*right)),
+            op,
+            all,
+        },
     }
 }

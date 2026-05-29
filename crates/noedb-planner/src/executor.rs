@@ -97,6 +97,9 @@ enum ExecState {
     SemiJoin {
         rows: std::vec::IntoIter<RowMap>,
     },
+    SetOp {
+        rows: std::vec::IntoIter<RowMap>,
+    },
 }
 
 pub(crate) type RowMap = Vec<(String, Value)>;
@@ -206,7 +209,9 @@ impl Executor {
                     };
                     return Ok(Some(Record { fields: row }));
                 }
-                ExecState::Window { rows } | ExecState::SemiJoin { rows } => {
+                ExecState::Window { rows }
+                | ExecState::SemiJoin { rows }
+                | ExecState::SetOp { rows } => {
                     let Some(row) = rows.next() else {
                         self.state = ExecState::Done;
                         return Ok(None);
@@ -517,6 +522,19 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
                 negated,
             )?;
             Ok(ExecState::SemiJoin {
+                rows: rows.into_iter(),
+            })
+        }
+        PhysicalPlan::SetOp {
+            left,
+            right,
+            op,
+            all,
+        } => {
+            let left_rows = execute_to_rows(*left, ctx)?;
+            let right_rows = execute_to_rows(*right, ctx)?;
+            let rows = crate::setops::combine_set_op(left_rows, &right_rows, op, all);
+            Ok(ExecState::SetOp {
                 rows: rows.into_iter(),
             })
         }

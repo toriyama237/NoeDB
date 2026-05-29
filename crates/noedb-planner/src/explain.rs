@@ -144,6 +144,22 @@ impl ExplainWriter {
                 self.lines
                     .push(format!("{pad}CteScan(name={name}, columns=[{cols}])"));
             }
+            PhysicalPlan::SetOp {
+                left,
+                right,
+                op,
+                all,
+            } => {
+                let op_name = match op {
+                    noedb_ast::SetOpKind::Union => "UNION",
+                    noedb_ast::SetOpKind::Intersect => "INTERSECT",
+                    noedb_ast::SetOpKind::Except => "EXCEPT",
+                };
+                let all_tag = if *all { " ALL" } else { "" };
+                self.lines.push(format!("{pad}SetOp({op_name}{all_tag})"));
+                self.write_plan(left, indent + 1);
+                self.write_plan(right, indent + 1);
+            }
         }
     }
 

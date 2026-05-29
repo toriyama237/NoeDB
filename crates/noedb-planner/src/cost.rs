@@ -84,5 +84,8 @@ pub fn estimate(plan: &PhysicalPlan, stats: &PlanStats) -> f64 {
                 + stats.default_rows as f64 * NESTED_LOOP_ROW_COST
         }
         PhysicalPlan::CteScan { .. } => 0.5,
+        PhysicalPlan::SetOp { left, right, .. } => {
+            estimate(left, stats) + estimate(right, stats) + stats.default_rows as f64 * 0.2
+        }
     }
 }

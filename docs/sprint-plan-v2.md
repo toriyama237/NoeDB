@@ -182,7 +182,7 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 | 38 | ✅ | Agrégats fenêtre (`SUM`/`AVG` `OVER`) + cadre `ROWS`/`RANGE` |
 | 39 | ✅ | Sous-requêtes `IN (SELECT …)` : décorrélation + `SemiJoin` |
 | 40 | ✅ | CTE (`WITH`) + `WITH RECURSIVE` + `CteScan` |
-| 41 | ⬜ | `UNION` / `INTERSECT` / `EXCEPT` |
+| 41 | ✅ | `UNION` / `INTERSECT` / `EXCEPT` |
 | 42 | ⬜ | Types étendus + casts |
 | 43 | ⬜ | Statistiques colonnes + costing v2 |
 | 44 | ⬜ | Bench TPC-H lite + tag `v1.4.0-query` |
@@ -217,6 +217,13 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 - **Parser** : `WITH [RECURSIVE] name AS (…)`
 - **Planner** : matérialisation CTE en RAM, `CteScan`, récursion fixpoint
 - **Tests** : `phase5_cte.rs` (simple, chaînée, hiérarchie récursive)
+
+### Semaine 41 — ✅
+
+- **AST** : `SetOpKind`, `CompoundSelect`, champ `compound` sur `SelectStmt`
+- **Parser** : `UNION` / `UNION ALL` / `INTERSECT` / `EXCEPT` (chaînage gauche)
+- **Planner** : `LogicalPlan::SetOp` / `PhysicalPlan::SetOp`, module `setops`
+- **Tests** : `phase5_setops.rs` (union, intersect, except, explain)
 
 ## Phases suivantes
 

@@ -1,6 +1,6 @@
 //! Physical operators (Week 19–22).
 
-use noedb_ast::{Expr, SelectItem};
+use noedb_ast::{Expr, SelectItem, SetOpKind};
 
 use crate::logical::{AggFunc, WindowCompute};
 
@@ -131,5 +131,16 @@ pub enum PhysicalPlan {
         prefix: String,
         /// Column pruning.
         columns: Option<Vec<String>>,
+    },
+    /// Compound set operation (Week 41).
+    SetOp {
+        /// Left input.
+        left: Box<Self>,
+        /// Right input.
+        right: Box<Self>,
+        /// Operator kind.
+        op: SetOpKind,
+        /// `ALL` semantics.
+        all: bool,
     },
 }

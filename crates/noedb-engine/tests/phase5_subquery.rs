@@ -2,13 +2,19 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use noedb_engine::LocalEngine;
 
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 fn temp_engine() -> (Arc<LocalEngine>, std::path::PathBuf) {
+    let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
-        "noedb-phase5-sq-{}",
+        "noedb-phase5-sq-{}-{}-{}",
+        std::process::id(),
+        n,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

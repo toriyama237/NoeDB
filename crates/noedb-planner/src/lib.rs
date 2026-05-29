@@ -20,6 +20,7 @@ mod lower;
 mod optimize;
 mod parallel;
 mod physical;
+mod setops;
 mod simd_pred;
 mod subquery;
 mod value;

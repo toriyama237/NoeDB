@@ -421,7 +421,27 @@ impl fmt::Display for SelectStmt {
             write_keyword(f, Keyword::Where)?;
             write!(f, " {w}")?;
         }
+        if let Some(c) = &self.compound {
+            write!(f, " {c}")?;
+        }
         Ok(())
+    }
+}
+
+impl fmt::Display for crate::stmt::CompoundSelect {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use crate::stmt::SetOpKind;
+        let kw = match self.op {
+            SetOpKind::Union => Keyword::Union,
+            SetOpKind::Intersect => Keyword::Intersect,
+            SetOpKind::Except => Keyword::Except,
+        };
+        write_keyword(f, kw)?;
+        if self.all {
+            write!(f, " ")?;
+            write_keyword(f, Keyword::All)?;
+        }
+        write!(f, " {}", self.right)
     }
 }
 

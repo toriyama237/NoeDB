@@ -107,10 +107,22 @@ fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
             corr_on,
             negated,
         },
+        LogicalPlan::SetOp {
+            left,
+            right,
+            op,
+            all,
+        } => LogicalPlan::SetOp {
+            left: Box::new(pushdown_predicates(*left)),
+            right: Box::new(pushdown_predicates(*right)),
+            op,
+            all,
+        },
         LogicalPlan::CteScan { .. } | LogicalPlan::Scan { .. } => plan,
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
     match plan {
         LogicalPlan::Scan { table, prefix } => PhysicalPlan::SeqScan {
@@ -210,6 +222,17 @@ fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
             name,
             prefix,
             columns: None,
+        },
+        LogicalPlan::SetOp {
+            left,
+            right,
+            op,
+            all,
+        } => PhysicalPlan::SetOp {
+            left: Box::new(to_physical(*left, ctx)),
+            right: Box::new(to_physical(*right, ctx)),
+            op,
+            all,
         },
     }
 }
@@ -327,6 +350,11 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
             cols.push(right_key.clone());
             Some(dedup(cols))
         }
+        PhysicalPlan::SetOp { left, right, .. } => {
+            let mut cols = collect_columns(left).unwrap_or_default();
+            cols.extend(collect_columns(right).unwrap_or_default());
+            Some(dedup(cols))
+        }
     }
 }
 
@@ -433,6 +461,17 @@ fn apply_columns(plan: PhysicalPlan, columns: Option<Vec<String>>) -> PhysicalPl
             name,
             prefix,
             columns,
+        },
+        PhysicalPlan::SetOp {
+            left,
+            right,
+            op,
+            all,
+        } => PhysicalPlan::SetOp {
+            left: Box::new(apply_columns(*left, columns.clone())),
+            right: Box::new(apply_columns(*right, columns)),
+            op,
+            all,
         },
     }
 }

@@ -75,6 +75,16 @@ pub fn build_select_scoped(
         items,
     };
 
+    if let Some(c) = &stmt.compound {
+        let right_plan = build_select_scoped(c.right.as_ref(), cte_scope)?;
+        plan = LogicalPlan::SetOp {
+            left: Box::new(plan),
+            right: Box::new(right_plan),
+            op: c.op,
+            all: c.all,
+        };
+    }
+
     Ok(plan)
 }
 

@@ -1,6 +1,9 @@
 //! `SELECT` statement parsing.
 
-use noedb_ast::{CteBody, CteDef, Join, JoinKind, SelectItem, SelectStmt, TableRef, WithClause};
+use noedb_ast::{
+    CompoundSelect, CteBody, CteDef, Join, JoinKind, SelectItem, SelectStmt, SetOpKind, TableRef,
+    WithClause,
+};
 use noedb_lexer::{Keyword, Punctuation, Token};
 
 use crate::error::ParseError;
@@ -17,9 +20,33 @@ pub(crate) fn parse_select_subquery(p: &mut Parser<'_>) -> Result<SelectStmt, Pa
 
 pub(crate) fn parse_select(p: &mut Parser<'_>) -> Result<SelectStmt, ParseError> {
     let with_clause = parse_optional_with(p)?;
-    let mut stmt = parse_select_inner(p, true, false)?;
+    let mut stmt = parse_select_query(p)?;
     stmt.with_clause = with_clause;
+    stmt.compound = parse_compound_chain(p)?;
+    p.expect_eof()?;
     Ok(stmt)
+}
+
+fn parse_select_query(p: &mut Parser<'_>) -> Result<SelectStmt, ParseError> {
+    parse_select_inner(p, false, false)
+}
+
+fn parse_compound_chain(p: &mut Parser<'_>) -> Result<Option<CompoundSelect>, ParseError> {
+    let op = match p.peek_kind() {
+        Token::Keyword(Keyword::Union) => SetOpKind::Union,
+        Token::Keyword(Keyword::Intersect) => SetOpKind::Intersect,
+        Token::Keyword(Keyword::Except) => SetOpKind::Except,
+        _ => return Ok(None),
+    };
+    p.bump();
+    let all = p.match_keyword(Keyword::All);
+    let mut right = parse_select_query(p)?;
+    right.compound = parse_compound_chain(p)?;
+    Ok(Some(CompoundSelect {
+        op,
+        all,
+        right: Box::new(right),
+    }))
 }
 
 fn parse_optional_with(p: &mut Parser<'_>) -> Result<Option<WithClause>, ParseError> {
@@ -134,6 +161,7 @@ fn parse_select_inner(
         from,
         joins,
         where_clause,
+        compound: None,
         span: Parser::merge_span(start, end),
     })
 }
@@ -180,6 +208,8 @@ fn is_table_alias_boundary(next: Option<&Token>, stop_at_rparen: bool) -> bool {
         )) | Some(Token::Keyword(Keyword::Where))
             | Some(Token::Keyword(Keyword::On))
             | Some(Token::Keyword(Keyword::Union))
+            | Some(Token::Keyword(Keyword::Intersect))
+            | Some(Token::Keyword(Keyword::Except))
             | Some(Token::Punct(Punctuation::RParen))
             | Some(Token::Punct(Punctuation::Comma))
             | Some(Token::Eof)

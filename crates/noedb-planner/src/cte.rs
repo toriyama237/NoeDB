@@ -65,10 +65,10 @@ fn materialize_recursive<S: StorageEngine<Error = StorageError>>(
 
     loop {
         let new_rows = run_select(recursive, &scope, &working, exec_store, index_store)?;
-        let mut seen: HashSet<Vec<u8>> = acc.iter().map(row_key).collect();
+        let mut seen: HashSet<Vec<u8>> = acc.iter().map(crate::setops::row_key).collect();
         let mut added = 0usize;
         for row in new_rows {
-            let key = row_key(&row);
+            let key = crate::setops::row_key(&row);
             if seen.insert(key) {
                 acc.push(row);
                 added += 1;
@@ -103,17 +103,4 @@ fn run_select<S: StorageEngine<Error = StorageError>>(
         },
     )?;
     Ok(records.into_iter().map(|r| r.fields).collect())
-}
-
-fn row_key(row: &RowMap) -> Vec<u8> {
-    let mut cols: Vec<_> = row.iter().collect();
-    cols.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut key = Vec::new();
-    for (name, val) in cols {
-        key.extend_from_slice(name.as_bytes());
-        key.push(0);
-        key.extend_from_slice(&val.as_bytes());
-        key.push(0);
-    }
-    key
 }
