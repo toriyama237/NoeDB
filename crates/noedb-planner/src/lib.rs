@@ -23,6 +23,7 @@ mod parallel;
 mod physical;
 mod setops;
 mod simd_pred;
+mod stats;
 mod subquery;
 mod value;
 mod window;
@@ -30,7 +31,7 @@ mod window_exec;
 
 pub use adaptive::ExecutionFeedback;
 pub use build::build;
-pub use cost::{estimate, PlanStats, INDEX_LOOKUP_COST, SEQ_SCAN_ROW_COST};
+pub use cost::{estimate, index_beats_seq_scan, PlanStats, INDEX_LOOKUP_COST, SEQ_SCAN_ROW_COST};
 pub use executor::{execute, ExecutionContext, Executor};
 pub use explain::explain;
 pub use index::{BTreeIndex, SecondaryIndex};
@@ -39,6 +40,7 @@ pub use lower::lower;
 pub use optimize::{index_wins, optimize, PlanContext};
 pub use physical::PhysicalPlan;
 pub use simd_pred::{filter_eq_i64, filter_range_i64};
+pub use stats::{analyze_table, load_plan_stats, persist_table_stats, ColumnStats, TableStats};
 pub use value::{Record, Value};
 
 use noedb_ast::Statement;
@@ -85,7 +87,8 @@ pub fn execute_sql_on<S: StorageEngine<Error = StorageError>>(
     };
 
     let logical = plan(stmt)?;
-    let ctx = PlanContext::new(index_store);
+    let stats = load_plan_stats(index_store);
+    let ctx = PlanContext::with_stats(index_store, stats);
     let physical = optimize(logical, &ctx);
     execute(
         physical,
@@ -108,9 +111,10 @@ pub fn execute_sql_on<S: StorageEngine<Error = StorageError>>(
 /// Planner errors for unsupported statements.
 pub fn explain_sql(stmt: &Statement, store: &LsmTree) -> Result<String, PlanError> {
     let logical = plan(stmt)?;
-    let ctx = PlanContext::new(store);
+    let stats = load_plan_stats(store);
+    let ctx = PlanContext::with_stats(store, stats);
     let physical = optimize(logical, &ctx);
-    Ok(explain(&physical))
+    Ok(explain(&physical, &ctx.stats))
 }
 
 /// Apply DDL (`CREATE INDEX`) or run DML/query statements.
@@ -125,6 +129,13 @@ pub fn apply_statement(stmt: &Statement, store: &mut LsmTree) -> Result<Vec<Reco
                 return Err(ExecError::UnsupportedExpr);
             }
             SecondaryIndex::build(store, &idx.table.value, &idx.columns[0].value)?;
+            let table_stats = analyze_table(store, &idx.table.value);
+            persist_table_stats(store, &idx.table.value, &table_stats)?;
+            Ok(vec![])
+        }
+        Statement::AnalyzeTable(a) => {
+            let table_stats = analyze_table(store, &a.table.value);
+            persist_table_stats(store, &a.table.value, &table_stats)?;
             Ok(vec![])
         }
         _ => execute_sql(stmt, store),
@@ -143,7 +154,7 @@ pub fn create_index(store: &mut LsmTree, table: &str, column: &str) -> Result<()
 /// Merge runtime feedback into planner statistics (adaptive costing).
 pub fn record_execution(stats: &mut PlanStats, feedback: &ExecutionFeedback) {
     for (table, rows) in &feedback.table_rows {
-        stats.table_rows.insert(table.clone(), *rows);
+        stats.tables.entry(table.clone()).or_default().row_count = *rows;
     }
 }
 

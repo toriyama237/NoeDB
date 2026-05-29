@@ -7,24 +7,26 @@ use crate::physical::PhysicalPlan;
 
 /// Render a physical plan as human-readable `EXPLAIN` output.
 #[must_use]
-pub fn explain(plan: &PhysicalPlan) -> String {
-    let stats = PlanStats::default();
-    let cost = estimate(plan, &stats);
-    let mut out = ExplainWriter::new(cost);
+pub fn explain(plan: &PhysicalPlan, stats: &PlanStats) -> String {
+    let cost = estimate(plan, stats);
+    let mut out = ExplainWriter::new(cost, stats);
     out.write_plan(plan, 0);
     out.finish()
 }
 
-struct ExplainWriter {
+struct ExplainWriter<'a> {
     lines: Vec<String>,
     total_cost: f64,
+    stats: &'a PlanStats,
 }
 
-impl ExplainWriter {
-    const fn new(total_cost: f64) -> Self {
+impl<'a> ExplainWriter<'a> {
+    #[allow(clippy::missing_const_for_fn)]
+    fn new(total_cost: f64, stats: &'a PlanStats) -> Self {
         Self {
             lines: Vec::new(),
             total_cost,
+            stats,
         }
     }
 
@@ -36,8 +38,10 @@ impl ExplainWriter {
                 let cols = columns
                     .as_ref()
                     .map_or_else(|| "*".into(), |c| c.join(", "));
-                self.lines
-                    .push(format!("{pad}SeqScan(table={table}, columns=[{cols}])"));
+                let rows = self.stats.rows_for(table);
+                self.lines.push(format!(
+                    "{pad}SeqScan(table={table}, rows≈{rows}, columns=[{cols}])"
+                ));
             }
             PhysicalPlan::IndexScan {
                 table,
@@ -51,8 +55,9 @@ impl ExplainWriter {
                 let key = point_key
                     .as_ref()
                     .map_or_else(|| "?".into(), |k| format!("{k:?}"));
+                let rows = self.stats.estimated_eq_rows(table, column);
                 self.lines.push(format!(
-                    "{pad}IndexScan(table={table}, index={column}, key={key}, columns=[{cols}])"
+                    "{pad}IndexScan(table={table}, index={column}, key={key}, rows≈{rows}, columns=[{cols}])"
                 ));
             }
             PhysicalPlan::Filter { input, .. } => {

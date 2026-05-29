@@ -3,7 +3,7 @@
 use noedb_ast::{BinaryOp, ColumnRef, Expr, Literal};
 use noedb_storage::LsmTree;
 
-use crate::cost::{estimate, PlanStats, INDEX_LOOKUP_COST, SEQ_SCAN_ROW_COST};
+use crate::cost::{estimate, index_beats_seq_scan, PlanStats};
 use crate::index::SecondaryIndex;
 use crate::join::extract_equi_join;
 use crate::logical::LogicalPlan;
@@ -18,13 +18,17 @@ pub struct PlanContext<'a> {
 }
 
 impl<'a> PlanContext<'a> {
-    /// Default stats.
+    /// Default stats (no catalog).
     #[must_use]
     pub fn new(store: &'a LsmTree) -> Self {
-        Self {
-            store,
-            stats: PlanStats::default(),
-        }
+        Self::with_stats(store, PlanStats::default())
+    }
+
+    /// Planner context with explicit statistics.
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn with_stats(store: &'a LsmTree, stats: PlanStats) -> Self {
+        Self { store, stats }
     }
 }
 
@@ -546,10 +550,25 @@ fn dedup(mut cols: Vec<String>) -> Vec<String> {
 /// Compare estimated cost of seq scan + filter vs index scan for a table/column.
 #[must_use]
 #[allow(clippy::cast_precision_loss)]
-pub fn index_wins(table_rows: u64, _column: &str) -> bool {
-    let seq = table_rows as f64 * SEQ_SCAN_ROW_COST;
-    let idx = INDEX_LOOKUP_COST;
-    idx < seq
+pub fn index_wins(table_rows: u64, column: &str) -> bool {
+    use std::collections::HashMap;
+
+    use crate::stats::{ColumnStats, TableStats};
+
+    let stats = PlanStats {
+        default_rows: table_rows,
+        tables: HashMap::from([(
+            "t".into(),
+            TableStats {
+                row_count: table_rows,
+                columns: HashMap::from([(
+                    column.to_string(),
+                    ColumnStats { ndv: table_rows },
+                )]),
+            },
+        )]),
+    };
+    index_beats_seq_scan("t", column, &stats)
 }
 
 #[cfg(test)]

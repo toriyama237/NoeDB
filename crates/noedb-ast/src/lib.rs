@@ -29,10 +29,10 @@ mod window;
 pub use crate::expr::{BinaryOp, Expr, Literal, SelectItem, UnaryOp};
 pub use crate::name::{ColumnRef, Ident, TableRef};
 pub use crate::stmt::{
-    BeginTxnStmt, ColumnDef, CommitTxnStmt, CompoundSelect, CreateIndexStmt, CreatePolicyStmt,
-    CreateTableStmt, CteBody, CteDef, DeleteStmt, DropTableStmt, EnableRlsStmt, ExecuteStmt,
-    InsertStmt, Join, JoinKind, PrepareStmt, RollbackTxnStmt, SelectStmt, SetOpKind, SetRoleStmt,
-    SqlType, Statement, UpdateStmt, WithClause,
+    AnalyzeTableStmt, BeginTxnStmt, ColumnDef, CommitTxnStmt, CompoundSelect, CreateIndexStmt,
+    CreatePolicyStmt, CreateTableStmt, CteBody, CteDef, DeleteStmt, DropTableStmt, EnableRlsStmt,
+    ExecuteStmt, InsertStmt, Join, JoinKind, PrepareStmt, RollbackTxnStmt, SelectStmt, SetOpKind,
+    SetRoleStmt, SqlType, Statement, UpdateStmt, WithClause,
 };
 pub use crate::window::{FrameBound, FrameMode, OrderKey, WindowFrame, WindowFunc, WindowSpec};
 

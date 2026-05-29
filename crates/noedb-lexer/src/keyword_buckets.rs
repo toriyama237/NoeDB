@@ -95,6 +95,7 @@ static KW_LEN_06: &[(&str, Keyword)] = &[
 ];
 
 static KW_LEN_07: &[(&str, Keyword)] = &[
+    ("ANALYZE", Keyword::Analyze),
     ("BETWEEN", Keyword::Between),
     ("COLLATE", Keyword::Collate),
     ("CURRENT", Keyword::Current),

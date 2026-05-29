@@ -16,6 +16,7 @@ use crate::span::Span;
 pub enum Keyword {
     All,
     Alter,
+    Analyze,
     And,
     Any,
     As,

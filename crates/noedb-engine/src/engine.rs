@@ -322,6 +322,14 @@ impl LocalEngine {
                 self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
             }
+            Statement::AnalyzeTable(a) => {
+                let mut tree = self.storage.write();
+                let table_stats = noedb_planner::analyze_table(&*tree, &a.table.value);
+                noedb_planner::persist_table_stats(&mut tree, &a.table.value, &table_stats)?;
+                self.cache.lock().invalidate_table(&a.table.value);
+                self.audit_record(session_id, sql, 0)?;
+                Ok(empty_ok())
+            }
             other => {
                 let role = self.session_role_for(session_id);
                 let other = apply_rls(other, &self.rls.lock(), &role);

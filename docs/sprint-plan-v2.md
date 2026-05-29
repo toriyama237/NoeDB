@@ -184,7 +184,7 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 | 40 | ✅ | CTE (`WITH`) + `WITH RECURSIVE` + `CteScan` |
 | 41 | ✅ | `UNION` / `INTERSECT` / `EXCEPT` |
 | 42 | ✅ | Types étendus + casts |
-| 43 | ⬜ | Statistiques colonnes + costing v2 |
+| 43 | ✅ | Statistiques colonnes + costing v2 |
 | 44 | ⬜ | Bench TPC-H lite + tag `v1.4.0-query` |
 
 ### Semaine 37 — ✅
@@ -231,6 +231,14 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 - **Parser** : `CAST(expr AS type)`, types DDL `TEXT` / `DATE` / `TIMESTAMP`
 - **Planner** : module `cast.rs`, coercition `INT`↔`FLOAT` en comparaison
 - **Tests** : `phase5_cast.rs`
+
+### Semaine 43 — ✅
+
+- **Stats** : `analyze_table`, persistance LSM (`\x03stats\0`), `load_plan_stats`
+- **Cost v2** : NDV, `estimated_eq_rows`, `index_beats_seq_scan`, filtres sélectifs
+- **SQL** : `ANALYZE TABLE name`
+- **EXPLAIN** : estimations `rows≈N` sur scans
+- **Tests** : `phase5_stats.rs`
 
 ## Phases suivantes
 

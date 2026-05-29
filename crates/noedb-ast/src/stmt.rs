@@ -283,6 +283,15 @@ pub struct CommitTxnStmt {
     pub span: Span,
 }
 
+/// `ANALYZE TABLE …` (column statistics, Phase 5 Week 43).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnalyzeTableStmt {
+    /// Table to scan.
+    pub table: Ident,
+    /// Span covering the statement.
+    pub span: Span,
+}
+
 /// `ROLLBACK`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RollbackTxnStmt {
@@ -324,6 +333,8 @@ pub enum Statement {
     CommitTxn(CommitTxnStmt),
     /// `ROLLBACK` transaction.
     RollbackTxn(RollbackTxnStmt),
+    /// `ANALYZE TABLE` (gather statistics).
+    AnalyzeTable(AnalyzeTableStmt),
 }
 
 impl Statement {
@@ -346,6 +357,7 @@ impl Statement {
             Self::BeginTxn(s) => s.span,
             Self::CommitTxn(s) => s.span,
             Self::RollbackTxn(s) => s.span,
+            Self::AnalyzeTable(s) => s.span,
         }
     }
 }

@@ -79,6 +79,7 @@ fn keyword_display(kw: Keyword) -> &'static str {
         Keyword::Unbounded => "UNBOUNDED",
         Keyword::Preceding => "PRECEDING",
         Keyword::Following => "FOLLOWING",
+        Keyword::Analyze => "ANALYZE",
         Keyword::Cast => "CAST",
         Keyword::All => "ALL",
         Keyword::Union => "UNION",
@@ -713,6 +714,12 @@ impl fmt::Display for Statement {
             Self::BeginTxn(_) => write_keyword(f, Keyword::Begin),
             Self::CommitTxn(_) => write_keyword(f, Keyword::Commit),
             Self::RollbackTxn(_) => write_keyword(f, Keyword::Rollback),
+            Self::AnalyzeTable(s) => {
+                write_keyword(f, Keyword::Analyze)?;
+                write!(f, " ")?;
+                write_keyword(f, Keyword::Table)?;
+                write!(f, " {}", s.table)
+            }
         }
     }
 }

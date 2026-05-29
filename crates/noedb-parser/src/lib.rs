@@ -15,6 +15,7 @@
     clippy::match_same_arms
 )]
 
+mod analyze;
 mod ddl;
 mod dml;
 mod error;
@@ -118,6 +119,12 @@ mod tests {
             parse("DELETE FROM t WHERE id = 3"),
             Ok(Statement::Delete(_))
         ));
+    }
+
+    #[test]
+    fn parse_analyze_table() {
+        let stmt = parse("ANALYZE TABLE users").unwrap();
+        assert!(matches!(stmt, Statement::AnalyzeTable(_)));
     }
 
     #[test]

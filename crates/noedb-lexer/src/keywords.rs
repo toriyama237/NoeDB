@@ -13,6 +13,7 @@ use crate::token::Keyword;
 static KEYWORD_TABLE: &[(&str, Keyword)] = &[
     ("ALL", Keyword::All),
     ("ALTER", Keyword::Alter),
+    ("ANALYZE", Keyword::Analyze),
     ("AND", Keyword::And),
     ("ANY", Keyword::Any),
     ("AS", Keyword::As),

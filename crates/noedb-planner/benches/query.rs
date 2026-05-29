@@ -85,7 +85,7 @@ fn bench_index_scan(c: &mut Criterion) {
     let logical = plan(&stmt).unwrap();
     let pctx = PlanContext::new(&tree);
     let physical = optimize(logical, &pctx);
-    let text = explain(&physical);
+    let text = explain(&physical, &pctx.stats);
     assert!(text.contains("IndexScan"));
     let ctx = ExecutionContext::single(&tree);
 
