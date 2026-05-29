@@ -7,6 +7,8 @@
 )]
 
 mod grpc;
+#[cfg(feature = "otel")]
+mod otel;
 mod tls;
 
 use std::io::{self, Write};
@@ -56,8 +58,35 @@ fn maybe_spawn_metrics(args: &[String], metrics: Arc<Metrics>) -> Result<(), Str
     Ok(())
 }
 
+fn otel_endpoint(args: &[String]) -> Option<String> {
+    args.windows(2)
+        .find(|w| w[0] == "--otel-endpoint")
+        .map(|w| w[1].clone())
+}
+
+fn maybe_init_otel(args: &[String]) -> Result<(), String> {
+    let Some(endpoint) = otel_endpoint(args) else {
+        return Ok(());
+    };
+    #[cfg(feature = "otel")]
+    {
+        otel::init(&endpoint)?;
+        println!("OpenTelemetry traces → {endpoint} (service: noedb)");
+        return Ok(());
+    }
+    #[cfg(not(feature = "otel"))]
+    {
+        let _ = endpoint;
+        Err("rebuild noedb-cli with --features otel to use --otel-endpoint".into())
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if let Err(e) = maybe_init_otel(&args) {
+        eprintln!("noedb otel error: {e}");
+        std::process::exit(1);
+    }
     if args.iter().any(|a| a == "--server") {
         if let Err(e) = run_server(&args) {
             eprintln!("noedb server error: {e}");

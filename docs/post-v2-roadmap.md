@@ -5,8 +5,8 @@ The [52-week v2 sprint](sprint-plan-v2.md) is complete (`v2.0.0`). Possible foll
 | Area | Idea | Notes |
 |------|------|--------|
 | Consensus | `madsim` fault injection | Deferred from Phase 4/6; simulator + proptest exist today |
-| Benchmarks | YCSB workload A/B in CI smoke | Bench crate exists (`ycsb`); not gated in CI |
-| Observability | OpenTelemetry exporter + Grafana JSON | Metrics + `tracing` spans in place |
+| Benchmarks | YCSB workload A/B | ✅ `post_v2_ycsb.rs` smoke in CI |
+| Observability | OpenTelemetry exporter + Grafana JSON | ✅ `--otel-endpoint` + `docs/grafana/` |
 | Distribution | Publish `noedb` to crates.io | Meta-crate API stabilization |
 | Clients | PyPI / npm / pkg.go.dev releases | Sources under `clients/` |
 | SQL | Full production DDL, follower reads on wire | `DistributedEngine` is in-process only for now |

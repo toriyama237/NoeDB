@@ -68,6 +68,8 @@ jobs:
       - run: cargo build --workspace --verbose --all-features
       - run: cargo test  --workspace --verbose --all-features --no-fail-fast
       - run: cargo test  --workspace --verbose --all-features --no-fail-fast --release
+      - name: otel feature (noedb-cli)
+        run: cargo build -p noedb-cli --features otel
 
   msrv:
     name: msrv (1.78)
