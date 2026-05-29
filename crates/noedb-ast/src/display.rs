@@ -5,12 +5,12 @@ use core::fmt;
 use noedb_lexer::{Keyword, Operator};
 
 use crate::expr::{BinaryOp, Expr, Literal, SelectItem, UnaryOp};
-use crate::window::{FrameBound, FrameMode, WindowFrame, WindowSpec};
 use crate::name::{ColumnRef, Ident, TableRef};
 use crate::stmt::{
     ColumnDef, CreateIndexStmt, CreateTableStmt, DeleteStmt, DropTableStmt, InsertStmt, Join,
     JoinKind, SelectStmt, SqlType, Statement, UpdateStmt, WithClause,
 };
+use crate::window::{FrameBound, FrameMode, WindowFrame, WindowSpec};
 
 fn write_ident(f: &mut fmt::Formatter<'_>, ident: &Ident) -> fmt::Result {
     if ident.value.chars().all(is_simple_ident) {
@@ -220,10 +220,7 @@ impl fmt::Display for Expr {
             Self::Parameter { index, .. } => write!(f, "${index}"),
             Self::CurrentUser { .. } => write_keyword(f, Keyword::CurrentUser),
             Self::Function {
-                name,
-                args,
-                over,
-                ..
+                name, args, over, ..
             } => {
                 write_ident(f, name)?;
                 write!(f, "(")?;

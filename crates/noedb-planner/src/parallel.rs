@@ -84,15 +84,12 @@ fn group_cells_serial(cells: Vec<Cell>) -> Vec<RowMap> {
 fn group_cells_parallel(cells: Vec<Cell>) -> Vec<RowMap> {
     let merged: BTreeMap<Vec<u8>, RowMap> = cells
         .into_par_iter()
-        .fold(
-            BTreeMap::<Vec<u8>, RowMap>::new,
-            |mut acc, cell| {
-                acc.entry(cell.row_id)
-                    .or_default()
-                    .push((cell.col, Value::Bytes(cell.val)));
-                acc
-            },
-        )
+        .fold(BTreeMap::<Vec<u8>, RowMap>::new, |mut acc, cell| {
+            acc.entry(cell.row_id)
+                .or_default()
+                .push((cell.col, Value::Bytes(cell.val)));
+            acc
+        })
         .reduce(BTreeMap::new, merge_maps);
 
     merged.into_values().collect()

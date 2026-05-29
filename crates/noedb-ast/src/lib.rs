@@ -27,16 +27,14 @@ mod stmt;
 mod window;
 
 pub use crate::expr::{BinaryOp, Expr, Literal, SelectItem, UnaryOp};
-pub use crate::window::{
-    FrameBound, FrameMode, OrderKey, WindowFrame, WindowFunc, WindowSpec,
-};
 pub use crate::name::{ColumnRef, Ident, TableRef};
 pub use crate::stmt::{
     BeginTxnStmt, ColumnDef, CommitTxnStmt, CreateIndexStmt, CreatePolicyStmt, CreateTableStmt,
-    DeleteStmt, DropTableStmt, EnableRlsStmt, ExecuteStmt, InsertStmt, Join, JoinKind, PrepareStmt,
-    RollbackTxnStmt, SelectStmt, SetRoleStmt, SqlType, Statement, UpdateStmt, CteBody, CteDef,
-    WithClause,
+    CteBody, CteDef, DeleteStmt, DropTableStmt, EnableRlsStmt, ExecuteStmt, InsertStmt, Join,
+    JoinKind, PrepareStmt, RollbackTxnStmt, SelectStmt, SetRoleStmt, SqlType, Statement,
+    UpdateStmt, WithClause,
 };
+pub use crate::window::{FrameBound, FrameMode, OrderKey, WindowFrame, WindowFunc, WindowSpec};
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]

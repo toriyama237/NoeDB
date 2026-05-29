@@ -69,9 +69,7 @@ fn eval_column(col: &ColumnRef, row: &[(String, Value)]) -> Result<Value, ExecEr
             row.iter()
                 .find(|(n, _)| n == &column.value)
                 .map(|(_, v)| v.clone())
-                .ok_or(ExecError::UnknownColumn {
-                    name: qual,
-                })
+                .ok_or(ExecError::UnknownColumn { name: qual })
         }
         ColumnRef::Named { column, .. } => {
             if let Some((_, v)) = row.iter().find(|(n, _)| n == &column.value) {

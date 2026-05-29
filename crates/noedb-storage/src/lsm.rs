@@ -153,8 +153,8 @@ impl LsmTree {
 
     /// Read path: active MemTable → L0 (newest first) → L1.
     ///
-    /// For user keys written via [`put_version`](crate::lsm_mvcc::LsmTree::put_version),
-    /// use [`get_latest`](crate::lsm_mvcc::LsmTree::get_latest) instead.
+    /// For user keys written via [`LsmTree::put_version`](crate::LsmTree::put_version),
+    /// use [`LsmTree::get_latest`](crate::LsmTree::get_latest) instead.
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
         for path in self.level0.iter().rev() {
             if let Some(v) = self.get_from_sst(path, key)? {

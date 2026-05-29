@@ -79,8 +79,7 @@ fn main() {
         .nth(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or_else(|| {
-            std::thread::available_parallelism()
-                .map_or(4, std::num::NonZeroUsize::get)
+            std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get)
         });
 
     rayon::ThreadPoolBuilder::new()

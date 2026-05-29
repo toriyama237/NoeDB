@@ -9,6 +9,7 @@
 mod adaptive;
 mod build;
 mod cost;
+mod cte;
 mod eval;
 mod executor;
 mod explain;
@@ -20,9 +21,8 @@ mod optimize;
 mod parallel;
 mod physical;
 mod simd_pred;
-mod value;
-mod cte;
 mod subquery;
+mod value;
 mod window;
 mod window_exec;
 

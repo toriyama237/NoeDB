@@ -148,7 +148,10 @@ impl TxnManager {
     }
 
     /// `COMMIT` — SSI check, apply write set with `commit_ts`, purge intents.
-    #[allow(clippy::significant_drop_tightening, clippy::significant_drop_in_scrutinee)]
+    #[allow(
+        clippy::significant_drop_tightening,
+        clippy::significant_drop_in_scrutinee
+    )]
     pub fn commit(&self, session_id: u64) -> Result<CommitResult, TxnError> {
         let txn_id = *self
             .sessions

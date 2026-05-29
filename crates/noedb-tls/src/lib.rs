@@ -2,7 +2,7 @@
 //!
 //! - Dev PKI via [`DevCertPem`] (CA + server + SPIFFE client identity)
 //! - mTLS: [`server_acceptor_mtls_dev`] / [`client_connector_mtls_dev`]
-//! - Pinning: [`pinned_mtls_connector`]
+//! - Pinning: [`client_connector_mtls_pinned`]
 //! - Hot reload: [`ReloadingAcceptor`]
 
 #![forbid(unsafe_code)]

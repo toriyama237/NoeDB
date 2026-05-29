@@ -7,7 +7,10 @@
 //! - [`DeadlockGuard`] — wait-for graph + 5s timeout fallback
 
 #![forbid(unsafe_code)]
-#![allow(clippy::significant_drop_tightening, clippy::significant_drop_in_scrutinee)]
+#![allow(
+    clippy::significant_drop_tightening,
+    clippy::significant_drop_in_scrutinee
+)]
 
 mod deadlock;
 mod error;

@@ -4,9 +4,7 @@
 
 use std::collections::HashMap;
 
-use noedb_ast::{
-    Expr, FrameBound, FrameMode, OrderKey, WindowFrame, WindowFunc, WindowSpec,
-};
+use noedb_ast::{Expr, FrameBound, FrameMode, OrderKey, WindowFrame, WindowFunc, WindowSpec};
 
 use crate::eval::eval_expr;
 use crate::executor::{compare_rows, RowMap};
@@ -29,10 +27,7 @@ pub fn apply_windows(
     Ok(out)
 }
 
-fn apply_one_window(
-    mut rows: Vec<RowMap>,
-    win: &WindowCompute,
-) -> Result<Vec<RowMap>, ExecError> {
+fn apply_one_window(mut rows: Vec<RowMap>, win: &WindowCompute) -> Result<Vec<RowMap>, ExecError> {
     if win.func.is_ranking() && win.spec.order_by.is_empty() {
         return Err(ExecError::UnsupportedExpr);
     }
@@ -164,10 +159,7 @@ fn column_name_from_expr(expr: &Expr) -> Option<String> {
     }
 }
 
-fn partition_rows(
-    rows: &[RowMap],
-    partition_by: &[Expr],
-) -> Result<Vec<Vec<RowMap>>, ExecError> {
+fn partition_rows(rows: &[RowMap], partition_by: &[Expr]) -> Result<Vec<Vec<RowMap>>, ExecError> {
     if partition_by.is_empty() {
         return Ok(vec![rows.to_vec()]);
     }

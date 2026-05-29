@@ -28,10 +28,10 @@ pub fn split_window_items(items: &[SelectItem]) -> (Vec<WindowCompute>, Vec<Sele
                 projected.push(item.clone());
                 continue;
             };
-            let output_name = item.alias.as_ref().map_or_else(
-                || name.value.to_ascii_lowercase(),
-                |a| a.value.clone(),
-            );
+            let output_name = item
+                .alias
+                .as_ref()
+                .map_or_else(|| name.value.to_ascii_lowercase(), |a| a.value.clone());
             windows.push(WindowCompute {
                 func,
                 arg,

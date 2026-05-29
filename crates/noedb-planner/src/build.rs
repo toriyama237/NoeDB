@@ -25,10 +25,9 @@ fn table_prefix(t: &TableRef, qualify: bool) -> String {
     if !qualify {
         return String::new();
     }
-    t.alias.as_ref().map_or_else(
-        || t.name.value.clone(),
-        |a| a.value.clone(),
-    )
+    t.alias
+        .as_ref()
+        .map_or_else(|| t.name.value.clone(), |a| a.value.clone())
 }
 
 /// Build a logical plan from a parsed `SELECT`.
@@ -85,7 +84,10 @@ fn table_scan(t: &TableRef, cte_scope: &HashSet<String>, qualify: bool) -> Logic
     if cte_scope.contains(&name) {
         LogicalPlan::CteScan { name, prefix }
     } else {
-        LogicalPlan::Scan { table: name, prefix }
+        LogicalPlan::Scan {
+            table: name,
+            prefix,
+        }
     }
 }
 

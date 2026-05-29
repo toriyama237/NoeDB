@@ -31,7 +31,9 @@ fn read_block_from_slice(data: &[u8], offset: u64) -> Result<Vec<u8>, StorageErr
     let off = usize::try_from(offset)
         .map_err(|_| StorageError::corrupt_sstable("block offset overflow"))?;
     if off.saturating_add(4) > data.len() {
-        return Err(StorageError::corrupt_sstable("block length header past EOF"));
+        return Err(StorageError::corrupt_sstable(
+            "block length header past EOF",
+        ));
     }
     let len = u32::from_le_bytes(
         data[off..off + 4]

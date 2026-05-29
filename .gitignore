@@ -31,3 +31,4 @@ tarpaulin-report.html
 /.cargo/config.toml.local
 /playground/
 perf.data
+.antigravitycli/

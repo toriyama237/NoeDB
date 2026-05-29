@@ -132,9 +132,8 @@ impl ExplainWriter {
                 ..
             } => {
                 let op = if *negated { "NOT IN" } else { "IN" };
-                self.lines.push(format!(
-                    "{pad}SemiJoin({op}, keys={left_key}={right_key})"
-                ));
+                self.lines
+                    .push(format!("{pad}SemiJoin({op}, keys={left_key}={right_key})"));
                 self.write_plan(left, indent + 1);
                 self.write_plan(right, indent + 1);
             }

@@ -239,9 +239,9 @@ fn pushdown_columns(plan: PhysicalPlan) -> PhysicalPlan {
 
 fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
     match plan {
-        PhysicalPlan::SeqScan { .. } | PhysicalPlan::IndexScan { .. } | PhysicalPlan::CteScan { .. } => {
-            None
-        }
+        PhysicalPlan::SeqScan { .. }
+        | PhysicalPlan::IndexScan { .. }
+        | PhysicalPlan::CteScan { .. } => None,
         PhysicalPlan::Filter { input, predicate } => {
             let mut cols = collect_columns(input).unwrap_or_default();
             cols.extend(columns_in_expr(predicate));

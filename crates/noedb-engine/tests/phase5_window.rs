@@ -96,10 +96,7 @@ fn parse_window_function_ast() {
         panic!("expected select");
     };
     let Expr::Function {
-        name,
-        args,
-        over,
-        ..
+        name, args, over, ..
     } = &sel.items[0].expr
     else {
         panic!("expected function");
@@ -110,7 +107,10 @@ fn parse_window_function_ast() {
     assert_eq!(spec.partition_by.len(), 1);
     assert_eq!(spec.order_by.len(), 1);
     assert!(!spec.order_by[0].asc);
-    assert_eq!(WindowFunc::parse_name(&name.value), Some(WindowFunc::RowNumber));
+    assert_eq!(
+        WindowFunc::parse_name(&name.value),
+        Some(WindowFunc::RowNumber)
+    );
 }
 
 #[test]

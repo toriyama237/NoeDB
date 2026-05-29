@@ -58,7 +58,13 @@ fn parse_expr_prec(p: &mut Parser<'_>, min: Prec) -> Result<Expr, ParseError> {
             let start = left.span();
             let (values, subquery) = parse_in_rhs(p)?;
             let end = p.peek().span;
-            left = in_expr_from_rhs(left, values, subquery, false, Parser::merge_span(start, end));
+            left = in_expr_from_rhs(
+                left,
+                values,
+                subquery,
+                false,
+                Parser::merge_span(start, end),
+            );
             continue;
         }
 
@@ -455,7 +461,9 @@ fn in_expr_from_rhs(
     }
 }
 
-fn parse_in_rhs(p: &mut Parser<'_>) -> Result<(Vec<Expr>, Option<noedb_ast::SelectStmt>), ParseError> {
+fn parse_in_rhs(
+    p: &mut Parser<'_>,
+) -> Result<(Vec<Expr>, Option<noedb_ast::SelectStmt>), ParseError> {
     p.expect_punct(Punctuation::LParen)?;
     if matches!(p.peek_kind(), Token::Keyword(Keyword::Select)) {
         let query = parse_select_subquery(p)?;

@@ -52,11 +52,14 @@ fn with_chained_ctes() {
 fn with_recursive_hierarchy() {
     let (eng, dir) = temp_engine();
     eng.put_row_default("nodes", "a", "id", b"1").unwrap();
-    eng.put_row_default("nodes", "a", "parent_id", b"0").unwrap();
+    eng.put_row_default("nodes", "a", "parent_id", b"0")
+        .unwrap();
     eng.put_row_default("nodes", "b", "id", b"2").unwrap();
-    eng.put_row_default("nodes", "b", "parent_id", b"1").unwrap();
+    eng.put_row_default("nodes", "b", "parent_id", b"1")
+        .unwrap();
     eng.put_row_default("nodes", "c", "id", b"3").unwrap();
-    eng.put_row_default("nodes", "c", "parent_id", b"2").unwrap();
+    eng.put_row_default("nodes", "c", "parent_id", b"2")
+        .unwrap();
 
     let out = eng
         .execute(
@@ -88,9 +91,11 @@ fn explain_shows_cte_scan() {
 fn with_cte_join_on_parent() {
     let (eng, dir) = temp_engine();
     eng.put_row_default("nodes", "a", "id", b"1").unwrap();
-    eng.put_row_default("nodes", "a", "parent_id", b"0").unwrap();
+    eng.put_row_default("nodes", "a", "parent_id", b"0")
+        .unwrap();
     eng.put_row_default("nodes", "b", "id", b"2").unwrap();
-    eng.put_row_default("nodes", "b", "parent_id", b"1").unwrap();
+    eng.put_row_default("nodes", "b", "parent_id", b"1")
+        .unwrap();
 
     let out = eng
         .execute(

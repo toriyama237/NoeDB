@@ -175,12 +175,16 @@ mod tests {
     #[test]
     fn parse_window_frame_rows() {
         use noedb_ast::{FrameBound, FrameMode};
-        let sql = "SELECT SUM(x) OVER (ORDER BY id ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) FROM t";
+        let sql =
+            "SELECT SUM(x) OVER (ORDER BY id ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) FROM t";
         let stmt = parse(sql).unwrap();
         let Statement::Select(s) = stmt else {
             panic!();
         };
-        let Expr::Function { over: Some(spec), .. } = &s.items[0].expr else {
+        let Expr::Function {
+            over: Some(spec), ..
+        } = &s.items[0].expr
+        else {
             panic!();
         };
         let frame = spec.frame.as_ref().expect("frame");
@@ -196,7 +200,10 @@ mod tests {
         let Statement::Select(s) = stmt else {
             panic!();
         };
-        let Expr::Function { over: Some(spec), .. } = &s.items[0].expr else {
+        let Expr::Function {
+            over: Some(spec), ..
+        } = &s.items[0].expr
+        else {
             panic!();
         };
         assert!(!spec.order_by[0].asc);
@@ -282,4 +289,3 @@ mod tests {
         let _ = s.where_clause.as_ref().unwrap().span();
     }
 }
-

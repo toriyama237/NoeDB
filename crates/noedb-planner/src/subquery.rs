@@ -87,8 +87,7 @@ fn decorrelate_one(
     outer_tables: &[String],
     cte_scope: &std::collections::HashSet<String>,
 ) -> Result<LogicalPlan, PlanError> {
-    let left_key = expr_column_name(&pred.outer_expr)
-        .ok_or(PlanError::UnsupportedStatement)?;
+    let left_key = expr_column_name(&pred.outer_expr).ok_or(PlanError::UnsupportedStatement)?;
     let inner_key = subquery_column_name(&pred.query)?;
 
     let inner_tables = table_names(&pred.query);
@@ -206,9 +205,7 @@ fn is_correlation_eq(expr: &Expr, outer_tables: &[String], inner_tables: &[Strin
 
 fn column_qualifier(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Column(ColumnRef::Named {
-            table: Some(t), ..
-        }) => Some(t.value.clone()),
+        Expr::Column(ColumnRef::Named { table: Some(t), .. }) => Some(t.value.clone()),
         _ => None,
     }
 }

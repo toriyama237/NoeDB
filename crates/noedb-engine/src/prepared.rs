@@ -158,7 +158,10 @@ fn substitute_expr(expr: &Expr, params: &[Literal]) -> Expr {
 
 fn substitute_select(stmt: &noedb_ast::SelectStmt, params: &[Literal]) -> noedb_ast::SelectStmt {
     noedb_ast::SelectStmt {
-        with_clause: stmt.with_clause.as_ref().map(|w| substitute_with(w, params)),
+        with_clause: stmt
+            .with_clause
+            .as_ref()
+            .map(|w| substitute_with(w, params)),
         distinct: stmt.distinct,
         items: stmt
             .items
@@ -178,10 +181,7 @@ fn substitute_select(stmt: &noedb_ast::SelectStmt, params: &[Literal]) -> noedb_
     }
 }
 
-fn substitute_with(
-    with: &noedb_ast::WithClause,
-    params: &[Literal],
-) -> noedb_ast::WithClause {
+fn substitute_with(with: &noedb_ast::WithClause, params: &[Literal]) -> noedb_ast::WithClause {
     noedb_ast::WithClause {
         recursive: with.recursive,
         ctes: with
@@ -230,9 +230,7 @@ fn walk_cte_body(body: &noedb_ast::CteBody, f: &mut dyn FnMut(&Expr)) {
     match body {
         noedb_ast::CteBody::Select(s) => walk_select_stmt(s, f),
         noedb_ast::CteBody::Union {
-            anchor,
-            recursive,
-            ..
+            anchor, recursive, ..
         } => {
             walk_select_stmt(anchor, f);
             walk_select_stmt(recursive, f);

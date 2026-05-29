@@ -1,6 +1,6 @@
 //! gRPC SQL API for NoeDB (Phase 1 Week 3).
 //!
-//! - Proto3 [`sql`](generated::noedb::v1) service
+//! - Proto3 gRPC SQL API ([`SqlServer`])
 //! - mTLS via tonic + dev PKI from [`noedb_tls`]
 //! - Cluster auth on `x-noedb-auth` metadata
 

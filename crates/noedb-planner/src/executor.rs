@@ -245,13 +245,17 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
     ctx: &ExecutionContext<'_, S>,
 ) -> Result<ExecState, ExecError> {
     match plan {
-        PhysicalPlan::SeqScan { table, columns: _, .. } if table.is_empty() => {
-            Ok(ExecState::LiteralProject {
-                items: vec![],
-                emitted: false,
-            })
-        }
-        PhysicalPlan::SeqScan { table, prefix, columns } => {
+        PhysicalPlan::SeqScan {
+            table, columns: _, ..
+        } if table.is_empty() => Ok(ExecState::LiteralProject {
+            items: vec![],
+            emitted: false,
+        }),
+        PhysicalPlan::SeqScan {
+            table,
+            prefix,
+            columns,
+        } => {
             let storage_cols = columns.as_ref().map(|cols| {
                 cols.iter()
                     .map(|c| {
@@ -268,7 +272,11 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
                 rows: rows.into_iter(),
             })
         }
-        PhysicalPlan::CteScan { name, prefix, columns } => {
+        PhysicalPlan::CteScan {
+            name,
+            prefix,
+            columns,
+        } => {
             let rows = ctx
                 .cte_tables
                 .and_then(|t| t.get(&name))

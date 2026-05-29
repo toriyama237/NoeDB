@@ -31,25 +31,25 @@ pub enum StorageError {
 }
 
 impl StorageError {
-    /// Construct an [`InvalidInput`] error.
+    /// Construct a [`StorageError::InvalidInput`] error.
     #[must_use]
     pub const fn invalid_input(message: &'static str) -> Self {
         Self::InvalidInput { message }
     }
 
-    /// Construct a [`CorruptWal`] error.
+    /// Construct a [`StorageError::CorruptWal`] error.
     #[must_use]
     pub const fn corrupt_wal(message: &'static str) -> Self {
         Self::CorruptWal { message }
     }
 
-    /// Construct a [`ChecksumMismatch`] error.
+    /// Construct a [`StorageError::ChecksumMismatch`] error.
     #[must_use]
     pub const fn checksum_mismatch() -> Self {
         Self::ChecksumMismatch
     }
 
-    /// Construct a [`CorruptSstable`] error.
+    /// Construct a [`StorageError::CorruptSstable`] error.
     #[must_use]
     pub const fn corrupt_sstable(message: &'static str) -> Self {
         Self::CorruptSstable { message }

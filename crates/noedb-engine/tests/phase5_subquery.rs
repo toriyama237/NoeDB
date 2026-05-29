@@ -56,9 +56,12 @@ fn where_in_correlated_subquery() {
     let (eng, dir) = temp_engine();
     eng.put_row_default("orders", "10", "id", b"10").unwrap();
     eng.put_row_default("orders", "20", "id", b"20").unwrap();
-    eng.put_row_default("lines", "a", "order_id", b"10").unwrap();
-    eng.put_row_default("lines", "b", "order_id", b"10").unwrap();
-    eng.put_row_default("lines", "c", "order_id", b"99").unwrap();
+    eng.put_row_default("lines", "a", "order_id", b"10")
+        .unwrap();
+    eng.put_row_default("lines", "b", "order_id", b"10")
+        .unwrap();
+    eng.put_row_default("lines", "c", "order_id", b"99")
+        .unwrap();
 
     let out = eng
         .execute(
