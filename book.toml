@@ -1,0 +1,13 @@
+[book]
+title = "NoeDB"
+authors = ["Rykiel KAMENI YAMDJEU"]
+description = "NoeDB v2 architecture and operations guide"
+language = "en"
+src = "book/src"
+
+[build]
+build-dir = "book/build"
+
+[output.html]
+git-repository-url = "https://github.com/toriyama237/NoeDB"
+edit-url-template = "https://github.com/toriyama237/NoeDB/edit/main/book/{path}"

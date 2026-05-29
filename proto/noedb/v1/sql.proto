@@ -3,6 +3,8 @@ syntax = "proto3";
 
 package noedb.v1;
 
+option go_package = "github.com/toriyama237/noedb-go/noedb/v1;noedbv1";
+
 // Cluster-authenticated SQL service (auth via `x-noedb-auth` metadata).
 service Sql {
   rpc Execute(SqlRequest) returns (SqlResponse);

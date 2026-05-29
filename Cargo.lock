@@ -763,7 +763,7 @@ checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
 name = "noedb"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "noedb-ast",
  "noedb-engine",
@@ -777,14 +777,14 @@ dependencies = [
 
 [[package]]
 name = "noedb-ast"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "noedb-lexer",
 ]
 
 [[package]]
 name = "noedb-cli"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "noedb-engine",
  "noedb-grpc",
@@ -801,11 +801,12 @@ dependencies = [
 
 [[package]]
 name = "noedb-engine"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "bincode",
  "criterion",
  "dashmap",
+ "hex",
  "lru",
  "noedb-ast",
  "noedb-metrics",
@@ -824,7 +825,7 @@ dependencies = [
 
 [[package]]
 name = "noedb-grpc"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "hex",
  "noedb-raft",
@@ -839,18 +840,18 @@ dependencies = [
 
 [[package]]
 name = "noedb-lexer"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "criterion",
 ]
 
 [[package]]
 name = "noedb-metrics"
-version = "1.0.1"
+version = "2.0.0"
 
 [[package]]
 name = "noedb-parser"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "noedb-ast",
  "noedb-lexer",
@@ -858,7 +859,7 @@ dependencies = [
 
 [[package]]
 name = "noedb-planner"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "criterion",
  "noedb-ast",
@@ -869,8 +870,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "noedb-pool"
+version = "2.0.0"
+dependencies = [
+ "hex",
+ "noedb-grpc",
+ "noedb-raft",
+ "noedb-tls",
+ "parking_lot",
+ "thiserror",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
 name = "noedb-protocol"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "bincode",
  "bytes",
@@ -881,7 +896,7 @@ dependencies = [
 
 [[package]]
 name = "noedb-raft"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "bincode",
  "bytes",
@@ -900,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "noedb-storage"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "criterion",
  "lz4_flex",
@@ -909,7 +924,7 @@ dependencies = [
 
 [[package]]
 name = "noedb-tls"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "rcgen",
  "rustls",
@@ -921,7 +936,7 @@ dependencies = [
 
 [[package]]
 name = "noedb-txn"
-version = "1.0.1"
+version = "2.0.0"
 dependencies = [
  "dashmap",
  "noedb-storage",

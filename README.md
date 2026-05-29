@@ -49,7 +49,10 @@ crates/
 ├── noedb-raft/       # Raft consensus           (Phase 4 ✅)
 ├── noedb-engine/     # SQL → Raft → LSM         (Phase 5 ✅)
 ├── noedb-protocol/   # framed TCP RPC           (Phase 5 ✅)
-└── noedb-cli/        # REPL + server binary     (Phase 5 ✅)
+├── noedb-cli/        # REPL + server binary     (Phase 5 ✅)
+├── noedb-metrics/    # Prometheus metrics       (Phase 6 ✅)
+├── noedb-pool/       # gRPC connection pool     (Phase 7 ✅)
+└── clients/          # Python, Go, Node drivers (Phase 7 ✅)
 ```
 
 - **No `sqlx`, no `sled`, no `tokio-postgres`** — just the standard library and a
@@ -107,8 +110,9 @@ hide behind a framework.
 
 ## Status
 
-> **v1.0.0** — distributed SQL engine from lexer to Raft-backed storage.
-> Run `cargo run -p noedb-cli` for the REPL, or `cargo run -p noedb-cli -- --cluster`.
+> **v2.0.0** — distributed SQL engine: MVCC, Raft, query engine v2, metrics, multi-language gRPC clients.
+> Run `cargo run -p noedb-cli` for the REPL, or `cargo run -p noedb-cli -- --server --metrics-listen 127.0.0.1:9090`.
+> Docs: `mdbook build` (see `book/`). Clients: `clients/README.md`.
 
 Phase 1 parses `SELECT` (with `JOIN` / `WHERE`), DML (`INSERT`, `UPDATE`,
 `DELETE`), and core DDL (`CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`):

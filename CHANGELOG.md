@@ -6,11 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-05-20
+
 ### Added
-- **Phase 6 observability & reliability**: `noedb-metrics` crate with Prometheus text
-  exposition, `--metrics-listen` on CLI, `tracing` spans on SQL execution, `proptest`
-  Raft simulator tests, fuzz targets `protocol_wire` and `mvcc_codec`, chaos/RTO smoke
-  tests for leader failover.
+- **Language clients** (gRPC + dev TLS): Python (`clients/python`), Go (`clients/go`),
+  Node.js (`clients/nodejs`).
+- **`noedb-pool`**: gRPC connection pool, periodic health checks, read/write load balancer.
+- **mdBook documentation** under `book/` (architecture, storage, Raft, query engine,
+  banking tutorial, clients, observability).
+- **Phase 6** (in this release line): `noedb-metrics`, Prometheus `/metrics`, fuzz,
+  Raft chaos/proptest tests.
+
+### Changed
+- Workspace version **2.0.0** (from 1.0.1 / 1.4.0-query feature line).
 
 ## [1.4.0-query] - 2026-05-20
 

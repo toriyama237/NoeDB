@@ -32,6 +32,7 @@ dashmap = { workspace = true }
 noedb-parser = { workspace = true }
 criterion = { workspace = true }
 rayon = { workspace = true }
+hex = { workspace = true }
 
 
 [[bench]]

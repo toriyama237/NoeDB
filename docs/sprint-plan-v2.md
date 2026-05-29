@@ -278,8 +278,33 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 - **Chaos** : `remove_node(leader)` + réélection < 2s (`phase6_chaos.rs`)
 - **SLA smoke** : réplication après failover (`propose_on_leader` post-crash)
 
-## Phases suivantes
+## Phase 7 — Ecosystem & launch (S49–S52) ✅
 
-| Phase | Semaines | Thème |
-|-------|----------|-------|
-| 7 | 49–52 | Ecosystem & **v2.0.0** |
+| Semaine | Statut | Livrable |
+|---------|--------|----------|
+| 49 | ✅ | Clients Python / Go / Node.js (gRPC) + contrat auth |
+| 50 | ✅ | `noedb-pool` : pool gRPC, health `Ping`, load balancer read/write |
+| 51 | ✅ | mdBook (`book/`) : architecture, storage, Raft, query, tutorial |
+| 52 | ✅ | **v2.0.0** — changelog, README, tag release |
+
+### Semaine 49 — ✅
+
+- **`clients/python`** : `noedb` PyPI-ready package, stubs `noedb/v1/`
+- **`clients/go`** : `github.com/toriyama237/noedb-go`
+- **`clients/nodejs`** : `@noe/noedb-client`
+- **`scripts/cross_driver_contract.sh`** + `phase7_contract.rs`
+
+### Semaine 50 — ✅
+
+- **`noedb-pool`** : `GrpcPool`, `PoolConfig::high_concurrency()` (1024 max), `LoadBalancer`
+
+### Semaine 51 — ✅
+
+- **mdBook** : `book.toml`, chapitres intro → observabilité
+- Build : `mdbook build` (CI optionnel)
+
+### Semaine 52 — ✅
+
+- Version workspace **2.0.0**
+- Tag **`v2.0.0`**
+- CHANGELOG depuis v1.0.0

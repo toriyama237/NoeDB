@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "noedb"
+version = "2.0.0"
+description = "Python gRPC client for NoeDB"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT OR Apache-2.0" }
+dependencies = [
+  "grpcio>=1.60",
+  "protobuf>=4.25",
+]
+
+[project.optional-dependencies]
+async = ["grpcio>=1.60"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["noedb*"]

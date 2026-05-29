@@ -1,0 +1,15 @@
+{
+  "name": "@noe/noedb-client",
+  "version": "2.0.0",
+  "description": "Node.js gRPC client for NoeDB",
+  "type": "module",
+  "main": "src/index.js",
+  "license": "MIT OR Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.12.0",
+    "@grpc/proto-loader": "^0.7.13"
+  }
+}
