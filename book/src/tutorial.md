@@ -40,4 +40,4 @@ curl -s http://127.0.0.1:9090/metrics   # if --metrics-listen set
 ```
 
 Use a language client from `clients/python`, `clients/go`, or `clients/nodejs`
-with dev certs from `/tmp/noedb-bank`.
+with dev PKI under `/tmp/noedb-bank/tls/` (created when the server starts).

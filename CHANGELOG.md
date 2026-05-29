@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Clients**: load dev TLS from `<data-dir>/tls/` (`ca.pem`, `client.pem`, `client-key.pem`)
+  to match `noedb-cli` layout.
+
+### Added
+- **CI**: mdBook build + GitHub Pages deploy (`.github/workflows/docs.yml`).
+- **Docs**: [`docs/post-v2-roadmap.md`](docs/post-v2-roadmap.md) for post-sprint follow-ups.
+
 ## [2.0.0] - 2026-05-20
 
 ### Added

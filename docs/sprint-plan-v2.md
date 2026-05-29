@@ -308,3 +308,9 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 - Version workspace **2.0.0**
 - Tag **`v2.0.0`**
 - CHANGELOG depuis v1.0.0
+
+---
+
+## Après v2.0.0
+
+Le sprint 52 semaines est **terminé**. Pistes optionnelles : [`post-v2-roadmap.md`](post-v2-roadmap.md).

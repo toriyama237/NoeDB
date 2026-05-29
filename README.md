@@ -58,7 +58,7 @@ crates/
 - **No `sqlx`, no `sled`, no `tokio-postgres`** — just the standard library and a
   few deliberate dependencies introduced when the design forces them.
 - **Every commit is a step in a sprint.** The full plan is in
-  [`docs/sprint-plan.md`](docs/sprint-plan.md).
+  [`docs/sprint-plan-v2.md`](docs/sprint-plan-v2.md).
 - **CI is non-negotiable.** A red pipeline blocks merge. Always.
 
 ---
@@ -98,21 +98,27 @@ hide behind a framework.
   optimizer merged required columns from the whole plan tree.
 - **Raft Consensus (Phase 4)** — shipped Week 44. Pure core FSM, 3-node
   in-process simulator, `FileStorage` + CRC, auth-framed bincode RPC, Tokio TCP
-  transport. Hardest surprise: AppendEntries ping-pong when every response
-  triggered a full broadcast — fixed by only replicating when `next_index` lags.
-  Membership / `madsim` / production failover still open (W38–43).
-- **Integration & launch (Phase 5)** — shipped Week 52 as **v1.0.0**. Full SQL
-  pipeline (`noedb-engine`), framed wire protocol, `noedb` REPL + TCP server.
-  Security: bounded SQL/commands, cluster auth on the wire. YCSB / mdbook still
-  on the roadmap post-1.0.
+  + mTLS transport, joint-config membership. Hardest surprise: AppendEntries
+  ping-pong when every response triggered a full broadcast — fixed by only
+  replicating when `next_index` lags.
+- **Query engine v2 (Phase 5)** — windows, CTEs, subqueries, set ops, casts,
+  `ANALYZE TABLE`, TPC-H lite bench (`v1.4.0-query`). Hardest surprise:
+  correlated `IN (SELECT …)` vs column pruning in `EXPLAIN`.
+- **Observability (Phase 6)** — `noedb-metrics`, Prometheus `/metrics`, fuzz
+  (`protocol_wire`, `mvcc_codec`), Raft chaos + proptest smoke tests.
+- **Ecosystem (Phase 7)** — Python / Go / Node gRPC clients, `noedb-pool`,
+  mdBook docs, **v2.0.0** release. See [`docs/post-v2-roadmap.md`](docs/post-v2-roadmap.md)
+  for optional follow-ups (`madsim`, crates.io, OTEL exporter).
 
 ---
 
 ## Status
 
-> **v2.0.0** — distributed SQL engine: MVCC, Raft, query engine v2, metrics, multi-language gRPC clients.
-> Run `cargo run -p noedb-cli` for the REPL, or `cargo run -p noedb-cli -- --server --metrics-listen 127.0.0.1:9090`.
-> Docs: `mdbook build` (see `book/`). Clients: `clients/README.md`.
+> **v2.0.0** — 52-week sprint complete: MVCC, Raft, query engine v2, metrics,
+> multi-language gRPC clients. REPL: `cargo run -p noedb-cli`. Server:
+> `cargo run -p noedb-cli -- --server --metrics-listen 127.0.0.1:9090`.
+> **Docs:** [GitHub Pages](https://toriyama237.github.io/NoeDB/) (mdBook) · local: `mdbook build`.
+> **Clients:** [`clients/README.md`](clients/README.md).
 
 Phase 1 parses `SELECT` (with `JOIN` / `WHERE`), DML (`INSERT`, `UPDATE`,
 `DELETE`), and core DDL (`CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`):
@@ -184,7 +190,8 @@ let rows = cluster.execute("SELECT name FROM users")?;
 ```bash
 cargo run -p noedb-cli              # REPL (local LSM)
 cargo run -p noedb-cli -- --cluster # REPL over 3-node Raft sim
-cargo run -p noedb-cli -- --server --listen 127.0.0.1:5433
+cargo run -p noedb-cli -- --server --data-dir /tmp/noedb-dev   # gRPC :5434 + TLS
+cargo run -p noedb-cli -- --server --legacy-tcp --listen 127.0.0.1:5433
 ```
 
 The lexer tokenizes ~95 % of SQL surface syntax. **200+ tests**, a
@@ -205,17 +212,20 @@ for lexer details.
 
 ---
 
-## Roadmap — 52 weeks
+## Roadmap — 52 weeks (v2 sprint) ✅
 
-| Phase | Weeks   | Theme                | Milestone tag          | Status        |
-|-------|---------|----------------------|------------------------|---------------|
-| 1     | 01 – 08 | Lexer & Parser       | `v0.1.0-lexer-parser`  | ✅ shipped     |
-| 2     | 09 – 16 | Storage Engine (LSM) | `v0.2.0-storage`       | ✅ shipped     |
-| 3     | 17 – 28 | Query Planner        | `v0.3.0-query-engine`  | ✅ shipped     |
-| 4     | 29 – 44 | Raft Consensus       | `v0.4.0-raft`          | ✅ shipped     |
-| 5     | 45 – 52 | Integration & launch | `v1.0.0`               | ✅ shipped     |
+| Phase | Weeks   | Theme                     | Milestone tag       | Status    |
+|-------|---------|---------------------------|---------------------|-----------|
+| 1     | 01 – 08 | Security & protocol       | TLS, gRPC, RLS      | ✅        |
+| 2     | 09 – 16 | MVCC & transactions       | MVCC                | ✅        |
+| 3     | 17 – 24 | Performance               | SIMD, LZ4, parallel | ✅        |
+| 4     | 25 – 36 | Distributed Raft          | `v0.4.0-raft`       | ✅        |
+| 5     | 37 – 44 | Query engine v2             | `v1.4.0-query`      | ✅        |
+| 6     | 45 – 48 | Observability & reliability | metrics, fuzz     | ✅        |
+| 7     | 49 – 52 | Ecosystem & launch          | **`v2.0.0`**        | ✅        |
 
-**Start:** 2026-05-20 · **Launch day:** 2027-05-14.
+Full plan: [`docs/sprint-plan-v2.md`](docs/sprint-plan-v2.md) · After v2:
+[`docs/post-v2-roadmap.md`](docs/post-v2-roadmap.md).
 
 ---
 
@@ -229,9 +239,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 git clone https://github.com/toriyama237/NoeDB.git
 cd NoeDB
 cargo test --all-features
+mdbook build   # optional: install mdbook, builds site to book/build/
 ```
 
-Three commands. If it takes more, that's a bug — please open an issue.
+Three Rust commands. If `cargo test` takes more than a few minutes on first build,
+that's expected (LSM durability tests). Please open an issue for regressions.
 
 ### Local development loop
 
@@ -269,11 +281,11 @@ Analytical **TPC-H lite** workload (joins, CTEs, subqueries, windows):
 
 Reading list — each entry will be checked off when the corresponding code lands.
 
-- [ ] Ongaro & Ousterhout (2014), *In Search of an Understandable Consensus Algorithm (Raft)*
-- [ ] O'Neil et al. (1996), *The Log-Structured Merge-Tree (LSM-Tree)*
-- [ ] Graefe (1994), *Volcano — An Extensible and Parallel Query Evaluation System*
-- [ ] Bloom (1970), *Space/Time Trade-offs in Hash Coding with Allowable Errors*
-- [ ] Selinger et al. (1979), *Access Path Selection in a Relational Database Management System*
+- [x] Ongaro & Ousterhout (2014), *In Search of an Understandable Consensus Algorithm (Raft)*
+- [x] O'Neil et al. (1996), *The Log-Structured Merge-Tree (LSM-Tree)*
+- [x] Graefe (1994), *Volcano — An Extensible and Parallel Query Evaluation System*
+- [x] Bloom (1970), *Space/Time Trade-offs in Hash Coding with Allowable Errors*
+- [x] Selinger et al. (1979), *Access Path Selection in a Relational Database Management System*
 
 ---
 

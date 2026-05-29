@@ -12,6 +12,7 @@ cargo run -p noedb-cli -- --server --data-dir /tmp/noedb-dev
 pip install -e .
 python -c "
 from noedb import NoeDbClient
+# PKI is written under /tmp/noedb-dev/tls/ when the server starts
 c = NoeDbClient.from_dev_certs('127.0.0.1:5434', '/tmp/noedb-dev')
 c.ping()
 print(c.execute('SELECT 1').rows)

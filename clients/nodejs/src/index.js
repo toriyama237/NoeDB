@@ -40,9 +40,10 @@ export class NoeDbClient {
    */
   static fromDevCerts(target, dataDir, opts = {}) {
     const nodeId = opts.nodeId ?? 1;
-    const ca = fs.readFileSync(path.join(dataDir, "ca.pem"));
-    const cert = fs.readFileSync(path.join(dataDir, `node-${nodeId}.pem`));
-    const key = fs.readFileSync(path.join(dataDir, `node-${nodeId}-key.pem`));
+    const tls = path.join(dataDir, "tls");
+    const ca = fs.readFileSync(path.join(tls, "ca.pem"));
+    const cert = fs.readFileSync(path.join(tls, "client.pem"));
+    const key = fs.readFileSync(path.join(tls, "client-key.pem"));
     const creds = grpc.credentials.createSsl(ca, key, cert);
     return new NoeDbClient(target, creds, opts.passphrase ?? "noedb-dev");
   }

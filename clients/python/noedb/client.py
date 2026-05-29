@@ -54,10 +54,11 @@ class NoeDbClient:
         node_id: int = 1,
     ) -> NoeDbClient:
         """Load dev PKI from a `noedb-cli` data directory."""
-        base = Path(data_dir)
-        ca = (base / "ca.pem").read_bytes()
-        cert = (base / f"node-{node_id}.pem").read_bytes()
-        key = (base / f"node-{node_id}-key.pem").read_bytes()
+        tls = Path(data_dir) / "tls"
+        ca = (tls / "ca.pem").read_bytes()
+        cert = (tls / "client.pem").read_bytes()
+        key = (tls / "client-key.pem").read_bytes()
+        _ = node_id  # reserved for per-node client certs in multi-node PKI
         return cls(target, passphrase=passphrase, ca_pem=ca, cert_pem=cert, key_pem=key)
 
     def _metadata(self) -> Sequence[tuple[str, str]]:

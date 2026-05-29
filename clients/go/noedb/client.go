@@ -60,18 +60,20 @@ func ConnectTLS(target string, caPEM, certPEM, keyPEM []byte, passphrase string)
 
 // ConnectDevCerts loads PKI from a noedb-cli data directory.
 func ConnectDevCerts(target, dataDir string, nodeID uint64, passphrase string) (*Client, error) {
-	ca, err := os.ReadFile(filepath.Join(dataDir, "ca.pem"))
+	tlsDir := filepath.Join(dataDir, "tls")
+	ca, err := os.ReadFile(filepath.Join(tlsDir, "ca.pem"))
 	if err != nil {
 		return nil, err
 	}
-	cert, err := os.ReadFile(filepath.Join(dataDir, fmt.Sprintf("node-%d.pem", nodeID)))
+	cert, err := os.ReadFile(filepath.Join(tlsDir, "client.pem"))
 	if err != nil {
 		return nil, err
 	}
-	key, err := os.ReadFile(filepath.Join(dataDir, fmt.Sprintf("node-%d-key.pem", nodeID)))
+	key, err := os.ReadFile(filepath.Join(tlsDir, "client-key.pem"))
 	if err != nil {
 		return nil, err
 	}
+	_ = nodeID
 	return ConnectTLS(target, ca, cert, key, passphrase)
 }
 

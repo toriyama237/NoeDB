@@ -5,8 +5,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DATA_DIR="${NOEDB_DATA_DIR:-/tmp/noedb-cross-driver}"
 TARGET="${NOEDB_TARGET:-127.0.0.1:5434}"
 
-if ! curl -sf "https://${TARGET}" >/dev/null 2>&1; then
-  echo "Start server: cargo run -p noedb-cli -- --server --data-dir ${DATA_DIR}"
+if [[ ! -f "${DATA_DIR}/tls/ca.pem" ]]; then
+  echo "Missing ${DATA_DIR}/tls/*.pem — start the server first:"
+  echo "  cargo run -p noedb-cli -- --server --data-dir ${DATA_DIR}"
   exit 1
 fi
 

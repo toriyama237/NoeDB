@@ -9,7 +9,9 @@
 | Node.js | `clients/nodejs` | `@noe/noedb-client` |
 
 All clients send cluster auth on metadata key `x-noedb-auth` (hex of 32-byte token
-derived from passphrase, default `noedb-dev`).
+derived from passphrase, default `noedb-dev`). Dev TLS files live under
+`<data-dir>/tls/` (`ca.pem`, `client.pem`, `client-key.pem`) after
+`noedb-cli --server` starts.
 
 ## Rust connection pool
 
