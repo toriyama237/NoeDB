@@ -18,7 +18,9 @@ noedb-storage = { workspace = true }
 noedb-raft = { workspace = true }
 noedb-ast = { workspace = true }
 noedb-txn = { workspace = true }
+noedb-metrics = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+tracing = { workspace = true }
 serde_json = { workspace = true }
 bincode = { workspace = true }
 thiserror = { workspace = true }

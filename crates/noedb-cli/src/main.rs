@@ -13,7 +13,8 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use noedb_engine::{DistributedEngine, EngineError, LocalEngine, QueryResult};
+use noedb_engine::{spawn_prometheus_listener, DistributedEngine, EngineError, LocalEngine, QueryResult};
+use noedb_metrics::Metrics;
 use noedb_protocol::{decode_request, encode_response, Request, Response};
 use noedb_raft::ClusterAuth;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -38,6 +39,21 @@ impl Backend {
             Self::Distributed(e) => e.explain(sql),
         }
     }
+}
+
+fn metrics_listen(args: &[String]) -> Option<std::net::SocketAddr> {
+    args.windows(2)
+        .find(|w| w[0] == "--metrics-listen")
+        .and_then(|w| w[1].parse().ok())
+}
+
+fn maybe_spawn_metrics(args: &[String], metrics: Arc<Metrics>) -> Result<(), String> {
+    let Some(addr) = metrics_listen(args) else {
+        return Ok(());
+    };
+    spawn_prometheus_listener(addr, metrics).map_err(|e| e.to_string())?;
+    println!("Prometheus metrics: http://{addr}/metrics");
+    Ok(())
 }
 
 fn main() {
@@ -67,10 +83,13 @@ fn run_repl(args: &[String]) -> Result<(), String> {
     let backend = if distributed {
         let eng = DistributedEngine::new_voters(3).map_err(|e| e.to_string())?;
         eng.tick(80).map_err(|e| e.to_string())?;
+        maybe_spawn_metrics(args, eng.metrics())?;
         Backend::Distributed(eng)
     } else {
         let dir = data_dir(args);
-        Backend::Local(LocalEngine::open(&dir).map_err(|e| e.to_string())?)
+        let eng = LocalEngine::open(&dir).map_err(|e| e.to_string())?;
+        maybe_spawn_metrics(args, eng.metrics())?;
+        Backend::Local(eng)
     };
     println!("NoeDB v1.0 — interactive SQL shell (not your shell — type SQL here).");
     println!("  One statement per line, or several separated by ';'");
@@ -162,6 +181,7 @@ fn run_server(args: &[String]) -> Result<(), String> {
         let auth = ClusterAuth::from_passphrase("noedb-dev");
         let dir = data_dir(args);
         let engine = LocalEngine::open(&dir).map_err(|e| e.to_string())?;
+        maybe_spawn_metrics(args, engine.metrics())?;
 
         if !legacy_tcp(args) && use_tls(args) {
             let node_id = node_id_arg(args);

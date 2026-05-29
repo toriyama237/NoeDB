@@ -11,6 +11,9 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 noedb-lexer = { path = "../crates/noedb-lexer" }
 noedb-parser = { path = "../crates/noedb-parser" }
+noedb-protocol = { path = "../crates/noedb-protocol" }
+noedb-raft = { path = "../crates/noedb-raft" }
+noedb-storage = { path = "../crates/noedb-storage" }
 
 [[bin]]
 name = "lexer"
@@ -22,6 +25,20 @@ bench = false
 [[bin]]
 name = "sql_parser"
 path = "fuzz_targets/sql_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "protocol_wire"
+path = "fuzz_targets/protocol_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mvcc_codec"
+path = "fuzz_targets/mvcc_codec.rs"
 test = false
 doc = false
 bench = false

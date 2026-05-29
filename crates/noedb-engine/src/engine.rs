@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use dashmap::DashMap;
 use noedb_ast::Statement;
@@ -11,8 +12,10 @@ use noedb_planner::{
 };
 use noedb_raft::{Cluster, NodeId, RaftError, Role};
 use noedb_storage::{LsmConfig, LsmTree};
+use noedb_metrics::Metrics;
 use noedb_txn::TxnManager;
 use parking_lot::{Mutex, RwLock};
+use tracing::info_span;
 
 use crate::audit::AuditLog;
 use crate::command::Command;
@@ -111,6 +114,7 @@ pub struct LocalEngine {
     txn: Arc<TxnManager>,
     cache: Mutex<QueryCache>,
     schema: Mutex<SchemaCatalog>,
+    metrics: Arc<Metrics>,
 }
 
 impl LocalEngine {
@@ -150,7 +154,14 @@ impl LocalEngine {
             txn: Arc::new(TxnManager::new()),
             cache: Mutex::new(QueryCache::default()),
             schema: Mutex::new(SchemaCatalog::default()),
+            metrics: Metrics::new_shared(),
         }))
+    }
+
+    /// Prometheus-style metrics for this engine.
+    #[must_use]
+    pub fn metrics(&self) -> Arc<Metrics> {
+        Arc::clone(&self.metrics)
     }
 
     /// Schema catalog (DDL versions).
@@ -244,9 +255,16 @@ impl LocalEngine {
     ///
     /// Validation, parse, or execution errors.
     pub fn execute_session(&self, session_id: u64, sql: &str) -> Result<QueryResult, EngineError> {
-        validate_sql(sql)?;
-        let stmt = noedb_parser::parse(sql)?;
-        self.dispatch(session_id, stmt, sql)
+        let _span = info_span!("noedb.sql.execute", session_id, len = sql.len()).entered();
+        let start = Instant::now();
+        let result = (|| {
+            validate_sql(sql)?;
+            let stmt = noedb_parser::parse(sql)?;
+            self.dispatch(session_id, stmt, sql)
+        })();
+        self.metrics
+            .record_query(start.elapsed(), result.is_ok());
+        result
     }
 
     fn dispatch(
@@ -350,8 +368,10 @@ impl LocalEngine {
             let role = self.session_role_for(session_id);
             let cached = self.cache.lock().get(&role, sql);
             if let Some(hit) = cached {
+                self.metrics.record_cache(true);
                 hit
             } else {
+                self.metrics.record_cache(false);
                 let tree = self.storage.read();
                 let records = execute_sql(&stmt, &tree).map_err(EngineError::Exec)?;
                 let qr = QueryResult::from_records(&records);
@@ -416,6 +436,7 @@ pub struct DistributedEngine {
     cached_leader: Mutex<Option<NodeId>>,
     region: RegionId,
     shards: ShardRouter,
+    metrics: Arc<Metrics>,
 }
 
 impl DistributedEngine {
@@ -450,7 +471,14 @@ impl DistributedEngine {
             cached_leader: Mutex::new(None),
             region: RegionId::LOCAL,
             shards: ShardRouter::new(shard_n),
+            metrics: Metrics::new_shared(),
         }))
+    }
+
+    /// Prometheus-style metrics for this cluster.
+    #[must_use]
+    pub fn metrics(&self) -> Arc<Metrics> {
+        Arc::clone(&self.metrics)
     }
 
     /// Deployment region id.
@@ -555,23 +583,30 @@ impl DistributedEngine {
     ///
     /// Validation, parse, Raft, or execution errors.
     pub fn execute(&self, sql: &str) -> Result<QueryResult, EngineError> {
-        validate_sql(sql)?;
-        let stmt = noedb_parser::parse(sql)?;
-        match &stmt {
-            Statement::Select(_) => self.execute_select_linearizable(&stmt),
-            Statement::CreateIndex(idx) => {
-                if idx.columns.len() != 1 {
-                    return Err(EngineError::Exec(ExecError::UnsupportedExpr));
+        let _span = info_span!("noedb.sql.execute", len = sql.len(), distributed = true).entered();
+        let start = Instant::now();
+        let result = (|| {
+            validate_sql(sql)?;
+            let stmt = noedb_parser::parse(sql)?;
+            match &stmt {
+                Statement::Select(_) => self.execute_select_linearizable(&stmt),
+                Statement::CreateIndex(idx) => {
+                    if idx.columns.len() != 1 {
+                        return Err(EngineError::Exec(ExecError::UnsupportedExpr));
+                    }
+                    let cmd = Command::CreateIndex {
+                        table: idx.table.value.clone(),
+                        column: idx.columns[0].value.clone(),
+                    };
+                    self.replicate(&cmd)?;
+                    Ok(empty_ok())
                 }
-                let cmd = Command::CreateIndex {
-                    table: idx.table.value.clone(),
-                    column: idx.columns[0].value.clone(),
-                };
-                self.replicate(&cmd)?;
-                Ok(empty_ok())
+                _ => Err(EngineError::UnsupportedStatement),
             }
-            _ => Err(EngineError::UnsupportedStatement),
-        }
+        })();
+        self.metrics
+            .record_query(start.elapsed(), result.is_ok());
+        result
     }
 
     /// `EXPLAIN` on the leader store.
@@ -618,8 +653,12 @@ impl DistributedEngine {
             return Ok(id);
         }
         cluster.run_rounds(8)?;
-        let id = cluster.leader().ok_or(EngineError::NoLeader)?;
+        let id = cluster.leader().ok_or_else(|| {
+            self.metrics.record_no_leader();
+            EngineError::NoLeader
+        })?;
         *self.cached_leader.lock() = Some(id);
+        self.metrics.set_raft_leader(id.0);
         Ok(id)
     }
 

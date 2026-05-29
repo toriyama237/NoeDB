@@ -35,6 +35,7 @@ pub use command::{Command, MAX_COMMAND_BYTES};
 pub use engine::{
     validate_sql, DistributedEngine, LocalEngine, QueryResult, DEFAULT_SESSION, MAX_SQL_BYTES,
 };
+pub use noedb_metrics::{spawn_prometheus_listener, Metrics};
 pub use error::EngineError;
 pub use machine::{apply_command, row_key};
 pub use noedb_txn::TxnManager;

@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Phase 6 observability & reliability**: `noedb-metrics` crate with Prometheus text
+  exposition, `--metrics-listen` on CLI, `tracing` spans on SQL execution, `proptest`
+  Raft simulator tests, fuzz targets `protocol_wire` and `mvcc_codec`, chaos/RTO smoke
+  tests for leader failover.
+
 ## [1.4.0-query] - 2026-05-20
 
 ### Added

@@ -246,9 +246,40 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 - **Tests** : `phase5_tpch_lite.rs` (corpus analytique miniature)
 - **Tag** : `v1.4.0-query` (fin Phase 5 query engine v2)
 
+## Phase 6 — Observabilité & fiabilité (S45–S48) ✅
+
+| Semaine | Statut | Livrable |
+|---------|--------|----------|
+| 45 | ✅ | Crate `noedb-metrics`, `/metrics` HTTP, `tracing` spans SQL |
+| 46 | ✅ | `proptest` sur simulateur Raft in-process |
+| 47 | ✅ | Fuzz `protocol_wire` + `mvcc_codec` (LibFuzzer) |
+| 48 | ✅ | Chaos smoke : crash leader → réélection + RTO test |
+
+### Semaine 45 — ✅
+
+- **`noedb-metrics`** : compteurs, jauges, histogrammes latence, exposition Prometheus
+- **Engine** : métriques sur `execute`, cache hit/miss, leader Raft
+- **CLI** : `--metrics-listen 127.0.0.1:9090` (REPL + `--server`)
+- **`tracing`** : span `noedb.sql.execute` par requête
+- **Tests** : `phase6_metrics.rs` (render + HTTP scrape)
+
+### Semaine 46 — ✅
+
+- **`proptest`** : `noedb-raft/tests/raft_proptest.rs` — séquences aléatoires de `propose_on_leader`
+- Simulateur déterministe existant (`sim::Cluster`) — pas de `madsim` (prévu Phase 4 W43)
+
+### Semaine 47 — ✅
+
+- **Fuzz** : `cargo fuzz run protocol_wire`, `cargo fuzz run mvcc_codec`
+- Cibles existantes : `lexer`, `sql_parser`
+
+### Semaine 48 — ✅
+
+- **Chaos** : `remove_node(leader)` + réélection < 2s (`phase6_chaos.rs`)
+- **SLA smoke** : réplication après failover (`propose_on_leader` post-crash)
+
 ## Phases suivantes
 
 | Phase | Semaines | Thème |
 |-------|----------|-------|
-| 6 | 45–48 | Observabilité & fiabilité |
 | 7 | 49–52 | Ecosystem & **v2.0.0** |

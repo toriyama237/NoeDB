@@ -44,6 +44,7 @@ noedb-protocol = { path = "crates/noedb-protocol", version = "=1.0.1" }
 noedb-tls     = { path = "crates/noedb-tls",      version = "=1.0.1" }
 noedb-grpc    = { path = "crates/noedb-grpc",     version = "=1.0.1" }
 noedb-txn     = { path = "crates/noedb-txn",      version = "=1.0.1" }
+noedb-metrics = { path = "crates/noedb-metrics",  version = "=1.0.1" }
 
 tonic = { version = "0.13", default-features = false, features = ["transport", "codegen", "tls-ring", "prost", "router", "server"] }
 prost = "0.13"
