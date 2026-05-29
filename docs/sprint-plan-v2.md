@@ -183,7 +183,7 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 | 39 | ✅ | Sous-requêtes `IN (SELECT …)` : décorrélation + `SemiJoin` |
 | 40 | ✅ | CTE (`WITH`) + `WITH RECURSIVE` + `CteScan` |
 | 41 | ✅ | `UNION` / `INTERSECT` / `EXCEPT` |
-| 42 | ⬜ | Types étendus + casts |
+| 42 | ✅ | Types étendus + casts |
 | 43 | ⬜ | Statistiques colonnes + costing v2 |
 | 44 | ⬜ | Bench TPC-H lite + tag `v1.4.0-query` |
 
@@ -224,6 +224,13 @@ Commit : `feat(mvcc): Phase 2 MVCC & transactions` (`0852634`).
 - **Parser** : `UNION` / `UNION ALL` / `INTERSECT` / `EXCEPT` (chaînage gauche)
 - **Planner** : `LogicalPlan::SetOp` / `PhysicalPlan::SetOp`, module `setops`
 - **Tests** : `phase5_setops.rs` (union, intersect, except, explain)
+
+### Semaine 42 — ✅
+
+- **AST** : `SqlType::Text` / `Date` / `Timestamp`, `Expr::Cast`
+- **Parser** : `CAST(expr AS type)`, types DDL `TEXT` / `DATE` / `TIMESTAMP`
+- **Planner** : module `cast.rs`, coercition `INT`↔`FLOAT` en comparaison
+- **Tests** : `phase5_cast.rs`
 
 ## Phases suivantes
 

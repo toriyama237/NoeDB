@@ -3,7 +3,7 @@
 use noedb_lexer::Span;
 
 use crate::name::{ColumnRef, Ident};
-use crate::stmt::SelectStmt;
+use crate::stmt::{SelectStmt, SqlType};
 use crate::window::WindowSpec;
 
 /// A literal value.
@@ -145,6 +145,15 @@ pub enum Expr {
         /// Source span.
         span: Span,
     },
+    /// `CAST(expr AS type)` (Phase 5 Week 42).
+    Cast {
+        /// Operand.
+        expr: Box<Expr>,
+        /// Target SQL type.
+        data_type: SqlType,
+        /// Span covering the whole cast.
+        span: Span,
+    },
     /// SQL function call (`name(args…) [OVER (…)]`).
     Function {
         /// Function name (`ROW_NUMBER`, `COUNT`, …).
@@ -183,6 +192,7 @@ impl Expr {
             | Self::Paren(_, span)
             | Self::Parameter { span, .. }
             | Self::CurrentUser { span }
+            | Self::Cast { span, .. }
             | Self::Function { span, .. } => *span,
         }
     }

@@ -1,5 +1,7 @@
 //! Expression evaluator for filters and projections (Week 19).
 
+#![allow(clippy::cast_precision_loss)]
+
 use noedb_ast::{BinaryOp, ColumnRef, Expr, Literal, UnaryOp};
 
 use crate::value::Value;
@@ -35,6 +37,12 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
                 }
             }
             Ok(Value::Bool(if *negated { !found } else { found }))
+        }
+        Expr::Cast {
+            expr, data_type, ..
+        } => {
+            let v = eval_expr(expr, row)?;
+            crate::cast::cast_value(&v, data_type)
         }
         Expr::Between { .. }
         | Expr::InSubquery { .. }
@@ -158,13 +166,28 @@ fn cmp_values(l: &Value, r: &Value, op: BinaryOp) -> Result<bool, ExecError> {
     if matches!(l, Value::Null) || matches!(r, Value::Null) {
         return Ok(false);
     }
+    if let (Some(a), Some(b)) = (coerce_numeric(l), coerce_numeric(r)) {
+        return Ok(apply_cmp_f(a, b, op));
+    }
     match (l, r) {
-        (Value::Integer(a), Value::Integer(b)) => Ok(apply_cmp(*a, *b, op)),
-        (Value::Float(a), Value::Float(b)) => Ok(apply_cmp_f(*a, *b, op)),
-        (Value::Bytes(a), Value::Bytes(b)) => Ok(apply_cmp_bytes(a, b, op)),
+        (Value::Bytes(a), Value::Bytes(b)) | (Value::Date(a), Value::Date(b)) => {
+            Ok(apply_cmp_bytes(a, b, op))
+        }
+        (Value::Timestamp(a), Value::Timestamp(b)) => Ok(apply_cmp(*a, *b, op)),
         _ => Err(ExecError::TypeMismatch {
             message: "incompatible types in comparison".into(),
         }),
+    }
+}
+
+fn coerce_numeric(v: &Value) -> Option<f64> {
+    match v {
+        Value::Integer(n) => Some(*n as f64),
+        Value::Float(f) => Some(*f),
+        Value::Bool(b) => Some(f64::from(*b)),
+        Value::Bytes(b) => std::str::from_utf8(b).ok()?.trim().parse().ok(),
+        Value::Timestamp(ts) => Some(*ts as f64),
+        _ => None,
     }
 }
 

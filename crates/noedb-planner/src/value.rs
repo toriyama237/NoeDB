@@ -1,5 +1,7 @@
 //! Runtime values produced by the executor.
 
+#![allow(clippy::cast_precision_loss, clippy::match_same_arms)]
+
 /// A single cell in a result row.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -13,6 +15,14 @@ pub enum Value {
     Bytes(Vec<u8>),
     /// Boolean.
     Bool(bool),
+    /// `DATE` (`YYYY-MM-DD` as UTF-8 bytes).
+    Date(Vec<u8>),
+    /// `TIMESTAMP` (Unix seconds, UTC).
+    Timestamp(i64),
+}
+
+fn parse_bytes_as_f64(b: &[u8]) -> Option<f64> {
+    std::str::from_utf8(b).ok()?.trim().parse().ok()
 }
 
 impl Value {
@@ -25,6 +35,8 @@ impl Value {
             Self::Float(f) => f.to_be_bytes().to_vec(),
             Self::Bool(b) => vec![u8::from(*b)],
             Self::Bytes(b) => b.clone(),
+            Self::Date(b) => b.clone(),
+            Self::Timestamp(ts) => ts.to_be_bytes().to_vec(),
         }
     }
 
@@ -38,6 +50,14 @@ impl Value {
             (Self::Float(a), Self::Float(b)) => Some(a == b),
             (Self::Bool(a), Self::Bool(b)) => Some(a == b),
             (Self::Bytes(a), Self::Bytes(b)) => Some(a == b),
+            (Self::Date(a), Self::Date(b)) => Some(a == b),
+            (Self::Timestamp(a), Self::Timestamp(b)) => Some(a == b),
+            (Self::Integer(a), Self::Float(b)) => Some(*a as f64 == *b),
+            (Self::Float(a), Self::Integer(b)) => Some(*a == *b as f64),
+            (Self::Bytes(a), Self::Integer(b)) => parse_bytes_as_f64(a).map(|x| x == *b as f64),
+            (Self::Integer(a), Self::Bytes(b)) => parse_bytes_as_f64(b).map(|x| *a as f64 == x),
+            (Self::Bytes(a), Self::Float(b)) => parse_bytes_as_f64(a).map(|x| x == *b),
+            (Self::Float(a), Self::Bytes(b)) => parse_bytes_as_f64(b).map(|x| *a == x),
             _ => Some(false),
         }
     }

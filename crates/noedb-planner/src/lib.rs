@@ -8,6 +8,7 @@
 
 mod adaptive;
 mod build;
+mod cast;
 mod cost;
 mod cte;
 mod eval;

@@ -153,6 +153,15 @@ fn substitute_expr(expr: &Expr, params: &[Literal]) -> Expr {
             span: *span,
         },
         Expr::Paren(inner, span) => Expr::Paren(Box::new(substitute_expr(inner, params)), *span),
+        Expr::Cast {
+            expr,
+            data_type,
+            span,
+        } => Expr::Cast {
+            expr: Box::new(substitute_expr(expr, params)),
+            data_type: data_type.clone(),
+            span: *span,
+        },
         other => other.clone(),
     }
 }
@@ -309,7 +318,7 @@ fn walk_expr(expr: &Expr, f: &mut dyn FnMut(&Expr)) {
                 }
             }
         }
-        Expr::Paren(inner, _) => walk_expr(inner, f),
+        Expr::Paren(inner, _) | Expr::Cast { expr: inner, .. } => walk_expr(inner, f),
         _ => {}
     }
 }

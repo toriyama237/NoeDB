@@ -78,7 +78,8 @@ fn value_to_string(v: &Value) -> String {
         Value::Integer(n) => n.to_string(),
         Value::Float(f) => f.to_string(),
         Value::Bool(b) => b.to_string(),
-        Value::Bytes(b) => String::from_utf8_lossy(b).into_owned(),
+        Value::Bytes(b) | Value::Date(b) => String::from_utf8_lossy(b).into_owned(),
+        Value::Timestamp(ts) => ts.to_string(),
     }
 }
 

@@ -123,7 +123,13 @@ pub enum SqlType {
         /// Optional length constraint.
         max_len: Option<u32>,
     },
-    /// Any other type name preserved as text (`TEXT`, `TIMESTAMP`, …).
+    /// `TEXT`.
+    Text,
+    /// `DATE` (`YYYY-MM-DD` bytes).
+    Date,
+    /// `TIMESTAMP` (Unix seconds).
+    Timestamp,
+    /// Any other type name preserved as text (`DECIMAL`, …).
     Named(String),
 }
 

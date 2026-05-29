@@ -24,6 +24,7 @@ mod prepare;
 mod select;
 mod session;
 mod txn;
+mod types;
 
 pub use crate::error::ParseError;
 pub use crate::parser::Parser;
@@ -117,6 +118,26 @@ mod tests {
             parse("DELETE FROM t WHERE id = 3"),
             Ok(Statement::Delete(_))
         ));
+    }
+
+    #[test]
+    fn parse_cast_expression() {
+        let stmt = parse("SELECT CAST('1' AS INT) FROM t").unwrap();
+        let Statement::Select(s) = stmt else {
+            panic!("expected select");
+        };
+        assert!(matches!(s.items[0].expr, Expr::Cast { .. }));
+    }
+
+    #[test]
+    fn parse_create_table_extended_types() {
+        let ddl = parse("CREATE TABLE ev (d DATE, ts TIMESTAMP, body TEXT)").unwrap();
+        let Statement::CreateTable(t) = ddl else {
+            panic!("expected create table");
+        };
+        assert_eq!(t.columns[0].data_type, SqlType::Date);
+        assert_eq!(t.columns[1].data_type, SqlType::Timestamp);
+        assert_eq!(t.columns[2].data_type, SqlType::Text);
     }
 
     #[test]

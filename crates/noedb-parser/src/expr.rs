@@ -9,6 +9,7 @@ use noedb_lexer::{Keyword, Operator, Punctuation, Token};
 use crate::error::ParseError;
 use crate::parser::Parser;
 use crate::select::parse_select_subquery;
+use crate::types::parse_sql_type;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
@@ -206,6 +207,20 @@ fn parse_expr_prec(p: &mut Parser<'_>, min: Prec) -> Result<Expr, ParseError> {
 }
 
 fn parse_prefix(p: &mut Parser<'_>) -> Result<Expr, ParseError> {
+    if p.match_keyword(Keyword::Cast) {
+        let start = p.tokens[p.pos.saturating_sub(1)].span;
+        p.expect_punct(Punctuation::LParen)?;
+        let inner = parse_expr(p)?;
+        p.expect_keyword(Keyword::As)?;
+        let data_type = parse_sql_type(p)?;
+        let end = p.expect_punct(Punctuation::RParen)?;
+        return Ok(Expr::Cast {
+            expr: Box::new(inner),
+            data_type,
+            span: Parser::merge_span(start, end),
+        });
+    }
+
     if p.match_keyword(Keyword::Not) {
         let start = p.peek().span;
         let inner = parse_expr_prec(p, Prec::And)?;

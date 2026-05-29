@@ -524,7 +524,9 @@ fn columns_in_expr(expr: &Expr) -> Vec<String> {
             column,
         }) => vec![format!("{}.{}", t.value, column.value)],
         Expr::Column(ColumnRef::Named { column, .. }) => vec![column.value.clone()],
-        Expr::Unary { expr, .. } | Expr::IsNull { expr, .. } => columns_in_expr(expr),
+        Expr::Unary { expr, .. } | Expr::IsNull { expr, .. } | Expr::Cast { expr, .. } => {
+            columns_in_expr(expr)
+        }
         Expr::Binary { left, right, .. } => {
             let mut v = columns_in_expr(left);
             v.extend(columns_in_expr(right));

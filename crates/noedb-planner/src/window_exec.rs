@@ -141,7 +141,8 @@ fn value_as_f64(v: &Value) -> Option<f64> {
         Value::Integer(n) => Some(*n as f64),
         Value::Float(f) => Some(*f),
         Value::Bool(b) => Some(f64::from(u8::from(*b))),
-        Value::Bytes(b) => std::str::from_utf8(b).ok()?.trim().parse().ok(),
+        Value::Bytes(b) | Value::Date(b) => std::str::from_utf8(b).ok()?.trim().parse().ok(),
+        Value::Timestamp(ts) => Some(*ts as f64),
     }
 }
 

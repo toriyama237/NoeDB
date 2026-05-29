@@ -79,6 +79,12 @@ fn keyword_display(kw: Keyword) -> &'static str {
         Keyword::Unbounded => "UNBOUNDED",
         Keyword::Preceding => "PRECEDING",
         Keyword::Following => "FOLLOWING",
+        Keyword::Cast => "CAST",
+        Keyword::All => "ALL",
+        Keyword::Union => "UNION",
+        Keyword::Intersect => "INTERSECT",
+        Keyword::Except => "EXCEPT",
+        Keyword::With => "WITH",
         _ => "KEYWORD",
     }
 }
@@ -219,6 +225,14 @@ impl fmt::Display for Expr {
             Self::Paren(inner, _) => write!(f, "({inner})"),
             Self::Parameter { index, .. } => write!(f, "${index}"),
             Self::CurrentUser { .. } => write_keyword(f, Keyword::CurrentUser),
+            Self::Cast {
+                expr, data_type, ..
+            } => {
+                write_keyword(f, Keyword::Cast)?;
+                write!(f, "({expr} ")?;
+                write_keyword(f, Keyword::As)?;
+                write!(f, " {data_type})")
+            }
             Self::Function {
                 name, args, over, ..
             } => {
@@ -500,6 +514,9 @@ impl fmt::Display for SqlType {
             Self::Float => write!(f, "FLOAT"),
             Self::Varchar { max_len: None } => write!(f, "VARCHAR"),
             Self::Varchar { max_len: Some(n) } => write!(f, "VARCHAR({n})"),
+            Self::Text => write!(f, "TEXT"),
+            Self::Date => write!(f, "DATE"),
+            Self::Timestamp => write!(f, "TIMESTAMP"),
             Self::Named(s) => write!(f, "{s}"),
         }
     }
