@@ -135,6 +135,10 @@ fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
         LogicalPlan::Distinct { input } => LogicalPlan::Distinct {
             input: Box::new(pushdown_predicates(*input)),
         },
+        LogicalPlan::SubqueryScan { input, alias } => LogicalPlan::SubqueryScan {
+            input: Box::new(pushdown_predicates(*input)),
+            alias,
+        },
         LogicalPlan::CteScan { .. } | LogicalPlan::Scan { .. } => plan,
     }
 }
@@ -238,6 +242,11 @@ fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
         LogicalPlan::CteScan { name, prefix } => PhysicalPlan::CteScan {
             name,
             prefix,
+            columns: None,
+        },
+        LogicalPlan::SubqueryScan { input, alias } => PhysicalPlan::SubqueryScan {
+            input: Box::new(to_physical(*input, ctx)),
+            prefix: alias,
             columns: None,
         },
         LogicalPlan::SetOp {
@@ -400,6 +409,7 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
             Some(dedup(cols))
         }
         PhysicalPlan::Dedup { input } => collect_columns(input),
+        PhysicalPlan::SubqueryScan { input, .. } => collect_columns(input),
     }
 }
 
@@ -504,6 +514,11 @@ fn apply_columns(plan: PhysicalPlan, columns: Option<Vec<String>>) -> PhysicalPl
         },
         PhysicalPlan::CteScan { name, prefix, .. } => PhysicalPlan::CteScan {
             name,
+            prefix,
+            columns,
+        },
+        PhysicalPlan::SubqueryScan { input, prefix, .. } => PhysicalPlan::SubqueryScan {
+            input: Box::new(apply_columns(*input, columns.clone())),
             prefix,
             columns,
         },

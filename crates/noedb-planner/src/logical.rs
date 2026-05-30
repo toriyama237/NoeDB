@@ -106,6 +106,13 @@ pub enum LogicalPlan {
         /// Column prefix (`alias` or CTE name).
         prefix: String,
     },
+    /// Inline derived table `FROM (SELECT …) alias`.
+    SubqueryScan {
+        /// Inner plan.
+        input: Box<Self>,
+        /// Table alias for column qualification.
+        alias: String,
+    },
     /// Compound set operation (`UNION` / `INTERSECT` / `EXCEPT`, Week 41).
     SetOp {
         /// Left input.

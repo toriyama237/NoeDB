@@ -1,9 +1,205 @@
 //! Subquery decorrelation (Phase 5 Week 39).
 
-use noedb_ast::{BinaryOp, ColumnRef, Expr, SelectStmt};
+use noedb_ast::{BinaryOp, ColumnRef, Expr, FromItem, SelectStmt};
 
 use crate::logical::LogicalPlan;
 use crate::PlanError;
+
+/// One `EXISTS (SELECT …)` predicate extracted from `WHERE`.
+#[derive(Debug, Clone)]
+pub struct ExistsSubqueryPred {
+    /// Subquery AST.
+    pub query: SelectStmt,
+    /// `NOT EXISTS` flag.
+    pub negated: bool,
+}
+
+/// Remove `EXISTS (SELECT …)` predicates from `WHERE`.
+#[must_use]
+pub fn peel_exists_subqueries(expr: Option<Expr>) -> (Option<Expr>, Vec<ExistsSubqueryPred>) {
+    let Some(expr) = expr else {
+        return (None, Vec::new());
+    };
+    let mut subs = Vec::new();
+    let rest = peel_exists_expr(expr, &mut subs);
+    (rest, subs)
+}
+
+fn peel_exists_expr(expr: Expr, subs: &mut Vec<ExistsSubqueryPred>) -> Option<Expr> {
+    match expr {
+        Expr::Exists { query, negated, .. } => {
+            subs.push(ExistsSubqueryPred {
+                query: *query,
+                negated,
+            });
+            None
+        }
+        Expr::Binary {
+            op: BinaryOp::And,
+            left,
+            right,
+            span,
+        } => {
+            let l = peel_exists_expr(*left, subs);
+            let r = peel_exists_expr(*right, subs);
+            match (l, r) {
+                (None, None) => None,
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (Some(a), Some(b)) => Some(Expr::Binary {
+                    op: BinaryOp::And,
+                    left: Box::new(a),
+                    right: Box::new(b),
+                    span,
+                }),
+            }
+        }
+        other => Some(other),
+    }
+}
+
+/// Apply decorrelated semi-joins for each extracted `EXISTS (SELECT …)`.
+pub fn apply_exists_subqueries(
+    plan: LogicalPlan,
+    preds: &[ExistsSubqueryPred],
+    outer: &SelectStmt,
+    cte_scope: &std::collections::HashSet<String>,
+) -> Result<LogicalPlan, PlanError> {
+    let mut plan = plan;
+    let outer_tables = table_names(outer);
+    for pred in preds {
+        plan = decorrelate_exists(plan, pred, &outer_tables, cte_scope)?;
+    }
+    Ok(plan)
+}
+
+fn decorrelate_exists(
+    plan: LogicalPlan,
+    pred: &ExistsSubqueryPred,
+    outer_tables: &[String],
+    cte_scope: &std::collections::HashSet<String>,
+) -> Result<LogicalPlan, PlanError> {
+    let inner_tables = table_names(&pred.query);
+    let (corr, inner_where) =
+        split_correlated_where(pred.query.where_clause.clone(), outer_tables, &inner_tables);
+
+    let mut inner_stmt = pred.query.clone();
+    inner_stmt.where_clause = inner_where;
+    let inner_plan = crate::build::build_select_scoped(&inner_stmt, cte_scope, None)?;
+
+    if corr.is_empty() {
+        let has_rows = !matches!(inner_plan, LogicalPlan::Scan { table, .. } if table.is_empty())
+            && !inner_tables.is_empty();
+        if pred.negated == has_rows {
+            return Ok(LogicalPlan::Filter {
+                input: Box::new(plan),
+                predicate: Expr::Literal(noedb_ast::Literal::Boolean(false, pred.query.span)),
+            });
+        }
+        if !pred.negated && !has_rows {
+            return Ok(LogicalPlan::Filter {
+                input: Box::new(plan),
+                predicate: Expr::Literal(noedb_ast::Literal::Boolean(false, pred.query.span)),
+            });
+        }
+        return Ok(plan);
+    }
+
+    let inner_key = subquery_column_name(&pred.query)?;
+    let (left_key, right_key) =
+        extract_exists_join_keys(&corr, &inner_key, outer_tables, &inner_tables)
+            .unwrap_or_else(|| ("__exists_outer__".into(), inner_key.clone()));
+    let corr_on = and_exprs(corr);
+
+    Ok(LogicalPlan::SemiJoin {
+        left: Box::new(plan),
+        right: Box::new(inner_plan),
+        left_key,
+        right_key,
+        corr_on,
+        negated: pred.negated,
+    })
+}
+
+fn extract_exists_join_keys(
+    corr: &[Expr],
+    inner_key: &str,
+    outer_tables: &[String],
+    inner_tables: &[String],
+) -> Option<(String, String)> {
+    for expr in corr {
+        let Expr::Binary {
+            op: BinaryOp::Eq,
+            left,
+            right,
+            ..
+        } = expr
+        else {
+            continue;
+        };
+        if let Some((outer, inner)) =
+            corr_pair(left, right, outer_tables, inner_tables, inner_key)
+        {
+            return Some((outer, inner));
+        }
+    }
+    None
+}
+
+fn corr_pair(
+    left: &Expr,
+    right: &Expr,
+    outer_tables: &[String],
+    inner_tables: &[String],
+    inner_key: &str,
+) -> Option<(String, String)> {
+    match (
+        side_column(left, outer_tables, inner_tables),
+        side_column(right, outer_tables, inner_tables),
+    ) {
+        (Some((true, outer_col)), Some((false, inner_col)))
+            if inner_col == inner_key || inner_col.ends_with(&format!(".{inner_key}")) =>
+        {
+            Some((unqualified_column(&outer_col), inner_key.to_string()))
+        }
+        (Some((false, inner_col)), Some((true, outer_col)))
+            if inner_col == inner_key || inner_col.ends_with(&format!(".{inner_key}")) =>
+        {
+            Some((unqualified_column(&outer_col), inner_key.to_string()))
+        }
+        _ => None,
+    }
+}
+
+fn side_column(
+    expr: &Expr,
+    outer_tables: &[String],
+    inner_tables: &[String],
+) -> Option<(bool, String)> {
+    let (table, col) = column_ref_parts(expr)?;
+    let table = table?;
+    if outer_tables.iter().any(|t| t.eq_ignore_ascii_case(&table)) {
+        return Some((true, col));
+    }
+    if inner_tables.iter().any(|t| t.eq_ignore_ascii_case(&table)) {
+        return Some((false, col));
+    }
+    None
+}
+
+fn column_ref_parts(expr: &Expr) -> Option<(Option<String>, String)> {
+    match expr {
+        Expr::Column(ColumnRef::Named { table, column }) => Some((
+            table.as_ref().map(|t| t.value.clone()),
+            column.value.clone(),
+        )),
+        _ => None,
+    }
+}
+
+fn unqualified_column(name: &str) -> String {
+    name.rsplit('.').next().unwrap_or(name).to_string()
+}
 
 /// One `IN (SELECT …)` predicate extracted from `WHERE`.
 #[derive(Debug, Clone)]
@@ -112,13 +308,20 @@ fn decorrelate_one(
 
 fn table_names(stmt: &SelectStmt) -> Vec<String> {
     let mut names = Vec::new();
-    if let Some(t) = &stmt.from {
-        push_table_ref(t, &mut names);
+    if let Some(from) = &stmt.from {
+        push_from_item(from, &mut names);
     }
     for j in &stmt.joins {
         push_table_ref(&j.table, &mut names);
     }
     names
+}
+
+fn push_from_item(from: &FromItem, names: &mut Vec<String>) {
+    match from {
+        FromItem::Table(t) => push_table_ref(t, names),
+        FromItem::Subquery { alias, .. } => names.push(alias.value.clone()),
+    }
 }
 
 fn push_table_ref(t: &noedb_ast::TableRef, names: &mut Vec<String>) {

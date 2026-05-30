@@ -66,6 +66,7 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
             }))
         }
         Expr::InSubquery { .. }
+        | Expr::Exists { .. }
         | Expr::Parameter { .. }
         | Expr::CurrentUser { .. } => Err(ExecError::UnsupportedExpr),
         Expr::Function { name, args, over, .. } => {
@@ -318,6 +319,11 @@ fn eval_binary(
             let r = eval_expr(right, row)?;
             eval_arithmetic(op, l, r)
         }
+        BinaryOp::Distance => {
+            let l = eval_expr(left, row)?;
+            let r = eval_expr(right, row)?;
+            Ok(Value::Float(vector_l2_distance(&l, &r)?))
+        }
         _ => Err(ExecError::UnsupportedExpr),
     }
 }
@@ -456,4 +462,79 @@ fn literal_to_value(lit: &Literal) -> Value {
         Literal::String(s, _) => Value::Bytes(s.as_bytes().to_vec()),
         Literal::Boolean(b, _) => Value::Bool(*b),
     }
+}
+
+fn vector_l2_distance(left: &Value, right: &Value) -> Result<f64, ExecError> {
+    let a = vector_as_f32s(left)?;
+    let b = vector_as_f32s(right)?;
+    if a.len() != b.len() {
+        return Err(ExecError::TypeMismatch {
+            message: format!(
+                "VECTOR dimension mismatch: {} vs {}",
+                a.len(),
+                b.len()
+            ),
+        });
+    }
+    let sum: f64 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(x, y)| {
+            let d = f64::from(*x) - f64::from(*y);
+            d * d
+        })
+        .sum();
+    Ok(sum.sqrt())
+}
+
+fn vector_as_f32s(value: &Value) -> Result<Vec<f32>, ExecError> {
+    match value {
+        Value::Vector(v) => Ok(v.clone()),
+        Value::Bytes(b) if b.starts_with(b"NDV1") => decode_ndv1(b),
+        Value::Bytes(b) => parse_vector_literal_flexible(b),
+        Value::Null => Err(ExecError::TypeMismatch {
+            message: "VECTOR distance with NULL".into(),
+        }),
+        other => Err(ExecError::TypeMismatch {
+            message: format!("expected VECTOR value, got {other:?}"),
+        }),
+    }
+}
+
+fn decode_ndv1(bytes: &[u8]) -> Result<Vec<f32>, ExecError> {
+    const MAGIC_LEN: usize = 4;
+    if bytes.len() < MAGIC_LEN || &bytes[..MAGIC_LEN] != b"NDV1" {
+        return Err(ExecError::TypeMismatch {
+            message: "invalid VECTOR bytes".into(),
+        });
+    }
+    let payload = &bytes[MAGIC_LEN..];
+    if !payload.len().is_multiple_of(4) {
+        return Err(ExecError::TypeMismatch {
+            message: "invalid VECTOR payload".into(),
+        });
+    }
+    Ok(payload
+        .chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect())
+}
+
+fn parse_vector_literal_flexible(bytes: &[u8]) -> Result<Vec<f32>, ExecError> {
+    let s = std::str::from_utf8(bytes).map_err(|_| ExecError::TypeMismatch {
+        message: "invalid UTF-8 for VECTOR literal".into(),
+    })?;
+    let s = s.trim().trim_start_matches('[').trim_end_matches(']');
+    if s.is_empty() {
+        return Ok(Vec::new());
+    }
+    s.split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            part.parse::<f32>().map_err(|_| ExecError::TypeMismatch {
+                message: format!("invalid float `{part}` in VECTOR literal"),
+            })
+        })
+        .collect()
 }

@@ -77,6 +77,11 @@ pub fn lower(logical: LogicalPlan) -> PhysicalPlan {
             prefix,
             columns: None,
         },
+        LogicalPlan::SubqueryScan { input, alias } => PhysicalPlan::SubqueryScan {
+            input: Box::new(lower(*input)),
+            prefix: alias,
+            columns: None,
+        },
         LogicalPlan::SetOp {
             left,
             right,

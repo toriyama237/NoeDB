@@ -2,13 +2,13 @@
 
 use std::collections::HashSet;
 
-use noedb_ast::{ColumnRef, Expr, OrderKey, SelectItem, SelectStmt, Statement, TableRef, WithClause};
+use noedb_ast::{ColumnRef, Expr, FromItem, OrderKey, SelectItem, SelectStmt, Statement, TableRef, WithClause};
 
-use crate::aggregate::maybe_build_aggregate;
+use crate::aggregate::{maybe_build_aggregate, rewrite_having_for_aggregate};
 use crate::logical::LogicalPlan;
 use crate::schema::QuerySchema;
 use crate::star::expand_select_items;
-use crate::subquery::{apply_in_subqueries, peel_in_subqueries};
+use crate::subquery::{apply_exists_subqueries, apply_in_subqueries, peel_exists_subqueries, peel_in_subqueries};
 use crate::window::wrap_window;
 use crate::PlanError;
 
@@ -55,13 +55,14 @@ pub fn build_select_scoped(
     schema: Option<&QuerySchema>,
 ) -> Result<LogicalPlan, PlanError> {
     let qualify = !stmt.joins.is_empty();
-    let mut plan = stmt.from.as_ref().map_or_else(
-        || LogicalPlan::Scan {
+    let mut plan = if let Some(from) = stmt.from.as_ref() {
+        build_from_item(from, cte_scope, qualify, schema)?
+    } else {
+        LogicalPlan::Scan {
             table: String::new(),
             prefix: String::new(),
-        },
-        |table| table_scan(table, cte_scope, qualify),
-    );
+        }
+    };
 
     for join in &stmt.joins {
         plan = LogicalPlan::Join {
@@ -72,6 +73,7 @@ pub fn build_select_scoped(
     }
 
     let (where_rest, in_subs) = peel_in_subqueries(stmt.where_clause.clone());
+    let (where_rest, exists_subs) = peel_exists_subqueries(where_rest);
     if let Some(pred) = where_rest {
         plan = LogicalPlan::Filter {
             input: Box::new(plan),
@@ -80,13 +82,36 @@ pub fn build_select_scoped(
     }
 
     plan = apply_in_subqueries(plan, &in_subs, stmt, cte_scope)?;
+    plan = apply_exists_subqueries(plan, &exists_subs, stmt, cte_scope)?;
 
     let items = expand_select_items(stmt, schema, stmt.items.clone())?;
     let (mut plan, window_items) = wrap_window(plan, &items);
 
     plan = maybe_build_aggregate(plan, stmt, &window_items)?;
 
-    if !contains_aggregate(&window_items) {
+    if let Some(having) = &stmt.having_clause {
+        let predicate = rewrite_having_for_aggregate(having, &window_items);
+        plan = LogicalPlan::Filter {
+            input: Box::new(plan),
+            predicate,
+        };
+    }
+
+    let order_needs_extra = if stmt.order_by.is_empty() {
+        false
+    } else {
+        let (_, extra, _) = prepare_order_by(
+            LogicalPlan::Scan {
+                table: String::new(),
+                prefix: String::new(),
+            },
+            &window_items,
+            &stmt.order_by,
+        )?;
+        !extra.is_empty()
+    };
+
+    if !contains_aggregate(&window_items) && !order_needs_extra {
         plan = LogicalPlan::Project {
             input: Box::new(plan),
             items: window_items.clone(),
@@ -102,13 +127,29 @@ pub fn build_select_scoped(
     let order_items = if contains_aggregate(&window_items) {
         aggregate_output_items(stmt, &window_items)?
     } else {
-        window_items
+        window_items.clone()
     };
 
     if !stmt.order_by.is_empty() {
-        let keys = resolve_order_keys(&order_items, &stmt.order_by)?;
+        let (mut sort_plan, extra_sort_items, keys) =
+            prepare_order_by(plan, &order_items, &stmt.order_by)?;
+        if !extra_sort_items.is_empty() {
+            let mut items = order_items.clone();
+            items.extend(extra_sort_items);
+            if contains_aggregate(&window_items) {
+                sort_plan = LogicalPlan::Project {
+                    input: Box::new(sort_plan),
+                    items,
+                };
+            } else {
+                sort_plan = LogicalPlan::Project {
+                    input: Box::new(sort_plan),
+                    items,
+                };
+            }
+        }
         plan = LogicalPlan::Sort {
-            input: Box::new(plan),
+            input: Box::new(sort_plan),
             keys,
         };
     }
@@ -242,6 +283,44 @@ fn projection_name(item: &SelectItem) -> String {
         return column.value.clone();
     }
     "col".into()
+}
+
+fn build_from_item(
+    from: &FromItem,
+    cte_scope: &HashSet<String>,
+    qualify: bool,
+    schema: Option<&QuerySchema>,
+) -> Result<LogicalPlan, PlanError> {
+    match from {
+        FromItem::Table(t) => Ok(table_scan(t, cte_scope, qualify)),
+        FromItem::Subquery { query, alias, .. } => Ok(LogicalPlan::SubqueryScan {
+            input: Box::new(build_select_scoped(query, cte_scope, schema)?),
+            alias: alias.value.clone(),
+        }),
+    }
+}
+
+fn prepare_order_by(
+    plan: LogicalPlan,
+    items: &[SelectItem],
+    order_by: &[OrderKey],
+) -> Result<(LogicalPlan, Vec<SelectItem>, Vec<(String, bool)>), PlanError> {
+    let mut extra = Vec::new();
+    let mut keys = Vec::new();
+    for (i, key) in order_by.iter().enumerate() {
+        match resolve_sort_column(items, &key.expr) {
+            Ok(name) => keys.push((name, key.asc)),
+            Err(_) => {
+                let alias = format!("__sort_{i}__");
+                extra.push(SelectItem {
+                    expr: key.expr.clone(),
+                    alias: Some(noedb_ast::Ident::new(alias.clone(), key.expr.span())),
+                });
+                keys.push((alias, key.asc));
+            }
+        }
+    }
+    Ok((plan, extra, keys))
 }
 
 fn table_scan(t: &TableRef, cte_scope: &HashSet<String>, qualify: bool) -> LogicalPlan {

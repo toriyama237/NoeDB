@@ -132,6 +132,15 @@ pub enum PhysicalPlan {
         /// Column pruning.
         columns: Option<Vec<String>>,
     },
+    /// Derived table subquery scan.
+    SubqueryScan {
+        /// Inner plan.
+        input: Box<Self>,
+        /// Alias prefix for columns.
+        prefix: String,
+        /// Column pruning.
+        columns: Option<Vec<String>>,
+    },
     /// Compound set operation (Week 41).
     SetOp {
         /// Left input.

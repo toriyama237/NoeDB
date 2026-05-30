@@ -169,6 +169,19 @@ impl<'a> ExplainWriter<'a> {
                 self.lines.push(format!("{pad}Dedup"));
                 self.write_plan(input, indent + 1);
             }
+            PhysicalPlan::SubqueryScan {
+                input,
+                prefix,
+                columns,
+                ..
+            } => {
+                let cols = columns
+                    .as_ref()
+                    .map_or_else(|| "*".into(), |c| c.join(", "));
+                self.lines
+                    .push(format!("{pad}SubqueryScan(alias={prefix}, columns=[{cols}])"));
+                self.write_plan(input, indent + 1);
+            }
         }
     }
 

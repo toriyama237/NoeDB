@@ -66,10 +66,15 @@ fn parse_agg_args(name: &str, args: &[Expr]) -> Option<AggFunc> {
 
 fn column_arg(args: &[Expr]) -> Result<String, PlanError> {
     match args.len() {
-        1 => match &args[0] {
-            Expr::Column(ColumnRef::Named { column, .. }) => Ok(column.value.clone()),
-            _ => Err(PlanError::UnsupportedStatement),
-        },
+        1 => expr_column_key(&args[0]),
+        _ => Err(PlanError::UnsupportedStatement),
+    }
+}
+
+fn expr_column_key(expr: &Expr) -> Result<String, PlanError> {
+    match expr {
+        Expr::Column(ColumnRef::Named { column, .. }) => Ok(column.value.clone()),
+        Expr::Cast { expr, .. } => expr_column_key(expr),
         _ => Err(PlanError::UnsupportedStatement),
     }
 }
@@ -139,4 +144,151 @@ fn projection_name(item: &SelectItem) -> String {
         return column.value.clone();
     }
     "col".into()
+}
+
+/// Map `HAVING` aggregate expressions to post-aggregate output column names.
+#[must_use]
+pub fn rewrite_having_for_aggregate(having: &Expr, items: &[SelectItem]) -> Expr {
+    match having {
+        Expr::Function { .. } => match_having_aggregate(having, items),
+        Expr::Binary {
+            op,
+            left,
+            right,
+            span,
+        } => Expr::Binary {
+            op: *op,
+            left: Box::new(rewrite_having_for_aggregate(left, items)),
+            right: Box::new(rewrite_having_for_aggregate(right, items)),
+            span: *span,
+        },
+        Expr::Unary { op, expr, span } => Expr::Unary {
+            op: *op,
+            expr: Box::new(rewrite_having_for_aggregate(expr, items)),
+            span: *span,
+        },
+        Expr::IsNull {
+            expr,
+            negated,
+            span,
+        } => Expr::IsNull {
+            expr: Box::new(rewrite_having_for_aggregate(expr, items)),
+            negated: *negated,
+            span: *span,
+        },
+        Expr::Between {
+            expr,
+            low,
+            high,
+            negated,
+            span,
+        } => Expr::Between {
+            expr: Box::new(rewrite_having_for_aggregate(expr, items)),
+            low: Box::new(rewrite_having_for_aggregate(low, items)),
+            high: Box::new(rewrite_having_for_aggregate(high, items)),
+            negated: *negated,
+            span: *span,
+        },
+        Expr::Paren(inner, span) => {
+            Expr::Paren(Box::new(rewrite_having_for_aggregate(inner, items)), *span)
+        }
+        other => other.clone(),
+    }
+}
+
+fn match_having_aggregate(expr: &Expr, items: &[SelectItem]) -> Expr {
+    for item in items {
+        if having_expr_matches(&item.expr, expr) {
+            let name = projection_name(item);
+            return Expr::Column(ColumnRef::Named {
+                table: None,
+                column: noedb_ast::Ident::new(name, expr.span()),
+            });
+        }
+    }
+    expr.clone()
+}
+
+fn having_expr_matches(a: &Expr, b: &Expr) -> bool {
+    match (a, b) {
+        (
+            Expr::Function {
+                name: n1,
+                args: a1,
+                over: o1,
+                ..
+            },
+            Expr::Function {
+                name: n2,
+                args: a2,
+                over: o2,
+                ..
+            },
+        ) => {
+            n1 == n2
+                && o1.is_none()
+                && o2.is_none()
+                && a1.len() == a2.len()
+                && a1
+                    .iter()
+                    .zip(a2.iter())
+                    .all(|(x, y)| having_expr_matches(x, y))
+        }
+        (
+            Expr::Cast {
+                expr: e1,
+                data_type: t1,
+                ..
+            },
+            Expr::Cast {
+                expr: e2,
+                data_type: t2,
+                ..
+            },
+        ) => t1 == t2 && having_expr_matches(e1, e2),
+        (
+            Expr::Column(ColumnRef::Named {
+                table: t1,
+                column: c1,
+                ..
+            }),
+            Expr::Column(ColumnRef::Named {
+                table: t2,
+                column: c2,
+                ..
+            }),
+        ) => t1 == t2 && c1 == c2,
+        (
+            Expr::Literal(l1),
+            Expr::Literal(l2),
+        ) => l1 == l2,
+        (
+            Expr::Binary {
+                op: o1,
+                left: l1,
+                right: r1,
+                ..
+            },
+            Expr::Binary {
+                op: o2,
+                left: l2,
+                right: r2,
+                ..
+            },
+        ) => o1 == o2 && having_expr_matches(l1, l2) && having_expr_matches(r1, r2),
+        (
+            Expr::Unary {
+                op: o1,
+                expr: e1,
+                ..
+            },
+            Expr::Unary {
+                op: o2,
+                expr: e2,
+                ..
+            },
+        ) => o1 == o2 && having_expr_matches(e1, e2),
+        (Expr::Paren(e1, _), Expr::Paren(e2, _)) => having_expr_matches(e1, e2),
+        _ => false,
+    }
 }

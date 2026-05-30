@@ -307,6 +307,13 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
                 rows: rows.into_iter(),
             })
         }
+        PhysicalPlan::SubqueryScan { input, prefix, .. } => {
+            let rows = execute_to_rows(*input, ctx)?;
+            let rows = prefix_rows(rows, &prefix);
+            Ok(ExecState::SeqScan {
+                rows: rows.into_iter(),
+            })
+        }
         PhysicalPlan::IndexScan {
             table,
             column,
