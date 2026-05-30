@@ -205,6 +205,20 @@ impl fmt::Display for Expr {
                 write!(f, "{query}")?;
                 write!(f, ")")
             }
+            Self::Exists {
+                query,
+                negated,
+                ..
+            } => {
+                if *negated {
+                    write_keyword(f, Keyword::Not)?;
+                    write!(f, " ")?;
+                }
+                write_keyword(f, Keyword::Exists)?;
+                write!(f, " (")?;
+                write!(f, "{query}")?;
+                write!(f, ")")
+            }
             Self::Between {
                 expr,
                 low,
@@ -354,6 +368,7 @@ fn binary_op(op: BinaryOp) -> &'static str {
         BinaryOp::Minus => "-",
         BinaryOp::Like => "LIKE",
         BinaryOp::Div => "/",
+        BinaryOp::Distance => "<->",
     }
 }
 
@@ -366,6 +381,17 @@ impl fmt::Display for SelectItem {
             write!(f, " {alias}")?;
         }
         Ok(())
+    }
+}
+
+impl fmt::Display for crate::stmt::FromItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Table(t) => write!(f, "{t}"),
+            Self::Subquery { query, alias, .. } => {
+                write!(f, "({query}) {alias}")
+            }
+        }
     }
 }
 
@@ -448,6 +474,11 @@ impl fmt::Display for SelectStmt {
                 }
                 write!(f, "{expr}")?;
             }
+        }
+        if let Some(h) = &self.having_clause {
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Having)?;
+            write!(f, " {h}")?;
         }
         if !self.order_by.is_empty() {
             write!(f, " ")?;

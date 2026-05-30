@@ -1,6 +1,6 @@
 //! `SELECT` statement parsing.
 
-use noedb_ast::{CompoundSelect, CteBody, CteDef, Expr, Join, JoinKind, OrderKey, SelectItem, SelectStmt, SetOpKind,
+use noedb_ast::{CompoundSelect, CteBody, CteDef, Expr, FromItem, Join, JoinKind, OrderKey, SelectItem, SelectStmt, SetOpKind,
     TableRef, WithClause,
 };
 use noedb_lexer::{Keyword, Punctuation, Token};
@@ -117,7 +117,7 @@ fn parse_select_inner(
     }
 
     let from = if p.match_keyword(Keyword::From) {
-        Some(parse_table_ref(p, stop_at_rparen)?)
+        Some(parse_from_item(p, stop_at_rparen)?)
     } else {
         None
     };
@@ -137,6 +137,7 @@ fn parse_select_inner(
     };
 
     let group_by = parse_group_by(p)?;
+    let having_clause = parse_having(p)?;
     let order_by = parse_order_by(p)?;
     let (limit, offset) = parse_limit_offset(p)?;
 
@@ -165,6 +166,7 @@ fn parse_select_inner(
         joins,
         where_clause,
         group_by,
+        having_clause,
         order_by,
         limit,
         offset,
@@ -177,6 +179,23 @@ fn parse_select_item(p: &mut Parser<'_>) -> Result<SelectItem, ParseError> {
     let expr = parse_expr(p)?;
     let alias = parse_optional_alias(p)?;
     Ok(SelectItem { expr, alias })
+}
+
+fn parse_from_item(p: &mut Parser<'_>, stop_at_rparen: bool) -> Result<FromItem, ParseError> {
+    if matches!(p.peek_kind(), Token::Punct(Punctuation::LParen)) {
+        let start = p.bump().span;
+        let query = parse_select_inner(p, false, true)?;
+        p.expect_punct(Punctuation::RParen)?;
+        p.match_keyword(Keyword::As);
+        let alias = p.parse_ident()?;
+        let end = alias.span;
+        return Ok(FromItem::Subquery {
+            query: Box::new(query),
+            alias,
+            span: Parser::merge_span(start, end),
+        });
+    }
+    Ok(FromItem::Table(parse_table_ref(p, stop_at_rparen)?))
 }
 
 fn parse_table_ref(p: &mut Parser<'_>, stop_at_rparen: bool) -> Result<TableRef, ParseError> {
@@ -266,6 +285,13 @@ fn parse_group_by(p: &mut Parser<'_>) -> Result<Vec<Expr>, ParseError> {
         p.bump();
     }
     Ok(cols)
+}
+
+fn parse_having(p: &mut Parser<'_>) -> Result<Option<Expr>, ParseError> {
+    if !p.match_keyword(Keyword::Having) {
+        return Ok(None);
+    }
+    Ok(Some(parse_expr(p)?))
 }
 
 fn parse_order_by(p: &mut Parser<'_>) -> Result<Vec<OrderKey>, ParseError> {

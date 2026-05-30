@@ -6,6 +6,22 @@ use crate::expr::{Expr, Literal, SelectItem};
 use crate::name::{Ident, TableRef};
 use crate::window::OrderKey;
 
+/// `FROM` source: base table or derived subquery.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FromItem {
+    /// `FROM table [AS alias]`.
+    Table(TableRef),
+    /// `FROM (SELECT …) alias`.
+    Subquery {
+        /// Parenthesized select.
+        query: Box<SelectStmt>,
+        /// Required alias.
+        alias: Ident,
+        /// Span covering the whole item.
+        span: Span,
+    },
+}
+
 /// Kind of SQL join.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JoinKind {
@@ -98,14 +114,16 @@ pub struct SelectStmt {
     pub distinct: bool,
     /// Projection list.
     pub items: Vec<SelectItem>,
-    /// Primary `FROM` table (optional for `SELECT 1`).
-    pub from: Option<TableRef>,
+    /// Primary `FROM` source (optional for `SELECT 1`).
+    pub from: Option<FromItem>,
     /// Additional `JOIN` clauses.
     pub joins: Vec<Join>,
     /// Optional `WHERE` predicate.
     pub where_clause: Option<Expr>,
     /// Optional `GROUP BY` expressions.
     pub group_by: Vec<Expr>,
+    /// Optional `HAVING` predicate (post-aggregate filter).
+    pub having_clause: Option<Expr>,
     /// Optional `ORDER BY` keys.
     pub order_by: Vec<OrderKey>,
     /// Optional `LIMIT` row cap.

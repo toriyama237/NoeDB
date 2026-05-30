@@ -141,6 +141,8 @@ pub enum Operator {
     Plus,
     /// `/`
     Div,
+    /// `<->` pgvector-style distance
+    Distance,
 }
 
 /// SQL punctuation.

@@ -193,6 +193,7 @@ impl<'a> Parser<'a> {
             Operator::Plus => noedb_ast::BinaryOp::Plus,
             Operator::Minus => noedb_ast::BinaryOp::Minus,
             Operator::Div => noedb_ast::BinaryOp::Div,
+            Operator::Distance => noedb_ast::BinaryOp::Distance,
             _ => noedb_ast::BinaryOp::Eq,
         }
     }

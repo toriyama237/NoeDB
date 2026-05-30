@@ -164,7 +164,8 @@ fn parse_expr_prec(p: &mut Parser<'_>, min: Prec) -> Result<Expr, ParseError> {
                     | Operator::Lt
                     | Operator::Gt
                     | Operator::Le
-                    | Operator::Ge => {
+                    | Operator::Ge
+                    | Operator::Distance => {
                         p.bump();
                         let bin = Parser::operator_to_binary(op);
                         let left_span = left.span();
@@ -223,6 +224,18 @@ fn parse_prefix(p: &mut Parser<'_>) -> Result<Expr, ParseError> {
         });
     }
 
+    if p.match_keyword(Keyword::Not) && p.match_keyword(Keyword::Exists) {
+        let start = p.tokens[p.pos.saturating_sub(2)].span;
+        p.expect_punct(Punctuation::LParen)?;
+        let query = parse_select_subquery(p)?;
+        let end = p.expect_punct(Punctuation::RParen)?;
+        return Ok(Expr::Exists {
+            query: Box::new(query),
+            negated: true,
+            span: Parser::merge_span(start, end),
+        });
+    }
+
     if p.match_keyword(Keyword::Not) {
         let start = p.peek().span;
         let inner = parse_expr_prec(p, Prec::And)?;
@@ -241,6 +254,18 @@ fn parse_prefix(p: &mut Parser<'_>) -> Result<Expr, ParseError> {
         return Ok(Expr::Unary {
             op: UnaryOp::Minus,
             expr: Box::new(inner),
+            span: Parser::merge_span(start, end),
+        });
+    }
+
+    if p.match_keyword(Keyword::Exists) {
+        let start = p.tokens[p.pos.saturating_sub(1)].span;
+        p.expect_punct(Punctuation::LParen)?;
+        let query = parse_select_subquery(p)?;
+        let end = p.expect_punct(Punctuation::RParen)?;
+        return Ok(Expr::Exists {
+            query: Box::new(query),
+            negated: false,
             span: Parser::merge_span(start, end),
         });
     }

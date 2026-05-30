@@ -31,8 +31,8 @@ pub use crate::name::{ColumnRef, Ident, TableRef};
 pub use crate::stmt::{
     AnalyzeTableStmt, BeginTxnStmt, ColumnDef, CommitTxnStmt, CompoundSelect, CreateIndexStmt,
     CreatePolicyStmt, CreateTableStmt, CteBody, CteDef, DeleteStmt, DropTableStmt, EnableRlsStmt,
-    ExecuteStmt, InsertStmt, Join, JoinKind, PrepareStmt, RollbackTxnStmt, SelectStmt, SetOpKind,
-    SetRoleStmt, SqlType, Statement, UpdateStmt, WithClause,
+    ExecuteStmt, FromItem, InsertStmt, Join, JoinKind, PrepareStmt, RollbackTxnStmt, SelectStmt,
+    SetOpKind, SetRoleStmt, SqlType, Statement, UpdateStmt, WithClause,
 };
 pub use crate::window::{FrameBound, FrameMode, OrderKey, WindowFrame, WindowFunc, WindowSpec};
 
@@ -54,14 +54,15 @@ mod tests {
                 }),
                 alias: None,
             }],
-            from: Some(TableRef {
+            from: Some(FromItem::Table(TableRef {
                 name: Ident::new("t".into(), Span::new(14, 15)),
                 alias: None,
                 span: Span::new(14, 15),
-            }),
+            })),
             joins: vec![],
             where_clause: None,
             group_by: vec![],
+            having_clause: None,
             order_by: vec![],
             limit: None,
             offset: None,

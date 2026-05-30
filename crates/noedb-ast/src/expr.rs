@@ -51,6 +51,8 @@ pub enum BinaryOp {
     Div,
     /// `LIKE`
     Like,
+    /// Vector L2 distance `<->` (pgvector-style).
+    Distance,
 }
 
 /// Unary operators.
@@ -116,6 +118,15 @@ pub enum Expr {
         /// Subquery returning one column.
         query: Box<SelectStmt>,
         /// Whether `NOT IN` was used.
+        negated: bool,
+        /// Span covering the whole predicate.
+        span: Span,
+    },
+    /// `[NOT] EXISTS (SELECT …)`.
+    Exists {
+        /// Subquery body.
+        query: Box<SelectStmt>,
+        /// `NOT EXISTS` when true.
         negated: bool,
         /// Span covering the whole predicate.
         span: Span,
@@ -190,6 +201,7 @@ impl Expr {
             | Self::IsNull { span, .. }
             | Self::In { span, .. }
             | Self::InSubquery { span, .. }
+            | Self::Exists { span, .. }
             | Self::Between { span, .. }
             | Self::Paren(_, span)
             | Self::Parameter { span, .. }

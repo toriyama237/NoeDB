@@ -232,6 +232,11 @@ impl<'src> Cursor<'src> {
                     Self::mk_span(start, self.pos),
                 ));
             }
+            b'<' if self.peek_byte() == Some(b'-') && self.peek_byte_at(1) == Some(b'>') => {
+                self.bump();
+                self.bump();
+                Token::Op(Operator::Distance)
+            }
             b'<' if self.peek_byte() == Some(b'=') => {
                 self.bump();
                 Token::Op(Operator::Le)
