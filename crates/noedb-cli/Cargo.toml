@@ -27,6 +27,7 @@ tokio-rustls = { workspace = true }
 tonic = { workspace = true }
 thiserror = { workspace = true }
 rustyline = { version = "15", features = ["derive"] }
+comfy-table = { workspace = true }
 
 [features]
 default = []

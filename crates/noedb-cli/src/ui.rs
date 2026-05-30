@@ -2,6 +2,8 @@
 
 use std::io::{self, Write};
 
+use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
+use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
 use noedb_engine::QueryResult;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -82,67 +84,41 @@ pub(crate) fn print_result(r: &QueryResult, studio: bool) {
         }
         return;
     }
-    if studio {
-        print_table(r);
-    } else {
-        println!("{}", r.columns.join("\t"));
-        for row in &r.rows {
-            println!("{}", row.join("\t"));
-        }
-    }
+    println!("{}", format_query_table(r, studio));
 }
 
-fn print_table(r: &QueryResult) {
-    let ncols = r.columns.len();
-    if ncols == 0 {
-        return;
-    }
-    let mut widths: Vec<usize> = r.columns.iter().map(|c| c.len()).collect();
-    for row in &r.rows {
-        for (i, cell) in row.iter().enumerate().take(ncols) {
-            if i < widths.len() {
-                widths[i] = widths[i].max(cell.len());
-            }
-        }
-    }
-    for w in &mut widths {
-        *w = (*w).clamp(1, 28);
+fn format_query_table(r: &QueryResult, studio: bool) -> String {
+    let mut table = Table::new();
+    table.load_preset(if studio { UTF8_FULL } else { ASCII_FULL });
+    table.set_content_arrangement(ContentArrangement::Dynamic);
+
+    if studio {
+        let header: Vec<Cell> = r
+            .columns
+            .iter()
+            .map(|c| Cell::new(c).add_attribute(Attribute::Bold).fg(Color::Cyan))
+            .collect();
+        table.set_header(header);
+    } else {
+        table.set_header(&r.columns);
     }
 
-    let rule = |left: &str, mid: &str, right: &str| {
-        let mut s = left.to_string();
-        for (i, w) in widths.iter().enumerate() {
-            s.push_str(&"─".repeat(*w + 2));
-            if i + 1 < widths.len() {
-                s.push_str(mid);
-            }
-        }
-        s.push_str(right);
-        s
+    for row in &r.rows {
+        table.add_row(row);
+    }
+
+    let n = r.rows.len();
+    let count = if n == 1 {
+        "(1 row)".to_string()
+    } else {
+        format!("({n} rows)")
     };
 
-    println!("{ESC}[90m{}{ESC}[0m", rule("┌", "┬", "┐"));
-    print_row(&r.columns, &widths, &format!("{ESC}[1;33m"), &format!("{ESC}[0m"));
-    println!("{ESC}[90m{}{ESC}[0m", rule("├", "┼", "┤"));
-    for row in &r.rows {
-        print_row(row, &widths, "", "");
+    if studio {
+        format!("{}\n{ESC}[2m  {count}{ESC}[0m", table)
+    } else {
+        format!("{table}\n{count}")
     }
-    println!("{ESC}[90m{}{ESC}[0m", rule("└", "┴", "┘"));
-    println!("{ESC}[2m  {} row(s){ESC}[0m", r.rows.len());
-}
-
-fn print_row(cells: &[String], widths: &[usize], prefix: &str, suffix: &str) {
-    print!("{prefix}│{suffix}");
-    for (i, w) in widths.iter().enumerate() {
-        let cell = cells.get(i).map(String::as_str).unwrap_or("");
-        let clipped = if cell.len() > *w {
-            format!("{}…", &cell[..w.saturating_sub(1)])
-        } else {
-            cell.to_string()
-        };
-        print!(" {clipped:<w$} │");
-    }
-    println!();
 }
 
 pub(crate) fn print_error(msg: &str, studio: bool) {
