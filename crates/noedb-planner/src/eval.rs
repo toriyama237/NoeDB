@@ -313,6 +313,11 @@ fn eval_binary(
             let r = eval_expr(right, row)?;
             Ok(Value::Bool(like_match(&l, &r)))
         }
+        BinaryOp::Plus | BinaryOp::Minus | BinaryOp::Div => {
+            let l = eval_expr(left, row)?;
+            let r = eval_expr(right, row)?;
+            eval_arithmetic(op, l, r)
+        }
         _ => Err(ExecError::UnsupportedExpr),
     }
 }
@@ -355,6 +360,33 @@ fn sql_like(text: &str, pattern: &str) -> bool {
         }
     }
     dp[t.len()][p.len()]
+}
+
+fn eval_arithmetic(op: BinaryOp, l: Value, r: Value) -> Result<Value, ExecError> {
+    if matches!(l, Value::Null) || matches!(r, Value::Null) {
+        return Ok(Value::Null);
+    }
+    let (a, b) = (
+        coerce_numeric(&l).ok_or_else(|| ExecError::TypeMismatch {
+            message: format!("arithmetic on {l:?}"),
+        })?,
+        coerce_numeric(&r).ok_or_else(|| ExecError::TypeMismatch {
+            message: format!("arithmetic on {r:?}"),
+        })?,
+    );
+    match op {
+        BinaryOp::Plus => Ok(Value::Float(a + b)),
+        BinaryOp::Minus => Ok(Value::Float(a - b)),
+        BinaryOp::Div => {
+            if b == 0.0 {
+                return Err(ExecError::TypeMismatch {
+                    message: "division by zero".into(),
+                });
+            }
+            Ok(Value::Float(a / b))
+        }
+        _ => Err(ExecError::UnsupportedExpr),
+    }
 }
 
 fn cmp_values(l: &Value, r: &Value, op: BinaryOp) -> Result<bool, ExecError> {

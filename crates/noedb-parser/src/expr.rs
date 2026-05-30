@@ -184,7 +184,9 @@ fn parse_expr_prec(p: &mut Parser<'_>, min: Prec) -> Result<Expr, ParseError> {
         }
 
         if (min as u8) <= Prec::Add as u8 {
-            if let Token::Op(op @ (Operator::Plus | Operator::Minus)) = p.peek_kind().clone() {
+            if let Token::Op(op @ (Operator::Plus | Operator::Minus | Operator::Div)) =
+                p.peek_kind().clone()
+            {
                 p.bump();
                 let bin = Parser::operator_to_binary(op);
                 let left_span = left.span();

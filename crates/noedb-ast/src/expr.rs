@@ -47,6 +47,8 @@ pub enum BinaryOp {
     Plus,
     /// `-`
     Minus,
+    /// `/`
+    Div,
     /// `LIKE`
     Like,
 }
