@@ -43,8 +43,16 @@ pub fn optimize(logical: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
 
 fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
     match plan {
-        LogicalPlan::Filter { input, predicate } => match *input {
-            LogicalPlan::Join { left, right, on } => {
+        LogicalPlan::Filter { input, predicate } => {
+            match *input {
+                LogicalPlan::Join { left, right, on: _ } if extract_equi_join(&predicate).is_some() => {
+                    pushdown_predicates(LogicalPlan::Join {
+                        left: Box::new(pushdown_predicates(*left)),
+                        right: Box::new(pushdown_predicates(*right)),
+                        on: predicate,
+                    })
+                }
+                LogicalPlan::Join { left, right, on } => {
                 let left = pushdown_predicates(*left);
                 let right = pushdown_predicates(*right);
                 let join = LogicalPlan::Join {
@@ -61,7 +69,8 @@ fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
                 input: Box::new(pushdown_predicates(other)),
                 predicate,
             },
-        },
+            }
+        }
         LogicalPlan::Project { input, items } => LogicalPlan::Project {
             input: Box::new(pushdown_predicates(*input)),
             items,
