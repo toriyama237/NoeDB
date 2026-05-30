@@ -30,7 +30,9 @@ mod schema;
 mod session;
 mod shard;
 mod txn;
+mod vector_index;
 
+pub use vector_index::VectorIndexCatalog;
 pub use audit::{AuditEntry, AuditLog};
 pub use command::{Command, MAX_COMMAND_BYTES};
 pub use engine::{

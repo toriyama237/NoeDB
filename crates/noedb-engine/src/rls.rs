@@ -1,6 +1,6 @@
 //! Row Level Security policies (Phase 1 Week 5).
 
-use noedb_ast::{BinaryOp, CreatePolicyStmt, Expr, SelectStmt, Statement};
+use noedb_ast::{BinaryOp, CreatePolicyStmt, Expr, FromItem, SelectStmt, Statement};
 
 /// One RLS policy on a table.
 #[derive(Debug, Clone)]
@@ -41,13 +41,17 @@ impl RlsCatalog {
 
     /// Inject policy predicates into a `SELECT` (AND-combined with existing `WHERE`).
     pub fn apply_select(&self, mut select: SelectStmt, role: &str) -> SelectStmt {
-        let Some(table) = select.from.as_ref() else {
+        let Some(from) = select.from.as_ref() else {
             return select;
         };
-        if !self.is_enabled(&table.name.value) {
+        let table_name = match from {
+            FromItem::Table(t) => &t.name.value,
+            FromItem::Subquery { .. } => return select,
+        };
+        if !self.is_enabled(table_name) {
             return select;
         }
-        let Some(policies) = self.policies.get(&table.name.value.to_ascii_lowercase()) else {
+        let Some(policies) = self.policies.get(&table_name.to_ascii_lowercase()) else {
             return select;
         };
         for policy in policies {

@@ -28,6 +28,7 @@ mod durable;
 mod engine;
 mod error;
 mod fast_wal;
+mod hnsw;
 mod lsm;
 mod lsm_mvcc;
 mod memtable;
@@ -59,4 +60,5 @@ pub use crate::wal::{
     replay_into_memtable, replay_wal_dir, LogEntry, OpType, Wal, WalSegmentManager, WalSyncMode,
     WAL_MAGIC, WAL_VERSION,
 };
+pub use crate::hnsw::HnswIndex;
 pub use crate::xor_filter::XorFilter;

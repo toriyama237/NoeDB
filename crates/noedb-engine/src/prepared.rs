@@ -81,6 +81,10 @@ fn substitute_params(stmt: &Statement, params: &[Literal]) -> Statement {
                 .iter()
                 .map(|e| substitute_expr(e, params))
                 .collect(),
+            having_clause: s
+                .having_clause
+                .as_ref()
+                .map(|e| substitute_expr(e, params)),
             order_by: s.order_by.clone(),
             limit: s.limit,
             offset: s.offset,
@@ -147,6 +151,15 @@ fn substitute_expr(expr: &Expr, params: &[Literal]) -> Expr {
             negated: *negated,
             span: *span,
         },
+        Expr::Exists {
+            query,
+            negated,
+            span,
+        } => Expr::Exists {
+            query: Box::new(substitute_select(query, params)),
+            negated: *negated,
+            span: *span,
+        },
         Expr::Between {
             expr,
             low,
@@ -200,6 +213,10 @@ fn substitute_select(stmt: &noedb_ast::SelectStmt, params: &[Literal]) -> noedb_
             .iter()
             .map(|e| substitute_expr(e, params))
             .collect(),
+        having_clause: stmt
+            .having_clause
+            .as_ref()
+            .map(|e| substitute_expr(e, params)),
         order_by: stmt.order_by.clone(),
         limit: stmt.limit,
         offset: stmt.offset,

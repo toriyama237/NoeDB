@@ -4,13 +4,31 @@ use std::collections::BTreeMap;
 
 use noedb_ast::{DeleteStmt, InsertStmt, SqlType, UpdateStmt};
 use noedb_planner::{eval_expr, eval_predicate, increment_row_count, ExecError, Value};
-use noedb_storage::{LsmTree, StorageEngine};
+use noedb_storage::{LsmTree, StorageEngine, TimestampOracle, Version};
 
 use crate::error::EngineError;
 use crate::machine::row_key;
 use crate::schema::SchemaCatalog;
+use crate::vector_index::VectorIndexCatalog;
 
 type RowMap = Vec<(String, Value)>;
+
+fn put_cell(
+    tree: &mut LsmTree,
+    oracle: &TimestampOracle,
+    key: &[u8],
+    value: &[u8],
+) -> Result<(), EngineError> {
+    let ts = oracle.next();
+    tree.put_version(key, &Version::put(ts, value.to_vec()))
+        .map_err(EngineError::Storage)
+}
+
+fn delete_cell(tree: &mut LsmTree, oracle: &TimestampOracle, key: &[u8]) -> Result<(), EngineError> {
+    let ts = oracle.next();
+    tree.put_version(key, &Version::tombstone(ts))
+        .map_err(EngineError::Storage)
+}
 
 /// Apply `INSERT INTO … VALUES …` to the LSM.
 ///
@@ -21,6 +39,8 @@ pub(crate) fn execute_insert(
     ins: &InsertStmt,
     schema: &SchemaCatalog,
     tree: &mut LsmTree,
+    oracle: &TimestampOracle,
+    mut vectors: Option<&mut VectorIndexCatalog>,
 ) -> Result<(), EngineError> {
     let table = &ins.table.value;
     let col_names: Vec<String> = if let Some(cols) = &ins.columns {
@@ -57,12 +77,15 @@ pub(crate) fn execute_insert(
                     }));
                 }
                 let bytes = encode_for_type(&val, &meta.data_type)?;
-                tree.put(&row_key(table, &row_id, col), &bytes)
-                    .map_err(EngineError::Storage)?;
+                put_cell(tree, oracle, &row_key(table, &row_id, col), &bytes)?;
+                if let Some(ref mut catalog) = vectors {
+                    if matches!(meta.data_type, SqlType::Vector { .. }) {
+                        catalog.upsert(table, col, &row_id, &val);
+                    }
+                }
             } else {
                 let bytes = value_to_bytes(&val);
-                tree.put(&row_key(table, &row_id, col), &bytes)
-                    .map_err(EngineError::Storage)?;
+                put_cell(tree, oracle, &row_key(table, &row_id, col), &bytes)?;
             }
         }
         increment_row_count(tree, table, 1).map_err(EngineError::Storage)?;
@@ -79,6 +102,8 @@ pub(crate) fn execute_update(
     upd: &UpdateStmt,
     schema: &SchemaCatalog,
     tree: &mut LsmTree,
+    oracle: &TimestampOracle,
+    mut vectors: Option<&mut VectorIndexCatalog>,
 ) -> Result<u64, EngineError> {
     let table = &upd.table.value;
     let mut updated = 0u64;
@@ -98,12 +123,15 @@ pub(crate) fn execute_update(
                     }));
                 }
                 let bytes = encode_for_type(&val, &meta.data_type)?;
-                tree.put(&row_key(table, &row_id, col), &bytes)
-                    .map_err(EngineError::Storage)?;
+                put_cell(tree, oracle, &row_key(table, &row_id, col), &bytes)?;
+                if let Some(ref mut catalog) = vectors {
+                    if matches!(meta.data_type, SqlType::Vector { .. }) {
+                        catalog.upsert(table, col, &row_id, &val);
+                    }
+                }
             } else {
                 let bytes = value_to_bytes(&val);
-                tree.put(&row_key(table, &row_id, col), &bytes)
-                    .map_err(EngineError::Storage)?;
+                put_cell(tree, oracle, &row_key(table, &row_id, col), &bytes)?;
             }
         }
         updated += 1;
@@ -118,7 +146,10 @@ pub(crate) fn execute_update(
 /// Storage failures.
 pub(crate) fn execute_delete(
     del: &DeleteStmt,
+    schema: &SchemaCatalog,
     tree: &mut LsmTree,
+    oracle: &TimestampOracle,
+    mut vectors: Option<&mut VectorIndexCatalog>,
 ) -> Result<u64, EngineError> {
     let table = &del.table.value;
     let mut deleted = 0u64;
@@ -128,7 +159,16 @@ pub(crate) fn execute_delete(
                 continue;
             }
         }
-        delete_row(tree, table, &row_id)?;
+        delete_row(tree, oracle, table, &row_id)?;
+        if let Some(ref mut catalog) = vectors {
+            if let Some(table_schema) = schema.tables.get(table) {
+                for col in &table_schema.columns {
+                    if matches!(col.data_type, SqlType::Vector { .. }) {
+                        catalog.remove(table, &col.name, &row_id);
+                    }
+                }
+            }
+        }
         deleted += 1;
     }
     if deleted > 0 {
@@ -198,13 +238,18 @@ fn scan_table(tree: &LsmTree, table: &str) -> Result<Vec<(String, RowMap)>, Engi
         .collect())
 }
 
-fn delete_row(tree: &mut LsmTree, table: &str, row_id: &str) -> Result<(), EngineError> {
+fn delete_row(
+    tree: &mut LsmTree,
+    oracle: &TimestampOracle,
+    table: &str,
+    row_id: &str,
+) -> Result<(), EngineError> {
     let prefix = row_prefix(table, row_id);
     let keys: Vec<Vec<u8>> = StorageEngine::iter(tree)
         .filter_map(|(key, _)| key.starts_with(&prefix).then_some(key))
         .collect();
     for key in keys {
-        tree.delete(&key).map_err(EngineError::Storage)?;
+        delete_cell(tree, oracle, &key)?;
     }
     Ok(())
 }
@@ -333,7 +378,7 @@ mod tests {
     use crate::schema::ColumnMeta;
     use noedb_ast::Statement;
     use noedb_parser::parse;
-    use noedb_storage::LsmConfig;
+    use noedb_storage::{LsmConfig, LsmTree, TimestampOracle};
 
     fn users_schema() -> SchemaCatalog {
         let mut schema = SchemaCatalog::default();
@@ -374,7 +419,8 @@ mod tests {
         let Statement::Insert(ins) = insert else {
             panic!("expected INSERT");
         };
-        execute_insert(&ins, &schema, &mut tree).unwrap();
+        let oracle = TimestampOracle::new();
+        execute_insert(&ins, &schema, &mut tree, &oracle, None).unwrap();
         let name = tree
             .get(&row_key("users", "1", "name"))
             .unwrap()
@@ -398,12 +444,13 @@ mod tests {
         let Statement::Insert(ins) = ins else {
             panic!("expected INSERT");
         };
-        execute_insert(&ins, &schema, &mut tree).unwrap();
+        let oracle = TimestampOracle::new();
+        execute_insert(&ins, &schema, &mut tree, &oracle, None).unwrap();
         let dup = parse("INSERT INTO users VALUES ('1', 'Bob')").unwrap();
         let Statement::Insert(dup) = dup else {
             panic!("expected INSERT");
         };
-        assert!(execute_insert(&dup, &schema, &mut tree).is_err());
+        assert!(execute_insert(&dup, &schema, &mut tree, &oracle, None).is_err());
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -422,19 +469,26 @@ mod tests {
         let Statement::Insert(ins) = ins else {
             panic!("expected INSERT");
         };
-        execute_insert(&ins, &schema, &mut tree).unwrap();
+        let oracle = TimestampOracle::new();
+        execute_insert(&ins, &schema, &mut tree, &oracle, None).unwrap();
         let upd = parse("UPDATE users SET name = 'Augusta' WHERE id = '1'").unwrap();
         let Statement::Update(upd) = upd else {
             panic!("expected UPDATE");
         };
-        assert_eq!(execute_update(&upd, &schema, &mut tree).unwrap(), 1);
+        assert_eq!(
+            execute_update(&upd, &schema, &mut tree, &oracle, None).unwrap(),
+            1
+        );
         let name = tree.get(&row_key("users", "1", "name")).unwrap().unwrap();
         assert_eq!(name, b"Augusta");
         let del = parse("DELETE FROM users WHERE id = '1'").unwrap();
         let Statement::Delete(del) = del else {
             panic!("expected DELETE");
         };
-        assert_eq!(execute_delete(&del, &mut tree).unwrap(), 1);
+        assert_eq!(
+            execute_delete(&del, &schema, &mut tree, &oracle, None).unwrap(),
+            1
+        );
         assert!(tree.get(&row_key("users", "1", "name")).unwrap().is_none());
         let _ = std::fs::remove_dir_all(dir);
     }

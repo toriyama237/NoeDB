@@ -12,7 +12,7 @@ use noedb_planner::{
     ExecError, PlanError, Record, Value,
 };
 use noedb_raft::{Cluster, NodeId, RaftError, Role};
-use noedb_storage::{LsmConfig, LsmTree};
+use noedb_storage::{LsmConfig, LsmTree, Version};
 use noedb_metrics::Metrics;
 use noedb_txn::TxnManager;
 use parking_lot::{Mutex, RwLock};
@@ -21,7 +21,7 @@ use tracing::info_span;
 use crate::audit::AuditLog;
 use crate::command::Command;
 use crate::error::EngineError;
-use crate::machine::apply_command;
+use crate::machine::{apply_command, row_key};
 use crate::prepared::{bind_parameters, PrepareCache};
 use crate::query_cache::QueryCache;
 use crate::region::RegionId;
@@ -30,6 +30,7 @@ use crate::schema::SchemaCatalog;
 use crate::session::SessionContext;
 use crate::shard::ShardRouter;
 use crate::txn::{commit_to_storage, execute_select_in_txn, put_row_in_txn, txn_err};
+use crate::vector_index::VectorIndexCatalog;
 
 /// Default session id for single-client CLI / tests.
 pub const DEFAULT_SESSION: u64 = 1;
@@ -134,6 +135,7 @@ pub struct LocalEngine {
     txn: Arc<TxnManager>,
     cache: Mutex<QueryCache>,
     schema: Mutex<SchemaCatalog>,
+    vector_indexes: Mutex<VectorIndexCatalog>,
     metrics: Arc<Metrics>,
 }
 
@@ -174,6 +176,7 @@ impl LocalEngine {
             txn: Arc::new(TxnManager::new()),
             cache: Mutex::new(QueryCache::default()),
             schema: Mutex::new(SchemaCatalog::default()),
+            vector_indexes: Mutex::new(VectorIndexCatalog::default()),
             metrics: Metrics::new_shared(),
         }))
     }
@@ -217,6 +220,20 @@ impl LocalEngine {
         &self.storage
     }
 
+    /// Search the in-memory HNSW index for one `VECTOR` column.
+    #[must_use]
+    pub fn vector_search(
+        &self,
+        table: &str,
+        column: &str,
+        query: &[f32],
+        k: usize,
+    ) -> Vec<(String, f32)> {
+        self.vector_indexes
+            .lock()
+            .search(table, column, query, k)
+    }
+
     /// Underlying LSM read guard (tests / benchmarks).
     pub fn store(&self) -> parking_lot::RwLockReadGuard<'_, LsmTree> {
         self.storage.read()
@@ -238,13 +255,12 @@ impl LocalEngine {
         if self.txn.in_txn(session_id) {
             return put_row_in_txn(&self.txn, session_id, table, row, column, value);
         }
-        let cmd = Command::Put {
-            table: table.to_string(),
-            row: row.to_string(),
-            column: column.to_string(),
-            value: value.to_vec(),
-        };
-        apply_command(&mut self.storage.write(), &cmd)?;
+        let key = row_key(table, row, column);
+        let ts = self.txn.oracle().next();
+        self.storage
+            .write()
+            .put_version(&key, &Version::put(ts, value.to_vec()))
+            .map_err(EngineError::Storage)?;
         self.cache.lock().invalidate_table(table);
         Ok(())
     }
@@ -361,7 +377,10 @@ impl LocalEngine {
                 };
                 self.schema
                     .lock()
-                    .create_table(&t.name.value, ts, cols, pk);
+                    .create_table(&t.name.value, ts, cols.clone(), pk);
+                self.vector_indexes
+                    .lock()
+                    .register_table_schema(&t.name.value, &cols);
                 self.cache.lock().invalidate_table("");
                 self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
@@ -432,18 +451,43 @@ impl LocalEngine {
                 Statement::Insert(i) => {
                     self.cache.lock().invalidate_table(&i.table.value);
                     let schema = self.schema.lock();
-                    crate::dml::execute_insert(i, &schema, &mut self.storage.write())?;
+                    let mut tree = self.storage.write();
+                    let mut vectors = self.vector_indexes.lock();
+                    crate::dml::execute_insert(
+                        i,
+                        &schema,
+                        &mut tree,
+                        self.txn.oracle(),
+                        Some(&mut vectors),
+                    )?;
                     QueryResult::from_records(&[])
                 }
                 Statement::Update(u) => {
                     self.cache.lock().invalidate_table(&u.table.value);
                     let schema = self.schema.lock();
-                    crate::dml::execute_update(u, &schema, &mut self.storage.write())?;
+                    let mut tree = self.storage.write();
+                    let mut vectors = self.vector_indexes.lock();
+                    crate::dml::execute_update(
+                        u,
+                        &schema,
+                        &mut tree,
+                        self.txn.oracle(),
+                        Some(&mut vectors),
+                    )?;
                     QueryResult::from_records(&[])
                 }
                 Statement::Delete(d) => {
                     self.cache.lock().invalidate_table(&d.table.value);
-                    crate::dml::execute_delete(d, &mut self.storage.write())?;
+                    let schema = self.schema.lock();
+                    let mut tree = self.storage.write();
+                    let mut vectors = self.vector_indexes.lock();
+                    crate::dml::execute_delete(
+                        d,
+                        &schema,
+                        &mut tree,
+                        self.txn.oracle(),
+                        Some(&mut vectors),
+                    )?;
                     QueryResult::from_records(&[])
                 }
                 other => {
