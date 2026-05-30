@@ -435,12 +435,18 @@ impl LocalEngine {
                     crate::dml::execute_insert(i, &schema, &mut self.storage.write())?;
                     QueryResult::from_records(&[])
                 }
+                Statement::Update(u) => {
+                    self.cache.lock().invalidate_table(&u.table.value);
+                    let schema = self.schema.lock();
+                    crate::dml::execute_update(u, &schema, &mut self.storage.write())?;
+                    QueryResult::from_records(&[])
+                }
+                Statement::Delete(d) => {
+                    self.cache.lock().invalidate_table(&d.table.value);
+                    crate::dml::execute_delete(d, &mut self.storage.write())?;
+                    QueryResult::from_records(&[])
+                }
                 other => {
-                    match other {
-                        Statement::Update(u) => self.cache.lock().invalidate_table(&u.table.value),
-                        Statement::Delete(d) => self.cache.lock().invalidate_table(&d.table.value),
-                        _ => {}
-                    }
                     let records = apply_statement(other, &mut self.storage.write())?;
                     QueryResult::from_records(&records)
                 }
