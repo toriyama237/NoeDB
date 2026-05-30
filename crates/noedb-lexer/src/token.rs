@@ -139,6 +139,8 @@ pub enum Operator {
     Minus,
     /// `+`
     Plus,
+    /// `/`
+    Div,
 }
 
 /// SQL punctuation.

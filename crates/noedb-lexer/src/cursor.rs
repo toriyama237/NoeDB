@@ -40,6 +40,10 @@ impl<'src> Cursor<'src> {
             return Ok(None);
         };
 
+        if self.is_unicode_ident_start() {
+            return Ok(Some(self.lex_identifier_or_keyword()));
+        }
+
         if crate::ascii_lut::is_ident_start(b) {
             return Ok(Some(self.lex_identifier_or_keyword()));
         }
@@ -164,12 +168,10 @@ impl<'src> Cursor<'src> {
     #[inline]
     fn lex_identifier_or_keyword(&mut self) -> SpannedToken {
         let start = self.pos;
-        self.bump();
+        self.bump_char();
 
-        while self.pos < self.bytes.len()
-            && crate::ascii_lut::is_ident_continue(self.bytes[self.pos])
-        {
-            self.pos += 1;
+        while self.is_unicode_ident_continue() {
+            self.bump_char();
         }
 
         let word = &self.src[start..self.pos];
@@ -179,6 +181,24 @@ impl<'src> Cursor<'src> {
             || SpannedToken::new(Token::Ident, span),
             |kw| SpannedToken::new(Token::Keyword(kw), span),
         )
+    }
+
+    fn peek_char(&self) -> Option<char> {
+        self.src[self.pos..].chars().next()
+    }
+
+    fn bump_char(&mut self) -> Option<char> {
+        let c = self.peek_char()?;
+        self.pos += c.len_utf8();
+        Some(c)
+    }
+
+    fn is_unicode_ident_start(&self) -> bool {
+        matches!(self.peek_char(), Some(c) if c == '_' || c.is_alphabetic())
+    }
+
+    fn is_unicode_ident_continue(&self) -> bool {
+        matches!(self.peek_char(), Some(c) if c == '_' || c.is_alphanumeric())
     }
 
     fn lex_operator_or_punct(&mut self) -> Result<SpannedToken, LexError> {
@@ -201,6 +221,7 @@ impl<'src> Cursor<'src> {
             b'=' => Token::Op(Operator::Eq),
             b'+' => Token::Op(Operator::Plus),
             b'-' => Token::Op(Operator::Minus),
+            b'/' => Token::Op(Operator::Div),
             b'!' if self.peek_byte() == Some(b'=') => {
                 self.bump();
                 Token::Op(Operator::Ne)
