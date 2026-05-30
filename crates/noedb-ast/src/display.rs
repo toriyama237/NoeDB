@@ -436,6 +436,44 @@ impl fmt::Display for SelectStmt {
             write_keyword(f, Keyword::Where)?;
             write!(f, " {w}")?;
         }
+        if !self.group_by.is_empty() {
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Group)?;
+            write!(f, " ")?;
+            write_keyword(f, Keyword::By)?;
+            for (i, expr) in self.group_by.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{expr}")?;
+            }
+        }
+        if !self.order_by.is_empty() {
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Order)?;
+            write!(f, " ")?;
+            write_keyword(f, Keyword::By)?;
+            for (i, key) in self.order_by.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", key.expr)?;
+                if !key.asc {
+                    write!(f, " ")?;
+                    write_keyword(f, Keyword::Desc)?;
+                }
+            }
+        }
+        if let Some(limit) = self.limit {
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Limit)?;
+            write!(f, " {limit}")?;
+        }
+        if let Some(offset) = self.offset {
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Offset)?;
+            write!(f, " {offset}")?;
+        }
         if let Some(c) = &self.compound {
             write!(f, " {c}")?;
         }
@@ -518,6 +556,7 @@ impl fmt::Display for SqlType {
             Self::Text => write!(f, "TEXT"),
             Self::Date => write!(f, "DATE"),
             Self::Timestamp => write!(f, "TIMESTAMP"),
+            Self::Vector { dim } => write!(f, "VECTOR({dim})"),
             Self::Named(s) => write!(f, "{s}"),
         }
     }
@@ -532,6 +571,12 @@ impl fmt::Display for ColumnDef {
             write_keyword(f, Keyword::Not)?;
             write!(f, " ")?;
             write_keyword(f, Keyword::Null)?;
+        }
+        if self.primary_key {
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Primary)?;
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Key)?;
         }
         Ok(())
     }
@@ -619,6 +664,22 @@ impl fmt::Display for CreateTableStmt {
                 write!(f, ", ")?;
             }
             write!(f, "{col}")?;
+        }
+        if !self.primary_key.is_empty() {
+            if !self.columns.is_empty() {
+                write!(f, ", ")?;
+            }
+            write_keyword(f, Keyword::Primary)?;
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Key)?;
+            write!(f, " (")?;
+            for (i, col) in self.primary_key.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{col}")?;
+            }
+            write!(f, ")")?;
         }
         write!(f, ")")
     }

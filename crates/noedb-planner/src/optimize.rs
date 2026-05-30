@@ -7,6 +7,7 @@ use crate::cost::{estimate, index_beats_seq_scan, PlanStats};
 use crate::index::SecondaryIndex;
 use crate::join::extract_equi_join;
 use crate::logical::LogicalPlan;
+use crate::logical::AggFunc;
 use crate::physical::PhysicalPlan;
 
 /// Planning context (storage + stats).
@@ -308,10 +309,17 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
             Some(dedup(cols))
         }
         PhysicalPlan::Aggregate {
-            input, group_by, ..
+            input,
+            group_by,
+            aggs,
         } => {
             let mut cols = collect_columns(input).unwrap_or_default();
             cols.extend(group_by.clone());
+            for (_, func) in aggs {
+                if let AggFunc::CountCol(c) = func {
+                    cols.push(c.clone());
+                }
+            }
             Some(dedup(cols))
         }
         PhysicalPlan::Sort { input, keys } => {

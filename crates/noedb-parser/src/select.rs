@@ -1,8 +1,7 @@
 //! `SELECT` statement parsing.
 
-use noedb_ast::{
-    CompoundSelect, CteBody, CteDef, Join, JoinKind, SelectItem, SelectStmt, SetOpKind, TableRef,
-    WithClause,
+use noedb_ast::{CompoundSelect, CteBody, CteDef, Expr, Join, JoinKind, OrderKey, SelectItem, SelectStmt, SetOpKind,
+    TableRef, WithClause,
 };
 use noedb_lexer::{Keyword, Punctuation, Token};
 
@@ -137,6 +136,10 @@ fn parse_select_inner(
         None
     };
 
+    let group_by = parse_group_by(p)?;
+    let order_by = parse_order_by(p)?;
+    let (limit, offset) = parse_limit_offset(p)?;
+
     if stop_at_rparen
         && matches!(
             p.peek_kind(),
@@ -161,6 +164,10 @@ fn parse_select_inner(
         from,
         joins,
         where_clause,
+        group_by,
+        order_by,
+        limit,
+        offset,
         compound: None,
         span: Parser::merge_span(start, end),
     })
@@ -204,12 +211,14 @@ fn is_table_alias_boundary(next: Option<&Token>, stop_at_rparen: bool) -> bool {
     matches!(
         next,
         Some(Token::Keyword(
-            Keyword::Inner | Keyword::Left | Keyword::Join
+            Keyword::Inner | Keyword::Left | Keyword::Join | Keyword::Order | Keyword::Limit
+                | Keyword::Group
         )) | Some(Token::Keyword(Keyword::Where))
             | Some(Token::Keyword(Keyword::On))
             | Some(Token::Keyword(Keyword::Union))
             | Some(Token::Keyword(Keyword::Intersect))
             | Some(Token::Keyword(Keyword::Except))
+            | Some(Token::Keyword(Keyword::Offset))
             | Some(Token::Punct(Punctuation::RParen))
             | Some(Token::Punct(Punctuation::Comma))
             | Some(Token::Eof)
@@ -241,4 +250,71 @@ fn parse_join(p: &mut Parser<'_>, stop_at_rparen: bool) -> Result<Join, ParseErr
         on,
         span: Parser::merge_span(start, end),
     })
+}
+
+fn parse_group_by(p: &mut Parser<'_>) -> Result<Vec<Expr>, ParseError> {
+    if !p.match_keyword(Keyword::Group) {
+        return Ok(Vec::new());
+    }
+    p.expect_keyword(Keyword::By)?;
+    let mut cols = Vec::new();
+    loop {
+        cols.push(parse_expr(p)?);
+        if !matches!(p.peek_kind(), Token::Punct(Punctuation::Comma)) {
+            break;
+        }
+        p.bump();
+    }
+    Ok(cols)
+}
+
+fn parse_order_by(p: &mut Parser<'_>) -> Result<Vec<OrderKey>, ParseError> {
+    if !p.match_keyword(Keyword::Order) {
+        return Ok(Vec::new());
+    }
+    p.expect_keyword(Keyword::By)?;
+    let mut keys = Vec::new();
+    loop {
+        let expr = parse_expr(p)?;
+        let asc = if p.match_keyword(Keyword::Desc) {
+            false
+        } else {
+            let _ = p.match_keyword(Keyword::Asc);
+            true
+        };
+        keys.push(OrderKey { expr, asc });
+        if !matches!(p.peek_kind(), Token::Punct(Punctuation::Comma)) {
+            break;
+        }
+        p.bump();
+    }
+    Ok(keys)
+}
+
+fn parse_limit_offset(p: &mut Parser<'_>) -> Result<(Option<u64>, Option<u64>), ParseError> {
+    let limit = if p.match_keyword(Keyword::Limit) {
+        Some(parse_unsigned(p)?)
+    } else {
+        None
+    };
+    let offset = if p.match_keyword(Keyword::Offset) {
+        Some(parse_unsigned(p)?)
+    } else {
+        None
+    };
+    Ok((limit, offset))
+}
+
+fn parse_unsigned(p: &mut Parser<'_>) -> Result<u64, ParseError> {
+    let tok = p.bump();
+    match tok.kind {
+        Token::Integer(v) if v >= 0 => u64::try_from(v).map_err(|_| ParseError::UnexpectedToken {
+            span: tok.span,
+            context: "LIMIT/OFFSET",
+        }),
+        _ => Err(ParseError::UnexpectedToken {
+            span: tok.span,
+            context: "LIMIT/OFFSET integer",
+        }),
+    }
 }

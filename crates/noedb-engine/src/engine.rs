@@ -8,7 +8,8 @@ use std::time::Instant;
 use dashmap::DashMap;
 use noedb_ast::Statement;
 use noedb_planner::{
-    apply_statement, execute_sql, explain_sql, ExecError, PlanError, Record, Value,
+    apply_statement, execute_sql, execute_sql_with_schema, explain_sql, explain_sql_with_schema,
+    ExecError, PlanError, Record, Value,
 };
 use noedb_raft::{Cluster, NodeId, RaftError, Role};
 use noedb_storage::{LsmConfig, LsmTree};
@@ -81,8 +82,27 @@ fn value_to_string(v: &Value) -> String {
         Value::Integer(n) => n.to_string(),
         Value::Float(f) => f.to_string(),
         Value::Bool(b) => b.to_string(),
-        Value::Bytes(b) | Value::Date(b) => String::from_utf8_lossy(b).into_owned(),
+        Value::Bytes(b) | Value::Date(b) => {
+            if let Some(v) = crate::dml::vector_from_bytes(b) {
+                format!(
+                    "[{}]",
+                    v.iter()
+                        .map(|f| f.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )
+            } else {
+                String::from_utf8_lossy(b).into_owned()
+            }
+        }
         Value::Timestamp(ts) => ts.to_string(),
+        Value::Vector(v) => format!(
+            "[{}]",
+            v.iter()
+                .map(|f| f.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
     }
 }
 
@@ -319,8 +339,29 @@ impl LocalEngine {
             }
             Statement::CreateTable(t) => {
                 let ts = self.txn.oracle().next();
-                let cols: Vec<String> = t.columns.iter().map(|c| c.name.value.clone()).collect();
-                self.schema.lock().create_table(&t.name.value, ts, cols);
+                let pk_from_table: Vec<String> =
+                    t.primary_key.iter().map(|c| c.value.clone()).collect();
+                let cols: Vec<crate::schema::ColumnMeta> = t
+                    .columns
+                    .iter()
+                    .map(|c| crate::schema::ColumnMeta {
+                        name: c.name.value.clone(),
+                        data_type: c.data_type.clone(),
+                        not_null: c.not_null || c.primary_key,
+                        primary_key: c.primary_key,
+                    })
+                    .collect();
+                let pk = if pk_from_table.is_empty() {
+                    cols.iter()
+                        .filter(|c| c.primary_key)
+                        .map(|c| c.name.clone())
+                        .collect()
+                } else {
+                    pk_from_table
+                };
+                self.schema
+                    .lock()
+                    .create_table(&t.name.value, ts, cols, pk);
                 self.cache.lock().invalidate_table("");
                 self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
@@ -374,7 +415,14 @@ impl LocalEngine {
             } else {
                 self.metrics.record_cache(false);
                 let tree = self.storage.read();
-                let records = execute_sql(&stmt, &tree).map_err(EngineError::Exec)?;
+                let qschema = self.schema.lock().query_schema();
+                let records = noedb_planner::execute_sql_with_schema(
+                    &stmt,
+                    &*tree,
+                    &tree,
+                    Some(&qschema),
+                )
+                .map_err(EngineError::Exec)?;
                 let qr = QueryResult::from_records(&records);
                 self.cache.lock().put(&role, sql, qr.clone());
                 qr
@@ -426,7 +474,8 @@ impl LocalEngine {
         let role = self.session_role_for(DEFAULT_SESSION);
         let stmt = apply_rls(stmt, &self.rls.lock(), &role);
         let tree = self.storage.read();
-        explain_sql(&stmt, &tree).map_err(plan_err)
+        let qschema = self.schema.lock().query_schema();
+        explain_sql_with_schema(&stmt, &tree, Some(&qschema)).map_err(plan_err)
     }
 }
 

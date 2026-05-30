@@ -158,8 +158,53 @@ fn eval_binary(
             let r = eval_expr(right, row)?;
             cmp_values(&l, &r, op).map(Value::Bool)
         }
+        BinaryOp::Like => {
+            let l = eval_expr(left, row)?;
+            let r = eval_expr(right, row)?;
+            Ok(Value::Bool(like_match(&l, &r)))
+        }
         _ => Err(ExecError::UnsupportedExpr),
     }
+}
+
+fn like_match(left: &Value, pattern: &Value) -> bool {
+    if matches!(left, Value::Null) || matches!(pattern, Value::Null) {
+        return false;
+    }
+    let Value::Bytes(text) = left else {
+        return false;
+    };
+    let Value::Bytes(pat) = pattern else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(text);
+    let pat = String::from_utf8_lossy(pat);
+    sql_like(text.as_ref(), pat.as_ref())
+}
+
+/// SQL `LIKE` with `%` (any sequence) and `_` (single char).
+fn sql_like(text: &str, pattern: &str) -> bool {
+    let t: Vec<char> = text.chars().collect();
+    let p: Vec<char> = pattern.chars().collect();
+    let m = t.len() + 1;
+    let n = p.len() + 1;
+    let mut dp = vec![vec![false; n]; m];
+    dp[0][0] = true;
+    for j in 1..p.len() + 1 {
+        if p[j - 1] == '%' {
+            dp[0][j] = dp[0][j - 1];
+        }
+    }
+    for i in 1..t.len() + 1 {
+        for j in 1..p.len() + 1 {
+            if p[j - 1] == '%' {
+                dp[i][j] = dp[i][j - 1] || dp[i - 1][j];
+            } else if p[j - 1] == '_' || t[i - 1] == p[j - 1] {
+                dp[i][j] = dp[i - 1][j - 1];
+            }
+        }
+    }
+    dp[t.len()][p.len()]
 }
 
 fn cmp_values(l: &Value, r: &Value, op: BinaryOp) -> Result<bool, ExecError> {

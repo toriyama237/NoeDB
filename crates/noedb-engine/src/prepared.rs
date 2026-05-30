@@ -76,6 +76,14 @@ fn substitute_params(stmt: &Statement, params: &[Literal]) -> Statement {
             from: s.from.clone(),
             joins: s.joins.clone(),
             where_clause: s.where_clause.as_ref().map(|e| substitute_expr(e, params)),
+            group_by: s
+                .group_by
+                .iter()
+                .map(|e| substitute_expr(e, params))
+                .collect(),
+            order_by: s.order_by.clone(),
+            limit: s.limit,
+            offset: s.offset,
             compound: s.compound.as_ref().map(|c| substitute_compound(c, params)),
             span: s.span,
         }),
@@ -187,6 +195,14 @@ fn substitute_select(stmt: &noedb_ast::SelectStmt, params: &[Literal]) -> noedb_
             .where_clause
             .as_ref()
             .map(|e| substitute_expr(e, params)),
+        group_by: stmt
+            .group_by
+            .iter()
+            .map(|e| substitute_expr(e, params))
+            .collect(),
+        order_by: stmt.order_by.clone(),
+        limit: stmt.limit,
+        offset: stmt.offset,
         compound: stmt
             .compound
             .as_ref()

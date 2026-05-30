@@ -427,7 +427,11 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
                     .map(|col| {
                         let val = row
                             .iter()
-                            .find(|(n, _)| n == col)
+                            .find(|(n, _)| {
+                                n == col
+                                    || n.rsplit_once('.')
+                                        .is_some_and(|(_, bare)| bare == col)
+                            })
                             .map_or(Value::Null, |(_, v)| v.clone());
                         (col.clone(), val.as_bytes())
                     })
@@ -439,10 +443,12 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
                             *entry.entry(name.clone()).or_insert(0) += 1;
                         }
                         AggFunc::CountCol(col) => {
-                            let non_null = row
-                                .iter()
-                                .find(|(n, _)| n == col)
-                                .is_some_and(|(_, v)| !matches!(v, Value::Null));
+                            let non_null = row.iter().any(|(n, v)| {
+                                !matches!(v, Value::Null)
+                                    && (n == col
+                                        || n.rsplit_once('.')
+                                            .is_some_and(|(_, bare)| bare == col))
+                            });
                             if non_null {
                                 *entry.entry(name.clone()).or_insert(0) += 1;
                             }

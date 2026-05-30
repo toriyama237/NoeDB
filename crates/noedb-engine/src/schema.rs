@@ -2,15 +2,32 @@
 
 use std::collections::BTreeMap;
 
+use noedb_ast::SqlType;
+use noedb_planner::QuerySchema;
 use noedb_storage::CommitTs;
+
+/// One column in the catalog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ColumnMeta {
+    /// Column name.
+    pub name: String,
+    /// Declared SQL type.
+    pub data_type: SqlType,
+    /// `NOT NULL` constraint.
+    pub not_null: bool,
+    /// Column-level `PRIMARY KEY`.
+    pub primary_key: bool,
+}
 
 /// Catalog entry for a table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSchema {
     /// Table name.
     pub name: String,
-    /// Column names in DDL order.
-    pub columns: Vec<String>,
+    /// Columns in DDL order.
+    pub columns: Vec<ColumnMeta>,
+    /// Primary key column names (table-level or per-column).
+    pub primary_key: Vec<String>,
     /// Schema version at creation / last DDL.
     pub version_ts: CommitTs,
 }
@@ -30,7 +47,8 @@ impl SchemaCatalog {
         &mut self,
         name: impl Into<String>,
         version_ts: CommitTs,
-        columns: Vec<String>,
+        columns: Vec<ColumnMeta>,
+        primary_key: Vec<String>,
     ) {
         let name = name.into();
         self.epoch = self.epoch.max(version_ts);
@@ -39,6 +57,7 @@ impl SchemaCatalog {
             TableSchema {
                 name,
                 columns,
+                primary_key,
                 version_ts,
             },
         );
@@ -46,8 +65,34 @@ impl SchemaCatalog {
 
     /// Column names for a registered table.
     #[must_use]
-    pub fn columns_for(&self, table: &str) -> Option<&[String]> {
-        self.tables.get(table).map(|t| t.columns.as_slice())
+    pub fn column_names(&self, table: &str) -> Option<Vec<String>> {
+        self.tables
+            .get(table)
+            .map(|t| t.columns.iter().map(|c| c.name.clone()).collect())
+    }
+
+    /// Column names slice helper (allocates).
+    #[must_use]
+    pub fn columns_for(&self, table: &str) -> Option<Vec<String>> {
+        self.column_names(table)
+    }
+
+    /// Column metadata lookup.
+    #[must_use]
+    pub fn column(&self, table: &str, column: &str) -> Option<&ColumnMeta> {
+        self.tables
+            .get(table)
+            .and_then(|t| t.columns.iter().find(|c| c.name == column))
+    }
+
+    /// Snapshot for the query planner (`SELECT *` expansion).
+    #[must_use]
+    pub fn query_schema(&self) -> QuerySchema {
+        QuerySchema::from_tables(
+            self.tables
+                .iter()
+                .map(|(name, t)| (name.clone(), t.columns.iter().map(|c| c.name.clone()).collect())),
+        )
     }
 
     /// Roll back a table created in the current txn (not yet committed to LSM).

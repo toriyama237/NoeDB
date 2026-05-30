@@ -61,6 +61,10 @@ mod tests {
             }),
             joins: vec![],
             where_clause: None,
+            group_by: vec![],
+            order_by: vec![],
+            limit: None,
+            offset: None,
             compound: None,
             span: Span::new(0, 15),
         });

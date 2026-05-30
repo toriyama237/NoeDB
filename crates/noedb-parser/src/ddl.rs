@@ -64,8 +64,22 @@ fn parse_create_table(
     p.expect_punct(Punctuation::LParen)?;
 
     let mut columns = Vec::new();
+    let mut primary_key = Vec::new();
     loop {
-        columns.push(parse_column_def(p)?);
+        if p.match_keyword(Keyword::Primary) {
+            p.expect_keyword(Keyword::Key)?;
+            p.expect_punct(Punctuation::LParen)?;
+            loop {
+                primary_key.push(p.parse_ident()?);
+                if !matches!(p.peek_kind(), Token::Punct(Punctuation::Comma)) {
+                    break;
+                }
+                p.bump();
+            }
+            p.expect_punct(Punctuation::RParen)?;
+        } else {
+            columns.push(parse_column_def(p)?);
+        }
         if !matches!(p.peek_kind(), Token::Punct(Punctuation::Comma)) {
             break;
         }
@@ -78,6 +92,7 @@ fn parse_create_table(
     Ok(CreateTableStmt {
         name,
         columns,
+        primary_key,
         span: Parser::merge_span(start, end),
     })
 }
@@ -86,12 +101,24 @@ fn parse_column_def(p: &mut Parser<'_>) -> Result<ColumnDef, ParseError> {
     let start = p.peek().span;
     let name = p.parse_ident()?;
     let data_type = crate::types::parse_sql_type(p)?;
-    let not_null = p.match_keyword(Keyword::Not) && p.match_keyword(Keyword::Null);
+    let mut not_null = false;
+    let mut primary_key = false;
+    loop {
+        if p.match_keyword(Keyword::Not) && p.match_keyword(Keyword::Null) {
+            not_null = true;
+        } else if p.match_keyword(Keyword::Primary) && p.match_keyword(Keyword::Key) {
+            primary_key = true;
+            not_null = true;
+        } else {
+            break;
+        }
+    }
     let end = p.tokens[p.pos.saturating_sub(1)].span;
     Ok(ColumnDef {
         name,
         data_type,
         not_null,
+        primary_key,
         span: Parser::merge_span(start, end),
     })
 }

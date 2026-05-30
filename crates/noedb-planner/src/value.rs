@@ -19,6 +19,8 @@ pub enum Value {
     Date(Vec<u8>),
     /// `TIMESTAMP` (Unix seconds, UTC).
     Timestamp(i64),
+    /// `VECTOR(n)` embedding.
+    Vector(Vec<f32>),
 }
 
 fn parse_bytes_as_f64(b: &[u8]) -> Option<f64> {
@@ -37,6 +39,13 @@ impl Value {
             Self::Bytes(b) => b.clone(),
             Self::Date(b) => b.clone(),
             Self::Timestamp(ts) => ts.to_be_bytes().to_vec(),
+            Self::Vector(v) => {
+                let mut out = b"NDV1".to_vec();
+                for f in v {
+                    out.extend_from_slice(&f.to_le_bytes());
+                }
+                out
+            }
         }
     }
 
@@ -52,6 +61,7 @@ impl Value {
             (Self::Bytes(a), Self::Bytes(b)) => Some(a == b),
             (Self::Date(a), Self::Date(b)) => Some(a == b),
             (Self::Timestamp(a), Self::Timestamp(b)) => Some(a == b),
+            (Self::Vector(a), Self::Vector(b)) => Some(a == b),
             (Self::Integer(a), Self::Float(b)) => Some(*a as f64 == *b),
             (Self::Float(a), Self::Integer(b)) => Some(*a == *b as f64),
             (Self::Bytes(a), Self::Integer(b)) => parse_bytes_as_f64(a).map(|x| x == *b as f64),

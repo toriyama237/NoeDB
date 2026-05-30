@@ -28,6 +28,7 @@ pub fn cast_value(val: &Value, ty: &SqlType) -> Result<Value, ExecError> {
         }
         SqlType::Date => cast_to_date(val),
         SqlType::Timestamp => cast_to_timestamp(val),
+        SqlType::Vector { dim } => cast_to_vector(val, *dim),
         SqlType::Named(name) if name.eq_ignore_ascii_case("TEXT") => {
             Ok(Value::Bytes(value_to_string(val)?.into_bytes()))
         }
@@ -40,6 +41,11 @@ pub fn cast_value(val: &Value, ty: &SqlType) -> Result<Value, ExecError> {
                 "TEXT" => Ok(Value::Bytes(value_to_string(val)?.into_bytes())),
                 "DATE" => cast_to_date(val),
                 "TIMESTAMP" | "TIMESTAMPTZ" => cast_to_timestamp(val),
+                "VECTOR" => {
+                    return Err(ExecError::TypeMismatch {
+                        message: "VECTOR requires VECTOR(n) dimension".into(),
+                    });
+                }
                 _ => Err(ExecError::TypeMismatch {
                     message: format!("unsupported CAST target type {name}"),
                 }),
@@ -57,6 +63,7 @@ fn cast_to_int(val: &Value) -> Result<Value, ExecError> {
         Value::Date(b) => parse_int_bytes(b)?,
         Value::Timestamp(ts) => *ts,
         Value::Null => unreachable!(),
+        Value::Vector(_) => return Err(type_err("cannot CAST VECTOR to INT")),
     }))
 }
 
@@ -69,6 +76,7 @@ fn cast_to_float(val: &Value) -> Result<Value, ExecError> {
         Value::Date(b) => parse_float_bytes(b)?,
         Value::Timestamp(ts) => *ts as f64,
         Value::Null => unreachable!(),
+        Value::Vector(_) => return Err(type_err("cannot CAST VECTOR to FLOAT")),
     }))
 }
 
@@ -81,6 +89,7 @@ fn cast_to_bool(val: &Value) -> Result<Value, ExecError> {
         Value::Date(b) => !b.is_empty(),
         Value::Timestamp(ts) => *ts != 0,
         Value::Null => unreachable!(),
+        Value::Vector(_) => return Err(type_err("cannot CAST VECTOR to BOOLEAN")),
     }))
 }
 
@@ -95,7 +104,45 @@ fn cast_to_date(val: &Value) -> Result<Value, ExecError> {
             message: format!("cannot CAST boolean {b} to DATE"),
         }),
         Value::Null => unreachable!(),
+        Value::Vector(_) => Err(type_err("cannot CAST VECTOR to DATE")),
     }
+}
+
+fn cast_to_vector(val: &Value, dim: u32) -> Result<Value, ExecError> {
+    let floats = match val {
+        Value::Vector(v) => v.clone(),
+        Value::Bytes(b) => parse_vector_literal(b, dim)?,
+        other => {
+            return Err(ExecError::TypeMismatch {
+                message: format!("cannot CAST {other:?} to VECTOR({dim})"),
+            });
+        }
+    };
+    if floats.len() != dim as usize {
+        return Err(ExecError::TypeMismatch {
+            message: format!("VECTOR({dim}) has {} elements", floats.len()),
+        });
+    }
+    Ok(Value::Vector(floats))
+}
+
+fn parse_vector_literal(bytes: &[u8], dim: u32) -> Result<Vec<f32>, ExecError> {
+    let s = std::str::from_utf8(bytes).map_err(|_| type_err("invalid UTF-8 for VECTOR"))?;
+    let s = s.trim().trim_start_matches('[').trim_end_matches(']');
+    let floats: Result<Vec<f32>, _> = s
+        .split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            p.parse::<f32>()
+                .map_err(|_| type_err(&format!("invalid float `{p}` in VECTOR")))
+        })
+        .collect();
+    let floats = floats?;
+    if floats.len() != dim as usize {
+        return Err(type_err(&format!("VECTOR({dim}) literal has {} elements", floats.len())));
+    }
+    Ok(floats)
 }
 
 fn cast_to_timestamp(val: &Value) -> Result<Value, ExecError> {
@@ -110,6 +157,11 @@ fn cast_to_timestamp(val: &Value) -> Result<Value, ExecError> {
             });
         }
         Value::Null => unreachable!(),
+        Value::Vector(_) => {
+            return Err(ExecError::TypeMismatch {
+                message: "cannot CAST VECTOR to TIMESTAMP".into(),
+            });
+        }
     }))
 }
 
@@ -122,6 +174,13 @@ fn value_to_string(val: &Value) -> Result<String, ExecError> {
         Value::Bytes(b) => String::from_utf8_lossy(b).into_owned(),
         Value::Date(b) => String::from_utf8_lossy(b).into_owned(),
         Value::Timestamp(ts) => ts.to_string(),
+        Value::Vector(v) => format!(
+            "[{}]",
+            v.iter()
+                .map(|f| f.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
     })
 }
 

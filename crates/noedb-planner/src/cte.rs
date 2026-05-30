@@ -91,7 +91,7 @@ fn run_select<S: StorageEngine<Error = StorageError>>(
 ) -> Result<Vec<RowMap>, ExecError> {
     let mut scope = cte_scope.clone();
     scope.extend(cte_names_from(stmt.with_clause.as_ref()));
-    let logical = build_select_scoped(stmt, &scope)?;
+    let logical = build_select_scoped(stmt, &scope, None)?;
     let plan_ctx = PlanContext::with_stats(index_store, crate::load_plan_stats(index_store));
     let physical = optimize(logical, &plan_ctx);
     let records = execute(

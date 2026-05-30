@@ -27,6 +27,12 @@ pub(crate) fn parse_sql_type(p: &mut Parser<'_>) -> Result<SqlType, ParseError> 
                 Ok(SqlType::Varchar { max_len: None })
             }
         }
+        "VECTOR" => {
+            p.expect_punct(Punctuation::LParen)?;
+            let dim = parse_type_length(p)?;
+            p.expect_punct(Punctuation::RParen)?;
+            Ok(SqlType::Vector { dim })
+        }
         other => Ok(SqlType::Named(other.to_string())),
     }
 }

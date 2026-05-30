@@ -96,7 +96,7 @@ fn decorrelate_one(
 
     let mut inner_stmt = pred.query.clone();
     inner_stmt.where_clause = inner_where;
-    let inner_plan = crate::build::build_select_scoped(&inner_stmt, cte_scope)?;
+    let inner_plan = crate::build::build_select_scoped(&inner_stmt, cte_scope, None)?;
 
     let corr_on = and_exprs(corr);
 

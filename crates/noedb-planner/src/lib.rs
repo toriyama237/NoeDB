@@ -7,6 +7,7 @@
 #![allow(unreachable_pub)] // API surface re-exported by the `noedb` meta-crate.
 
 mod adaptive;
+mod aggregate;
 mod build;
 mod cast;
 mod cost;
@@ -22,7 +23,9 @@ mod optimize;
 mod parallel;
 mod physical;
 mod setops;
+mod schema;
 mod simd_pred;
+mod star;
 mod stats;
 mod subquery;
 mod value;
@@ -31,7 +34,8 @@ mod window_exec;
 
 pub use adaptive::ExecutionFeedback;
 pub use eval::{eval_expr, eval_predicate};
-pub use build::build;
+pub use build::{build, build_select, build_with_schema, cte_names_from};
+pub use schema::QuerySchema;
 pub use cost::{estimate, index_beats_seq_scan, PlanStats, INDEX_LOOKUP_COST, SEQ_SCAN_ROW_COST};
 pub use executor::{execute, ExecutionContext, Executor};
 pub use explain::explain;
@@ -64,7 +68,21 @@ pub fn plan(stmt: &Statement) -> Result<LogicalPlan, PlanError> {
 ///
 /// Planner or executor errors.
 pub fn execute_sql(stmt: &Statement, store: &LsmTree) -> Result<Vec<Record>, ExecError> {
-    execute_sql_on(stmt, store, store)
+    execute_sql_with_schema(stmt, store, store, None)
+}
+
+/// Execute with optional schema catalog (`SELECT *` expansion).
+///
+/// # Errors
+///
+/// Planner or executor errors.
+pub fn execute_sql_with_schema<S: StorageEngine<Error = StorageError>>(
+    stmt: &Statement,
+    exec_store: &S,
+    index_store: &LsmTree,
+    schema: Option<&QuerySchema>,
+) -> Result<Vec<Record>, ExecError> {
+    execute_sql_on_with_schema(stmt, exec_store, index_store, schema)
 }
 
 /// Execute with separate read store (MVCC snapshot) and index catalog store.
@@ -77,6 +95,20 @@ pub fn execute_sql_on<S: StorageEngine<Error = StorageError>>(
     exec_store: &S,
     index_store: &LsmTree,
 ) -> Result<Vec<Record>, ExecError> {
+    execute_sql_on_with_schema(stmt, exec_store, index_store, None)
+}
+
+/// Execute with separate stores and optional schema catalog.
+///
+/// # Errors
+///
+/// Planner or executor errors.
+pub fn execute_sql_on_with_schema<S: StorageEngine<Error = StorageError>>(
+    stmt: &Statement,
+    exec_store: &S,
+    index_store: &LsmTree,
+    schema: Option<&QuerySchema>,
+) -> Result<Vec<Record>, ExecError> {
     let cte_tables = if let Statement::Select(s) = stmt {
         s.with_clause
             .as_ref()
@@ -87,7 +119,7 @@ pub fn execute_sql_on<S: StorageEngine<Error = StorageError>>(
         HashMap::new()
     };
 
-    let logical = plan(stmt)?;
+    let logical = build_with_schema(stmt, schema)?;
     let stats = load_plan_stats(index_store);
     let ctx = PlanContext::with_stats(index_store, stats);
     let physical = optimize(logical, &ctx);
@@ -111,7 +143,20 @@ pub fn execute_sql_on<S: StorageEngine<Error = StorageError>>(
 ///
 /// Planner errors for unsupported statements.
 pub fn explain_sql(stmt: &Statement, store: &LsmTree) -> Result<String, PlanError> {
-    let logical = plan(stmt)?;
+    explain_sql_with_schema(stmt, store, None)
+}
+
+/// Return an `EXPLAIN` plan with optional schema catalog.
+///
+/// # Errors
+///
+/// Planner errors for unsupported statements.
+pub fn explain_sql_with_schema(
+    stmt: &Statement,
+    store: &LsmTree,
+    schema: Option<&QuerySchema>,
+) -> Result<String, PlanError> {
+    let logical = build_with_schema(stmt, schema)?;
     let stats = load_plan_stats(store);
     let ctx = PlanContext::with_stats(store, stats);
     let physical = optimize(logical, &ctx);
@@ -165,6 +210,13 @@ pub fn record_execution(stats: &mut PlanStats, feedback: &ExecutionFeedback) {
 pub enum PlanError {
     /// Statement kind not implemented yet.
     UnsupportedStatement,
+    /// Table not found in schema catalog.
+    UnknownTable {
+        /// Table name.
+        name: String,
+    },
+    /// `SELECT *` requires a schema catalog.
+    MissingSchema,
 }
 
 /// An error produced at execution time.
@@ -312,6 +364,75 @@ mod tests {
         let stmt = noedb_parser::parse("CREATE INDEX idx_users_id ON users (id)").unwrap();
         apply_statement(&stmt, &mut tree).unwrap();
         assert!(SecondaryIndex::exists(&tree, "users", "id"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn select_star_expanded_with_schema() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "id", b"1");
+        put_row(&mut tree, "users", "1", "name", b"ada");
+        let schema = QuerySchema::from_tables([(
+            "users".to_string(),
+            vec!["id".to_string(), "name".to_string()],
+        )]);
+        let stmt = noedb_parser::parse("SELECT * FROM users").unwrap();
+        let rows = execute_sql_with_schema(&stmt, &tree, &tree, Some(&schema)).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields.len(), 2);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn order_by_limit() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "name", b"bob");
+        put_row(&mut tree, "users", "2", "name", b"ada");
+        let stmt = noedb_parser::parse("SELECT name FROM users ORDER BY name LIMIT 1").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields[0].1, Value::Bytes(b"ada".to_vec()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn count_aggregate() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "id", b"1");
+        put_row(&mut tree, "users", "2", "id", b"2");
+        put_row(&mut tree, "users", "3", "id", b"3");
+        let stmt = noedb_parser::parse("SELECT COUNT(id) FROM users").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields[0].1, Value::Integer(3));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn like_filter() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "name", b"Marie");
+        put_row(&mut tree, "users", "2", "name", b"Paul");
+        let stmt = noedb_parser::parse("SELECT name FROM users WHERE name LIKE 'M%'").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields[0].1, Value::Bytes(b"Marie".to_vec()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn group_by_count() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "campus", b"A");
+        put_row(&mut tree, "users", "1", "id", b"1");
+        put_row(&mut tree, "users", "2", "campus", b"A");
+        put_row(&mut tree, "users", "2", "id", b"2");
+        put_row(&mut tree, "users", "3", "campus", b"B");
+        put_row(&mut tree, "users", "3", "id", b"3");
+        let stmt =
+            noedb_parser::parse("SELECT campus, COUNT(id) FROM users GROUP BY campus").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 2);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

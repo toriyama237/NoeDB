@@ -4,6 +4,7 @@ use noedb_lexer::Span;
 
 use crate::expr::{Expr, Literal, SelectItem};
 use crate::name::{Ident, TableRef};
+use crate::window::OrderKey;
 
 /// Kind of SQL join.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -103,6 +104,14 @@ pub struct SelectStmt {
     pub joins: Vec<Join>,
     /// Optional `WHERE` predicate.
     pub where_clause: Option<Expr>,
+    /// Optional `GROUP BY` expressions.
+    pub group_by: Vec<Expr>,
+    /// Optional `ORDER BY` keys.
+    pub order_by: Vec<OrderKey>,
+    /// Optional `LIMIT` row cap.
+    pub limit: Option<u64>,
+    /// Optional `OFFSET` skip count.
+    pub offset: Option<u64>,
     /// Optional trailing compound (`UNION` / `INTERSECT` / `EXCEPT`).
     pub compound: Option<CompoundSelect>,
     /// Span covering the whole statement.
@@ -129,6 +138,11 @@ pub enum SqlType {
     Date,
     /// `TIMESTAMP` (Unix seconds).
     Timestamp,
+    /// `VECTOR(n)` — fixed-size embedding (AI / similarity search).
+    Vector {
+        /// Number of `f32` dimensions.
+        dim: u32,
+    },
     /// Any other type name preserved as text (`DECIMAL`, …).
     Named(String),
 }
@@ -142,6 +156,8 @@ pub struct ColumnDef {
     pub data_type: SqlType,
     /// Whether `NOT NULL` was specified.
     pub not_null: bool,
+    /// Whether `PRIMARY KEY` was specified on this column.
+    pub primary_key: bool,
     /// Span of the column definition.
     pub span: Span,
 }
@@ -190,6 +206,8 @@ pub struct CreateTableStmt {
     pub name: Ident,
     /// Column definitions.
     pub columns: Vec<ColumnDef>,
+    /// Table-level `PRIMARY KEY (cols…)` when present.
+    pub primary_key: Vec<Ident>,
     /// Span covering the statement.
     pub span: Span,
 }
