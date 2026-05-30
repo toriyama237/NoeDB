@@ -8,7 +8,7 @@ use std::time::Instant;
 use dashmap::DashMap;
 use noedb_ast::Statement;
 use noedb_planner::{
-    apply_statement, execute_sql, execute_sql_with_schema, explain_sql, explain_sql_with_schema,
+    apply_statement, execute_sql, explain_sql, explain_sql_with_schema,
     ExecError, PlanError, Record, Value,
 };
 use noedb_raft::{Cluster, NodeId, RaftError, Role};
