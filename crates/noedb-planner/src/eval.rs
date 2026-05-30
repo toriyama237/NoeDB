@@ -73,11 +73,11 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
     }
 }
 
-/// Evaluate a predicate; `NULL` is treated as false for `WHERE`.
+/// Evaluate a predicate; `NULL` and `Unknown` are treated as false for `WHERE`.
 pub fn eval_predicate(expr: &Expr, row: &[(String, Value)]) -> Result<bool, ExecError> {
     match eval_expr(expr, row)? {
-        Value::Bool(b) => Ok(b),
-        Value::Null => Ok(false),
+        Value::Bool(true) => Ok(true),
+        Value::Bool(false) | Value::Null => Ok(false),
         other => Err(ExecError::TypeMismatch {
             message: format!("expected boolean predicate, got {other:?}"),
         }),
@@ -159,26 +159,56 @@ fn eval_binary(
 ) -> Result<Value, ExecError> {
     match op {
         BinaryOp::And => {
-            if !eval_predicate(left, row)? {
-                return Ok(Value::Bool(false));
+            let l = eval_expr(left, row)?;
+            match l {
+                Value::Bool(false) => Ok(Value::Bool(false)),
+                Value::Null => {
+                    let r = eval_expr(right, row)?;
+                    if matches!(r, Value::Bool(false)) {
+                        Ok(Value::Bool(false))
+                    } else {
+                        Ok(Value::Null)
+                    }
+                }
+                Value::Bool(true) => eval_expr(right, row),
+                other => Err(ExecError::TypeMismatch {
+                    message: format!("AND applied to {other:?}"),
+                }),
             }
-            Ok(Value::Bool(eval_predicate(right, row)?))
         }
         BinaryOp::Or => {
-            if eval_predicate(left, row)? {
-                return Ok(Value::Bool(true));
+            let l = eval_expr(left, row)?;
+            match l {
+                Value::Bool(true) => Ok(Value::Bool(true)),
+                Value::Null => {
+                    let r = eval_expr(right, row)?;
+                    if matches!(r, Value::Bool(true)) {
+                        Ok(Value::Bool(true))
+                    } else {
+                        Ok(Value::Null)
+                    }
+                }
+                Value::Bool(false) => eval_expr(right, row),
+                other => Err(ExecError::TypeMismatch {
+                    message: format!("OR applied to {other:?}"),
+                }),
             }
-            Ok(Value::Bool(eval_predicate(right, row)?))
         }
         BinaryOp::Eq => {
             let l = eval_expr(left, row)?;
             let r = eval_expr(right, row)?;
-            Ok(Value::Bool(l.sql_eq(&r).unwrap_or(false)))
+            Ok(match l.sql_eq(&r) {
+                Some(b) => Value::Bool(b),
+                None => Value::Null,
+            })
         }
         BinaryOp::Ne => {
             let l = eval_expr(left, row)?;
             let r = eval_expr(right, row)?;
-            Ok(Value::Bool(!l.sql_eq(&r).unwrap_or(false)))
+            Ok(match l.sql_eq(&r) {
+                Some(b) => Value::Bool(!b),
+                None => Value::Null,
+            })
         }
         BinaryOp::Lt | BinaryOp::Gt | BinaryOp::Le | BinaryOp::Ge => {
             let l = eval_expr(left, row)?;
