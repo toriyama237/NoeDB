@@ -421,6 +421,18 @@ mod tests {
     }
 
     #[test]
+    fn count_star_aggregate() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "id", b"1");
+        put_row(&mut tree, "users", "2", "id", b"2");
+        let stmt = noedb_parser::parse("SELECT COUNT(*) FROM users").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields[0].1, Value::Integer(2));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn in_list_filter() {
         let (mut tree, dir) = temp_tree();
         put_row(&mut tree, "users", "1", "id", b"52");

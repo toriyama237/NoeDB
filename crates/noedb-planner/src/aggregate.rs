@@ -55,7 +55,8 @@ fn parse_count_args(args: &[Expr]) -> Result<AggFunc, PlanError> {
     match args.len() {
         0 => Ok(AggFunc::CountStar),
         1 => match &args[0] {
-            Expr::Column(ColumnRef::Star { .. }) => Ok(AggFunc::CountStar),
+            Expr::Column(ColumnRef::Star { .. })
+            | Expr::Column(ColumnRef::QualifiedStar { .. }) => Ok(AggFunc::CountStar),
             Expr::Column(ColumnRef::Named { column, .. }) => {
                 Ok(AggFunc::CountCol(column.value.clone()))
             }

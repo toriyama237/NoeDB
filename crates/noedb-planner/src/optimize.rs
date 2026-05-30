@@ -326,7 +326,12 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
                     cols.push(c.clone());
                 }
             }
-            Some(dedup(cols))
+            let cols = dedup(cols);
+            if cols.is_empty() {
+                None
+            } else {
+                Some(cols)
+            }
         }
         PhysicalPlan::Sort { input, keys } => {
             let mut cols = collect_columns(input).unwrap_or_default();
