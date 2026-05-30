@@ -1,4 +1,4 @@
-//! Aggregate detection and logical-plan wiring (`COUNT`, `GROUP BY`).
+//! Aggregate detection and logical-plan wiring (`COUNT`, `SUM`, `GROUP BY`).
 
 use noedb_ast::{ColumnRef, Expr, SelectItem, SelectStmt};
 
@@ -11,7 +11,7 @@ pub fn maybe_build_aggregate(
     stmt: &SelectStmt,
     items: &[SelectItem],
 ) -> Result<LogicalPlan, PlanError> {
-    let aggs = extract_count_aggs(items)?;
+    let aggs = extract_aggs(items)?;
     if aggs.is_empty() {
         return Ok(input);
     }
@@ -24,10 +24,10 @@ pub fn maybe_build_aggregate(
     })
 }
 
-fn extract_count_aggs(items: &[SelectItem]) -> Result<Vec<(String, AggFunc)>, PlanError> {
+fn extract_aggs(items: &[SelectItem]) -> Result<Vec<(String, AggFunc)>, PlanError> {
     let mut aggs = Vec::new();
     for item in items {
-        let Some(func) = count_func_from_item(&item.expr)? else {
+        let Some(func) = agg_func_from_item(&item.expr)? else {
             continue;
         };
         aggs.push((projection_name(item), func));
@@ -35,7 +35,7 @@ fn extract_count_aggs(items: &[SelectItem]) -> Result<Vec<(String, AggFunc)>, Pl
     Ok(aggs)
 }
 
-fn count_func_from_item(expr: &Expr) -> Result<Option<AggFunc>, PlanError> {
+fn agg_func_from_item(expr: &Expr) -> Result<Option<AggFunc>, PlanError> {
     let Expr::Function {
         name,
         args,
@@ -45,10 +45,33 @@ fn count_func_from_item(expr: &Expr) -> Result<Option<AggFunc>, PlanError> {
     else {
         return Ok(None);
     };
-    if !name.value.eq_ignore_ascii_case("COUNT") {
-        return Ok(None);
+    Ok(parse_agg_args(&name.value, args))
+}
+
+fn parse_agg_args(name: &str, args: &[Expr]) -> Option<AggFunc> {
+    match name.to_ascii_uppercase().as_str() {
+        "COUNT" => parse_count_args(args).ok(),
+        "SUM" | "AVG" | "MIN" | "MAX" => {
+            let col = column_arg(args).ok()?;
+            Some(match name.to_ascii_uppercase().as_str() {
+                "SUM" => AggFunc::Sum(col),
+                "AVG" => AggFunc::Avg(col),
+                "MIN" => AggFunc::Min(col),
+                _ => AggFunc::Max(col),
+            })
+        }
+        _ => None,
     }
-    Ok(Some(parse_count_args(args)?))
+}
+
+fn column_arg(args: &[Expr]) -> Result<String, PlanError> {
+    match args.len() {
+        1 => match &args[0] {
+            Expr::Column(ColumnRef::Named { column, .. }) => Ok(column.value.clone()),
+            _ => Err(PlanError::UnsupportedStatement),
+        },
+        _ => Err(PlanError::UnsupportedStatement),
+    }
 }
 
 fn parse_count_args(args: &[Expr]) -> Result<AggFunc, PlanError> {
@@ -73,7 +96,7 @@ fn validate_grouped_select(items: &[SelectItem], group_by: &[Expr]) -> Result<()
     }
     let keys: Vec<String> = group_by_columns(group_by)?;
     for item in items {
-        if count_func_from_item(&item.expr)?.is_some() {
+        if agg_func_from_item(&item.expr)?.is_some() {
             continue;
         }
         let col = column_name_from_expr(&item.expr)?;

@@ -434,37 +434,40 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
             aggs,
         } => {
             let rows = execute_to_rows(*input, ctx)?;
-            let mut groups: HashMap<Vec<(String, Vec<u8>)>, HashMap<String, u64>> = HashMap::new();
+            let mut groups: HashMap<Vec<(String, Vec<u8>)>, HashMap<String, AggSlot>> =
+                HashMap::new();
             for row in rows {
                 let key: Vec<(String, Vec<u8>)> = group_by
                     .iter()
                     .map(|col| {
-                        let val = row
-                            .iter()
-                            .find(|(n, _)| {
-                                n == col
-                                    || n.rsplit_once('.')
-                                        .is_some_and(|(_, bare)| bare == col)
-                            })
-                            .map_or(Value::Null, |(_, v)| v.clone());
+                        let val = row_value(&row, col);
                         (col.clone(), val.as_bytes())
                     })
                     .collect();
                 let entry = groups.entry(key).or_default();
                 for (name, func) in &aggs {
+                    let slot = entry.entry(name.clone()).or_default();
                     match func {
-                        AggFunc::CountStar => {
-                            *entry.entry(name.clone()).or_insert(0) += 1;
-                        }
+                        AggFunc::CountStar => slot.count_star += 1,
                         AggFunc::CountCol(col) => {
-                            let non_null = row.iter().any(|(n, v)| {
-                                !matches!(v, Value::Null)
-                                    && (n == col
-                                        || n.rsplit_once('.')
-                                            .is_some_and(|(_, bare)| bare == col))
-                            });
-                            if non_null {
-                                *entry.entry(name.clone()).or_insert(0) += 1;
+                            if !matches!(row_value(&row, col), Value::Null) {
+                                slot.count_col += 1;
+                            }
+                        }
+                        AggFunc::Sum(col) | AggFunc::Avg(col) => {
+                            if let Some(n) = numeric_value(&row_value(&row, col)) {
+                                slot.sum += n;
+                                slot.sum_count += 1;
+                            }
+                        }
+                        AggFunc::Min(col) => {
+                            if let Some(n) = numeric_value(&row_value(&row, col)) {
+                                slot.min = Some(slot.min.map_or(n, |m| m.min(n)));
+                            }
+                        }
+                        AggFunc::Max(col) => {
+                            if let Some(n) = numeric_value(&row_value(&row, col)) {
+                                slot.max = Some(slot.max.map_or(n, |m| m.max(n)));
                             }
                         }
                     }
@@ -473,16 +476,15 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
             #[allow(clippy::needless_collect, clippy::type_complexity)]
             let out: Vec<(Vec<(String, Vec<u8>)>, Vec<(String, Value)>)> = groups
                 .into_iter()
-                .map(|(gkey, counts)| {
+                .map(|(gkey, slots)| {
                     let mut fields = gkey
                         .into_iter()
                         .map(|(n, bytes)| (n, Value::Bytes(bytes)))
                         .collect::<Vec<_>>();
-                    for (name, count) in counts {
-                        fields.push((
-                            name,
-                            Value::Integer(i64::try_from(count).unwrap_or(i64::MAX)),
-                        ));
+                    for (name, slot) in slots {
+                        if let Some((_, func)) = aggs.iter().find(|(n, _)| n == &name) {
+                            fields.push((name, slot.finish(func)));
+                        }
                     }
                     (Vec::new(), fields)
                 })
@@ -630,6 +632,59 @@ fn record_from_cells(items: &[SelectItem], cells: Vec<Value>) -> Record {
         })
         .collect();
     Record { fields }
+}
+
+#[derive(Default)]
+struct AggSlot {
+    count_star: u64,
+    count_col: u64,
+    sum: f64,
+    sum_count: u64,
+    min: Option<f64>,
+    max: Option<f64>,
+}
+
+impl AggSlot {
+    fn finish(self, func: &AggFunc) -> Value {
+        match func {
+            AggFunc::CountStar => Value::Integer(i64::try_from(self.count_star).unwrap_or(i64::MAX)),
+            AggFunc::CountCol(_) => {
+                Value::Integer(i64::try_from(self.count_col).unwrap_or(i64::MAX))
+            }
+            AggFunc::Sum(_) => Value::Float(self.sum),
+            AggFunc::Avg(_) => {
+                if self.sum_count == 0 {
+                    Value::Null
+                } else {
+                    Value::Float(self.sum / self.sum_count as f64)
+                }
+            }
+            AggFunc::Min(_) => self
+                .min
+                .map(Value::Float)
+                .unwrap_or(Value::Null),
+            AggFunc::Max(_) => self
+                .max
+                .map(Value::Float)
+                .unwrap_or(Value::Null),
+        }
+    }
+}
+
+fn row_value(row: &RowMap, col: &str) -> Value {
+    row.iter()
+        .find(|(n, _)| n == col || n.rsplit_once('.').is_some_and(|(_, bare)| bare == col))
+        .map_or(Value::Null, |(_, v)| v.clone())
+}
+
+fn numeric_value(v: &Value) -> Option<f64> {
+    match v {
+        Value::Null => None,
+        Value::Integer(n) => Some(*n as f64),
+        Value::Float(f) => Some(*f),
+        Value::Bytes(b) => std::str::from_utf8(b).ok()?.trim().parse().ok(),
+        _ => None,
+    }
 }
 
 fn merge_rows(left: &RowMap, right: &RowMap) -> RowMap {

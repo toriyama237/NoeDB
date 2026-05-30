@@ -134,6 +134,13 @@ pub fn build_select_scoped(
     Ok(plan)
 }
 
+fn is_agg_func(name: &str) -> bool {
+    matches!(
+        name.to_ascii_uppercase().as_str(),
+        "COUNT" | "SUM" | "AVG" | "MIN" | "MAX"
+    )
+}
+
 fn contains_aggregate(items: &[SelectItem]) -> bool {
     items.iter().any(|item| {
         matches!(
@@ -142,7 +149,7 @@ fn contains_aggregate(items: &[SelectItem]) -> bool {
                 name,
                 over: None,
                 ..
-            } if name.value.eq_ignore_ascii_case("COUNT")
+            } if is_agg_func(&name.value)
         )
     })
 }
@@ -165,7 +172,7 @@ fn aggregate_output_items(
                 name,
                 over: None,
                 ..
-            } if name.value.eq_ignore_ascii_case("COUNT")
+            } if is_agg_func(&name.value)
         ) {
             out.push(item.clone());
         }

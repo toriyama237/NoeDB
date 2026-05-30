@@ -3,12 +3,20 @@
 use noedb_ast::{Expr, SelectItem, SetOpKind, WindowFunc, WindowSpec};
 
 /// Hash aggregate function (Week 23).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AggFunc {
     /// `COUNT(*)`.
     CountStar,
     /// `COUNT(col)`.
     CountCol(String),
+    /// `SUM(col)`.
+    Sum(String),
+    /// `AVG(col)`.
+    Avg(String),
+    /// `MIN(col)`.
+    Min(String),
+    /// `MAX(col)`.
+    Max(String),
 }
 
 /// Logical plan tree before optimization / lowering.
