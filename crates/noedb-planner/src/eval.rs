@@ -44,8 +44,28 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
             let v = eval_expr(expr, row)?;
             crate::cast::cast_value(&v, data_type)
         }
-        Expr::Between { .. }
-        | Expr::InSubquery { .. }
+        Expr::Between {
+            expr,
+            low,
+            high,
+            negated,
+            ..
+        } => {
+            let v = eval_expr(expr, row)?;
+            let lo = eval_expr(low, row)?;
+            let hi = eval_expr(high, row)?;
+            if matches!(v, Value::Null) || matches!(lo, Value::Null) || matches!(hi, Value::Null) {
+                return Ok(Value::Bool(false));
+            }
+            let ge = cmp_values(&v, &lo, BinaryOp::Ge)?;
+            let le = cmp_values(&v, &hi, BinaryOp::Le)?;
+            Ok(Value::Bool(if *negated {
+                !(ge && le)
+            } else {
+                ge && le
+            }))
+        }
+        Expr::InSubquery { .. }
         | Expr::Parameter { .. }
         | Expr::CurrentUser { .. }
         | Expr::Function { .. } => Err(ExecError::UnsupportedExpr),
