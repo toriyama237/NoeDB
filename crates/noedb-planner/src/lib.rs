@@ -421,6 +421,19 @@ mod tests {
     }
 
     #[test]
+    fn in_list_filter() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "id", b"52");
+        put_row(&mut tree, "users", "2", "id", b"99");
+        put_row(&mut tree, "users", "3", "id", b"53");
+        let stmt =
+            noedb_parser::parse("SELECT id FROM users WHERE id IN ('52', '53')").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 2);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn select_distinct() {
         let (mut tree, dir) = temp_tree();
         put_row(&mut tree, "users", "1", "name", b"ada");

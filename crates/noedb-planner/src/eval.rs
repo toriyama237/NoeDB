@@ -30,7 +30,7 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
             let v = eval_expr(expr, row)?;
             let mut found = false;
             for val_expr in values {
-                let val = eval_expr(val_expr, row)?;
+                let val = eval_in_rhs(val_expr, row)?;
                 if v.sql_eq(&val).unwrap_or(false) {
                     found = true;
                     break;
@@ -81,6 +81,13 @@ pub fn eval_predicate(expr: &Expr, row: &[(String, Value)]) -> Result<bool, Exec
         other => Err(ExecError::TypeMismatch {
             message: format!("expected boolean predicate, got {other:?}"),
         }),
+    }
+}
+
+fn eval_in_rhs(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecError> {
+    match expr {
+        Expr::Literal(_) | Expr::Parameter { .. } => eval_expr(expr, &[]),
+        _ => eval_expr(expr, row),
     }
 }
 
