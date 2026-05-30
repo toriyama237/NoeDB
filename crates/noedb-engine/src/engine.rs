@@ -42,7 +42,7 @@ pub const MAX_SQL_BYTES: usize = 64 * 1024;
 pub struct QueryResult {
     /// Column names in order.
     pub columns: Vec<String>,
-    /// Rows as UTF-8 strings (`NULL` shown as empty for now).
+    /// Rows as UTF-8 strings (`NULL` shown as `[NULL]`).
     pub rows: Vec<Vec<String>>,
 }
 
@@ -78,7 +78,7 @@ impl QueryResult {
 
 fn value_to_string(v: &Value) -> String {
     match v {
-        Value::Null => String::new(),
+        Value::Null => "[NULL]".to_string(),
         Value::Integer(n) => n.to_string(),
         Value::Float(f) => f.to_string(),
         Value::Bool(b) => b.to_string(),
