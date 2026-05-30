@@ -149,3 +149,32 @@ fn column_ndv_key(table: &str, column: &str) -> Vec<u8> {
     k.extend_from_slice(b"ndv");
     k
 }
+
+/// Increment persisted row count for `table` by `delta` (may be negative).
+///
+/// # Errors
+///
+/// Storage write failures.
+pub fn increment_row_count(
+    store: &mut LsmTree,
+    table: &str,
+    delta: i64,
+) -> Result<(), StorageError> {
+    let key = table_rows_key(table);
+    let current = store
+        .get(&key)?
+        .map(|b| {
+            if b.len() == 8 {
+                u64::from_be_bytes(b[..8].try_into().unwrap_or([0; 8]))
+            } else {
+                0
+            }
+        })
+        .unwrap_or(0);
+    let next = if delta.is_negative() {
+        current.saturating_sub(delta.unsigned_abs())
+    } else {
+        current.saturating_add(delta as u64)
+    };
+    store.put(&key, &next.to_be_bytes())
+}

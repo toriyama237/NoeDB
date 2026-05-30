@@ -45,7 +45,7 @@ pub use lower::lower;
 pub use optimize::{index_wins, optimize, PlanContext};
 pub use physical::PhysicalPlan;
 pub use simd_pred::{filter_eq_i64, filter_range_i64};
-pub use stats::{analyze_table, load_plan_stats, persist_table_stats, ColumnStats, TableStats};
+pub use stats::{analyze_table, increment_row_count, load_plan_stats, persist_table_stats, ColumnStats, TableStats};
 pub use value::{Record, Value};
 
 use noedb_ast::Statement;
