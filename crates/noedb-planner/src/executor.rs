@@ -640,14 +640,27 @@ fn merge_rows(left: &RowMap, right: &RowMap) -> RowMap {
 
 pub(crate) fn compare_rows(a: &RowMap, b: &RowMap, keys: &[(String, bool)]) -> std::cmp::Ordering {
     for (col, asc) in keys {
-        let va = a.iter().find(|(n, _)| n == col).map(|(_, v)| v.as_bytes());
-        let vb = b.iter().find(|(n, _)| n == col).map(|(_, v)| v.as_bytes());
-        let ord = va.cmp(&vb);
+        let va = a.iter().find(|(n, _)| n == col).map(|(_, v)| v);
+        let vb = b.iter().find(|(n, _)| n == col).map(|(_, v)| v);
+        let ord = compare_sort_values(va, vb);
         if ord != std::cmp::Ordering::Equal {
             return if *asc { ord } else { ord.reverse() };
         }
     }
     std::cmp::Ordering::Equal
+}
+
+/// SQL `ORDER BY` with `NULLS LAST` (NULL sorts after all values).
+fn compare_sort_values(
+    a: Option<&Value>,
+    b: Option<&Value>,
+) -> std::cmp::Ordering {
+    match (a, b) {
+        (None, None) | (Some(Value::Null), Some(Value::Null)) => std::cmp::Ordering::Equal,
+        (None, Some(_)) | (Some(Value::Null), Some(_)) => std::cmp::Ordering::Greater,
+        (Some(_), None) | (Some(_), Some(Value::Null)) => std::cmp::Ordering::Less,
+        (Some(va), Some(vb)) => va.as_bytes().cmp(&vb.as_bytes()),
+    }
 }
 
 /// Row keys: `table\0row_id\0column` → cell value; collapsed to one row per `row_id`.
