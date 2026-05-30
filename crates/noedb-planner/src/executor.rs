@@ -100,6 +100,10 @@ enum ExecState {
     SetOp {
         rows: std::vec::IntoIter<RowMap>,
     },
+    Dedup {
+        child: Box<Executor>,
+        seen: std::collections::HashSet<Vec<u8>>,
+    },
 }
 
 pub(crate) type RowMap = Vec<(String, Value)>;
@@ -217,6 +221,16 @@ impl Executor {
                         return Ok(None);
                     };
                     return Ok(Some(Record { fields: row }));
+                }
+                ExecState::Dedup { child, seen } => {
+                    while let Some(rec) = child.next_row()? {
+                        let key = crate::setops::row_key(&rec.fields);
+                        if seen.insert(key) {
+                            return Ok(Some(rec));
+                        }
+                    }
+                    self.state = ExecState::Done;
+                    return Ok(None);
                 }
                 ExecState::Limit { limit, child } => {
                     if *limit == 0 {
@@ -544,6 +558,10 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
                 rows: rows.into_iter(),
             })
         }
+        PhysicalPlan::Dedup { input } => Ok(ExecState::Dedup {
+            child: Box::new(Executor::new(*input, ctx)?),
+            seen: std::collections::HashSet::new(),
+        }),
     }
 }
 

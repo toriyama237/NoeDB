@@ -109,6 +109,11 @@ pub enum LogicalPlan {
         /// `ALL` semantics (bag union / preserve duplicates).
         all: bool,
     },
+    /// Row deduplication (`SELECT DISTINCT`).
+    Distinct {
+        /// Child operator.
+        input: Box<Self>,
+    },
 }
 
 /// One analytic function in a `Window` operator.

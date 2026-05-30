@@ -421,6 +421,32 @@ mod tests {
     }
 
     #[test]
+    fn select_distinct() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "name", b"ada");
+        put_row(&mut tree, "users", "2", "name", b"ada");
+        put_row(&mut tree, "users", "3", "name", b"bob");
+        let stmt = noedb_parser::parse("SELECT DISTINCT name FROM users").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 2);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn between_filter() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "id", b"3");
+        put_row(&mut tree, "users", "2", "id", b"7");
+        put_row(&mut tree, "users", "3", "id", b"9");
+        let stmt = noedb_parser::parse("SELECT id FROM users WHERE id BETWEEN '5' AND '8'")
+            .unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields[0].1, Value::Bytes(b"7".to_vec()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn group_by_count() {
         let (mut tree, dir) = temp_tree();
         put_row(&mut tree, "users", "1", "campus", b"A");

@@ -106,6 +106,7 @@ pub fn estimate(plan: &PhysicalPlan, stats: &PlanStats) -> f64 {
         PhysicalPlan::SetOp { left, right, .. } => {
             estimate(left, stats) + estimate(right, stats) + output_rows(left, stats) as f64 * 0.2
         }
+        PhysicalPlan::Dedup { input } => estimate(input, stats) + output_rows(input, stats) as f64 * 0.1,
     }
 }
 
@@ -123,9 +124,9 @@ fn output_rows(plan: &PhysicalPlan, stats: &PlanStats) -> u64 {
         PhysicalPlan::IndexScan { table, column, .. } => stats.estimated_eq_rows(table, column),
         PhysicalPlan::Filter { input, predicate } => estimated_filter_rows(input, predicate, stats),
         PhysicalPlan::Limit { input, limit, .. } => output_rows(input, stats).min(*limit),
-        PhysicalPlan::Project { input, .. } | PhysicalPlan::Sort { input, .. } => {
-            output_rows(input, stats)
-        }
+        PhysicalPlan::Project { input, .. }
+        | PhysicalPlan::Sort { input, .. }
+        | PhysicalPlan::Dedup { input, .. } => output_rows(input, stats),
         PhysicalPlan::HashJoin { left, .. } => output_rows(left, stats),
         _ => stats.default_rows,
     }

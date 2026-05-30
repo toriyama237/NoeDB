@@ -123,6 +123,9 @@ fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
             op,
             all,
         },
+        LogicalPlan::Distinct { input } => LogicalPlan::Distinct {
+            input: Box::new(pushdown_predicates(*input)),
+        },
         LogicalPlan::CteScan { .. } | LogicalPlan::Scan { .. } => plan,
     }
 }
@@ -238,6 +241,9 @@ fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
             right: Box::new(to_physical(*right, ctx)),
             op,
             all,
+        },
+        LogicalPlan::Distinct { input } => PhysicalPlan::Dedup {
+            input: Box::new(to_physical(*input, ctx)),
         },
     }
 }
@@ -367,6 +373,7 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
             cols.extend(collect_columns(right).unwrap_or_default());
             Some(dedup(cols))
         }
+        PhysicalPlan::Dedup { input } => collect_columns(input),
     }
 }
 
@@ -484,6 +491,9 @@ fn apply_columns(plan: PhysicalPlan, columns: Option<Vec<String>>) -> PhysicalPl
             right: Box::new(apply_columns(*right, columns)),
             op,
             all,
+        },
+        PhysicalPlan::Dedup { input } => PhysicalPlan::Dedup {
+            input: Box::new(apply_columns(*input, columns)),
         },
     }
 }

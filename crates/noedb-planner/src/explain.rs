@@ -165,6 +165,10 @@ impl<'a> ExplainWriter<'a> {
                 self.write_plan(left, indent + 1);
                 self.write_plan(right, indent + 1);
             }
+            PhysicalPlan::Dedup { input } => {
+                self.lines.push(format!("{pad}Dedup"));
+                self.write_plan(input, indent + 1);
+            }
         }
     }
 

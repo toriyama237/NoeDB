@@ -88,5 +88,8 @@ pub fn lower(logical: LogicalPlan) -> PhysicalPlan {
             op,
             all,
         },
+        LogicalPlan::Distinct { input } => PhysicalPlan::Dedup {
+            input: Box::new(lower(*input)),
+        },
     }
 }

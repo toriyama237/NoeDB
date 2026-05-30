@@ -93,6 +93,12 @@ pub fn build_select_scoped(
         };
     }
 
+    if stmt.distinct {
+        plan = LogicalPlan::Distinct {
+            input: Box::new(plan),
+        };
+    }
+
     let order_items = if contains_aggregate(&window_items) {
         aggregate_output_items(stmt, &window_items)?
     } else {

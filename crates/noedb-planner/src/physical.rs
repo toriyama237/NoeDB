@@ -143,4 +143,9 @@ pub enum PhysicalPlan {
         /// `ALL` semantics.
         all: bool,
     },
+    /// Deduplicate rows (`SELECT DISTINCT`).
+    Dedup {
+        /// Child operator.
+        input: Box<Self>,
+    },
 }
