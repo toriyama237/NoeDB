@@ -421,6 +421,28 @@ mod tests {
     }
 
     #[test]
+    fn scalar_upper() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "users", "1", "name", b"ada");
+        let stmt = noedb_parser::parse("SELECT UPPER(name) FROM users").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows[0].fields[0].1, Value::Bytes(b"ADA".to_vec()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn sum_aggregate() {
+        let (mut tree, dir) = temp_tree();
+        put_row(&mut tree, "orders", "1", "amount", b"10");
+        put_row(&mut tree, "orders", "2", "amount", b"25");
+        let stmt = noedb_parser::parse("SELECT SUM(amount) FROM orders").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields[0].1, Value::Float(35.0));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn count_star_aggregate() {
         let (mut tree, dir) = temp_tree();
         put_row(&mut tree, "users", "1", "id", b"1");

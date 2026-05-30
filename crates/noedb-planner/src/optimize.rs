@@ -286,7 +286,12 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
             for item in items {
                 cols.extend(columns_in_expr(&item.expr));
             }
-            Some(dedup(cols))
+            let cols = dedup(cols);
+            if cols.is_empty() {
+                None
+            } else {
+                Some(cols)
+            }
         }
         PhysicalPlan::HashJoin {
             left,
@@ -322,8 +327,15 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
             let mut cols = collect_columns(input).unwrap_or_default();
             cols.extend(group_by.clone());
             for (_, func) in aggs {
-                if let AggFunc::CountCol(c) = func {
-                    cols.push(c.clone());
+                match func {
+                    AggFunc::CountCol(c)
+                    | AggFunc::Sum(c)
+                    | AggFunc::Avg(c)
+                    | AggFunc::Min(c)
+                    | AggFunc::Max(c) => {
+                        cols.push(c.clone());
+                    }
+                    AggFunc::CountStar => {}
                 }
             }
             let cols = dedup(cols);
@@ -560,6 +572,7 @@ fn columns_in_expr(expr: &Expr) -> Vec<String> {
             v
         }
         Expr::Paren(inner, _) => columns_in_expr(inner),
+        Expr::Function { args, .. } => args.iter().flat_map(columns_in_expr).collect(),
         _ => Vec::new(),
     }
 }

@@ -67,8 +67,13 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
         }
         Expr::InSubquery { .. }
         | Expr::Parameter { .. }
-        | Expr::CurrentUser { .. }
-        | Expr::Function { .. } => Err(ExecError::UnsupportedExpr),
+        | Expr::CurrentUser { .. } => Err(ExecError::UnsupportedExpr),
+        Expr::Function { name, args, over, .. } => {
+            if over.is_some() {
+                return Err(ExecError::UnsupportedExpr);
+            }
+            eval_scalar_function(&name.value, args, row)
+        }
         Expr::Paren(inner, _) => eval_expr(inner, row),
     }
 }
@@ -82,6 +87,94 @@ pub fn eval_predicate(expr: &Expr, row: &[(String, Value)]) -> Result<bool, Exec
             message: format!("expected boolean predicate, got {other:?}"),
         }),
     }
+}
+
+fn eval_scalar_function(
+    name: &str,
+    args: &[Expr],
+    row: &[(String, Value)],
+) -> Result<Value, ExecError> {
+    match name.to_ascii_uppercase().as_str() {
+        "UPPER" => {
+            let v = eval_expr(&args[0], row)?;
+            string_unary(v, |s| s.to_uppercase())
+        }
+        "LOWER" => {
+            let v = eval_expr(&args[0], row)?;
+            string_unary(v, |s| s.to_lowercase())
+        }
+        "LENGTH" => {
+            let v = eval_expr(&args[0], row)?;
+            if matches!(v, Value::Null) {
+                return Ok(Value::Null);
+            }
+            let Value::Bytes(b) = v else {
+                return Err(ExecError::TypeMismatch {
+                    message: "LENGTH expects text".into(),
+                });
+            };
+            Ok(Value::Integer(
+                i64::try_from(String::from_utf8_lossy(&b).chars().count()).unwrap_or(i64::MAX),
+            ))
+        }
+        "TRIM" => {
+            let v = eval_expr(&args[0], row)?;
+            string_unary(v, |s| s.trim().to_string())
+        }
+        "COALESCE" => {
+            for arg in args {
+                let v = eval_expr(arg, row)?;
+                if !matches!(v, Value::Null) {
+                    return Ok(v);
+                }
+            }
+            Ok(Value::Null)
+        }
+        "ABS" => {
+            let v = eval_expr(&args[0], row)?;
+            match v {
+                Value::Null => Ok(Value::Null),
+                Value::Integer(n) => Ok(Value::Integer(n.abs())),
+                Value::Float(f) => Ok(Value::Float(f.abs())),
+                other => Err(ExecError::TypeMismatch {
+                    message: format!("ABS expects numeric, got {other:?}"),
+                }),
+            }
+        }
+        "ROUND" => {
+            let v = eval_expr(&args[0], row)?;
+            match v {
+                Value::Null => Ok(Value::Null),
+                Value::Integer(n) => Ok(Value::Integer(n)),
+                Value::Float(f) => Ok(Value::Float(f.round())),
+                Value::Bytes(b) => {
+                    let n: f64 = std::str::from_utf8(&b)
+                        .ok()
+                        .and_then(|s| s.trim().parse().ok())
+                        .ok_or_else(|| ExecError::TypeMismatch {
+                            message: "ROUND expects numeric".into(),
+                        })?;
+                    Ok(Value::Float(n.round()))
+                }
+                other => Err(ExecError::TypeMismatch {
+                    message: format!("ROUND expects numeric, got {other:?}"),
+                }),
+            }
+        }
+        _ => Err(ExecError::UnsupportedExpr),
+    }
+}
+
+fn string_unary(v: Value, f: impl FnOnce(String) -> String) -> Result<Value, ExecError> {
+    if matches!(v, Value::Null) {
+        return Ok(Value::Null);
+    }
+    let Value::Bytes(b) = v else {
+        return Err(ExecError::TypeMismatch {
+            message: "expected text argument".into(),
+        });
+    };
+    Ok(Value::Bytes(f(String::from_utf8_lossy(&b).into_owned()).into_bytes()))
 }
 
 fn eval_in_rhs(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecError> {
