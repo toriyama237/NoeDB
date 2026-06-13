@@ -4,11 +4,13 @@ use std::collections::BTreeMap;
 
 use noedb_ast::{DeleteStmt, InsertStmt, SqlType, UpdateStmt};
 use noedb_planner::{eval_expr, eval_predicate, increment_row_count, ExecError, Value};
-use noedb_storage::{LsmTree, StorageEngine, TimestampOracle, Version};
+use noedb_storage::{LsmTree, StorageEngine, StorageError, TimestampOracle, Version};
+use noedb_txn::TxnManager;
 
 use crate::error::EngineError;
 use crate::machine::row_key;
 use crate::schema::SchemaCatalog;
+use crate::txn::{delete_cell_in_txn, put_row_in_txn, txn_err, TxnOverlayStore};
 use crate::vector_index::VectorIndexCatalog;
 
 type RowMap = Vec<(String, Value)>;
@@ -41,6 +43,7 @@ pub(crate) fn execute_insert(
     tree: &mut LsmTree,
     oracle: &TimestampOracle,
     mut vectors: Option<&mut VectorIndexCatalog>,
+    txn: Option<(&TxnManager, u64)>,
 ) -> Result<(), EngineError> {
     let table = &ins.table.value;
     let col_names: Vec<String> = if let Some(cols) = &ins.columns {
@@ -68,7 +71,7 @@ pub(crate) fn execute_insert(
             values.push(eval_expr(expr, &[]).map_err(EngineError::Exec)?);
         }
         let row_id = value_to_row_id(&values[0]);
-        enforce_primary_key(table, &col_names, &values, schema, tree)?;
+        enforce_primary_key(table, &col_names, &values, schema, tree, txn)?;
         for (col, val) in col_names.iter().zip(values) {
             if let Some(meta) = schema.column(table, col) {
                 if meta.not_null && matches!(val, Value::Null) {
@@ -77,7 +80,7 @@ pub(crate) fn execute_insert(
                     }));
                 }
                 let bytes = encode_for_type(&val, &meta.data_type)?;
-                put_cell(tree, oracle, &row_key(table, &row_id, col), &bytes)?;
+                write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
                 if let Some(ref mut catalog) = vectors {
                     if matches!(meta.data_type, SqlType::Vector { .. }) {
                         catalog.upsert(table, col, &row_id, &val);
@@ -85,10 +88,12 @@ pub(crate) fn execute_insert(
                 }
             } else {
                 let bytes = value_to_bytes(&val);
-                put_cell(tree, oracle, &row_key(table, &row_id, col), &bytes)?;
+                write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
             }
         }
-        increment_row_count(tree, table, 1).map_err(EngineError::Storage)?;
+        if txn.is_none() {
+            increment_row_count(tree, table, 1).map_err(EngineError::Storage)?;
+        }
     }
     Ok(())
 }
@@ -104,15 +109,31 @@ pub(crate) fn execute_update(
     tree: &mut LsmTree,
     oracle: &TimestampOracle,
     mut vectors: Option<&mut VectorIndexCatalog>,
+    txn: Option<(&TxnManager, u64)>,
 ) -> Result<u64, EngineError> {
     let table = &upd.table.value;
-    let mut updated = 0u64;
-    for (row_id, row) in scan_table(tree, table)? {
-        if let Some(pred) = &upd.where_clause {
-            if !eval_predicate(pred, &row).map_err(EngineError::Exec)? {
-                continue;
+    let rows: Vec<(String, RowMap)> = {
+        let overlay = txn
+            .map(|(mgr, sid)| TxnOverlayStore::for_session(mgr, sid, tree))
+            .transpose()?;
+        let all = if let Some(ref store) = overlay {
+            scan_table(store, table)?
+        } else {
+            scan_table(tree, table)?
+        };
+        let mut matched = Vec::new();
+        for (row_id, row) in all {
+            if let Some(pred) = &upd.where_clause {
+                if !eval_predicate(pred, &row).map_err(EngineError::Exec)? {
+                    continue;
+                }
             }
+            matched.push((row_id, row));
         }
+        matched
+    };
+    let mut updated = 0u64;
+    for (row_id, row) in rows {
         for (col_ident, expr) in &upd.assignments {
             let col = &col_ident.value;
             let val = eval_expr(expr, &row).map_err(EngineError::Exec)?;
@@ -123,7 +144,7 @@ pub(crate) fn execute_update(
                     }));
                 }
                 let bytes = encode_for_type(&val, &meta.data_type)?;
-                put_cell(tree, oracle, &row_key(table, &row_id, col), &bytes)?;
+                write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
                 if let Some(ref mut catalog) = vectors {
                     if matches!(meta.data_type, SqlType::Vector { .. }) {
                         catalog.upsert(table, col, &row_id, &val);
@@ -131,7 +152,7 @@ pub(crate) fn execute_update(
                 }
             } else {
                 let bytes = value_to_bytes(&val);
-                put_cell(tree, oracle, &row_key(table, &row_id, col), &bytes)?;
+                write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
             }
         }
         updated += 1;
@@ -150,16 +171,36 @@ pub(crate) fn execute_delete(
     tree: &mut LsmTree,
     oracle: &TimestampOracle,
     mut vectors: Option<&mut VectorIndexCatalog>,
+    txn: Option<(&TxnManager, u64)>,
 ) -> Result<u64, EngineError> {
     let table = &del.table.value;
-    let mut deleted = 0u64;
-    for (row_id, row) in scan_table(tree, table)? {
-        if let Some(pred) = &del.where_clause {
-            if !eval_predicate(pred, &row).map_err(EngineError::Exec)? {
-                continue;
+    let rows: Vec<(String, RowMap)> = {
+        let overlay = txn
+            .map(|(mgr, sid)| TxnOverlayStore::for_session(mgr, sid, tree))
+            .transpose()?;
+        let all = if let Some(ref store) = overlay {
+            scan_table(store, table)?
+        } else {
+            scan_table(tree, table)?
+        };
+        let mut matched = Vec::new();
+        for (row_id, row) in all {
+            if let Some(pred) = &del.where_clause {
+                if !eval_predicate(pred, &row).map_err(EngineError::Exec)? {
+                    continue;
+                }
             }
+            matched.push((row_id, row));
         }
-        delete_row(tree, oracle, table, &row_id)?;
+        matched
+    };
+    let mut deleted = 0u64;
+    for (row_id, _row) in rows {
+        if let Some((mgr, sid)) = txn {
+            delete_row_in_txn(mgr, sid, schema, table, &row_id)?;
+        } else {
+            delete_row(tree, oracle, table, &row_id)?;
+        }
         if let Some(ref mut catalog) = vectors {
             if let Some(table_schema) = schema.tables.get(table) {
                 for col in &table_schema.columns {
@@ -171,11 +212,45 @@ pub(crate) fn execute_delete(
         }
         deleted += 1;
     }
-    if deleted > 0 {
+    if deleted > 0 && txn.is_none() {
         increment_row_count(tree, table, -(i64::try_from(deleted).unwrap_or(i64::MAX)))
             .map_err(EngineError::Storage)?;
     }
     Ok(deleted)
+}
+
+fn write_cell(
+    tree: &mut LsmTree,
+    oracle: &TimestampOracle,
+    txn: Option<(&TxnManager, u64)>,
+    table: &str,
+    row_id: &str,
+    column: &str,
+    value: &[u8],
+) -> Result<(), EngineError> {
+    if let Some((mgr, sid)) = txn {
+        put_row_in_txn(mgr, sid, table, row_id, column, value)
+    } else {
+        put_cell(tree, oracle, &row_key(table, row_id, column), value)
+    }
+}
+
+fn delete_row_in_txn(
+    mgr: &TxnManager,
+    sid: u64,
+    schema: &SchemaCatalog,
+    table: &str,
+    row_id: &str,
+) -> Result<(), EngineError> {
+    let cols = schema.column_names(table).ok_or_else(|| {
+        EngineError::Exec(ExecError::UnknownColumn {
+            name: format!("table `{table}` not in schema"),
+        })
+    })?;
+    for col in cols {
+        delete_cell_in_txn(mgr, sid, row_key(table, row_id, &col))?;
+    }
+    Ok(())
 }
 
 fn enforce_primary_key(
@@ -184,6 +259,7 @@ fn enforce_primary_key(
     values: &[Value],
     schema: &SchemaCatalog,
     tree: &LsmTree,
+    txn: Option<(&TxnManager, u64)>,
 ) -> Result<(), EngineError> {
     let Some(table_schema) = schema.tables.get(table) else {
         return Ok(());
@@ -200,11 +276,13 @@ fn enforce_primary_key(
             }));
         }
         let pk_row = value_to_row_id(&values[idx]);
-        if tree
-            .get(&row_key(table, &pk_row, pk))
-            .map_err(EngineError::Storage)?
-            .is_some()
-        {
+        let key = row_key(table, &pk_row, pk);
+        let exists = if let Some((mgr, sid)) = txn {
+            mgr.get(sid, &key).map_err(txn_err)?.is_some()
+        } else {
+            tree.get(&key).map_err(EngineError::Storage)?.is_some()
+        };
+        if exists {
             return Err(EngineError::Exec(ExecError::TypeMismatch {
                 message: format!("PRIMARY KEY constraint failed: duplicate `{pk}` = `{pk_row}`"),
             }));
@@ -213,11 +291,14 @@ fn enforce_primary_key(
     Ok(())
 }
 
-fn scan_table(tree: &LsmTree, table: &str) -> Result<Vec<(String, RowMap)>, EngineError> {
+fn scan_table<S: StorageEngine<Error = StorageError>>(
+    store: &S,
+    table: &str,
+) -> Result<Vec<(String, RowMap)>, EngineError> {
     let mut prefix = table.as_bytes().to_vec();
     prefix.push(0);
     let mut grouped: BTreeMap<Vec<u8>, RowMap> = BTreeMap::new();
-    for (key, val) in StorageEngine::iter(tree) {
+    for (key, val) in StorageEngine::iter(store) {
         if !key.starts_with(&prefix) {
             continue;
         }
@@ -420,7 +501,7 @@ mod tests {
             panic!("expected INSERT");
         };
         let oracle = TimestampOracle::new();
-        execute_insert(&ins, &schema, &mut tree, &oracle, None).unwrap();
+        execute_insert(&ins, &schema, &mut tree, &oracle, None, None).unwrap();
         let name = tree
             .get(&row_key("users", "1", "name"))
             .unwrap()
@@ -445,12 +526,12 @@ mod tests {
             panic!("expected INSERT");
         };
         let oracle = TimestampOracle::new();
-        execute_insert(&ins, &schema, &mut tree, &oracle, None).unwrap();
+        execute_insert(&ins, &schema, &mut tree, &oracle, None, None).unwrap();
         let dup = parse("INSERT INTO users VALUES ('1', 'Bob')").unwrap();
         let Statement::Insert(dup) = dup else {
             panic!("expected INSERT");
         };
-        assert!(execute_insert(&dup, &schema, &mut tree, &oracle, None).is_err());
+        assert!(execute_insert(&dup, &schema, &mut tree, &oracle, None, None).is_err());
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -470,13 +551,13 @@ mod tests {
             panic!("expected INSERT");
         };
         let oracle = TimestampOracle::new();
-        execute_insert(&ins, &schema, &mut tree, &oracle, None).unwrap();
+        execute_insert(&ins, &schema, &mut tree, &oracle, None, None).unwrap();
         let upd = parse("UPDATE users SET name = 'Augusta' WHERE id = '1'").unwrap();
         let Statement::Update(upd) = upd else {
             panic!("expected UPDATE");
         };
         assert_eq!(
-            execute_update(&upd, &schema, &mut tree, &oracle, None).unwrap(),
+            execute_update(&upd, &schema, &mut tree, &oracle, None, None).unwrap(),
             1
         );
         let name = tree.get(&row_key("users", "1", "name")).unwrap().unwrap();
@@ -486,7 +567,7 @@ mod tests {
             panic!("expected DELETE");
         };
         assert_eq!(
-            execute_delete(&del, &schema, &mut tree, &oracle, None).unwrap(),
+            execute_delete(&del, &schema, &mut tree, &oracle, None, None).unwrap(),
             1
         );
         assert!(tree.get(&row_key("users", "1", "name")).unwrap().is_none());

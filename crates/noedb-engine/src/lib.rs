@@ -29,6 +29,7 @@ mod rls;
 mod schema;
 mod session;
 mod shard;
+mod knn;
 mod txn;
 mod vector_index;
 

@@ -423,9 +423,14 @@ impl LocalEngine {
         stmt: Statement,
         sql: &str,
     ) -> Result<QueryResult, EngineError> {
-        let result = if self.txn.in_txn(session_id) && matches!(stmt, Statement::Select(_)) {
+        let in_txn = self.txn.in_txn(session_id);
+        let txn = in_txn.then_some((self.txn.as_ref(), session_id));
+        let result = if in_txn && matches!(stmt, Statement::Select(_)) {
             execute_select_in_txn(self.txn.clone(), session_id, &stmt, &self.storage)?
         } else if matches!(stmt, Statement::Select(_)) {
+            if let Some(hit) = crate::knn::try_hnsw_select(self, &stmt)? {
+                hit
+            } else {
             let role = self.session_role_for(session_id);
             let cached = self.cache.lock().get(&role, sql);
             if let Some(hit) = cached {
@@ -446,6 +451,7 @@ impl LocalEngine {
                 self.cache.lock().put(&role, sql, qr.clone());
                 qr
             }
+            }
         } else {
             match &stmt {
                 Statement::Insert(i) => {
@@ -459,6 +465,7 @@ impl LocalEngine {
                         &mut tree,
                         self.txn.oracle(),
                         Some(&mut vectors),
+                        txn,
                     )?;
                     QueryResult::from_records(&[])
                 }
@@ -473,6 +480,7 @@ impl LocalEngine {
                         &mut tree,
                         self.txn.oracle(),
                         Some(&mut vectors),
+                        txn,
                     )?;
                     QueryResult::from_records(&[])
                 }
@@ -487,6 +495,7 @@ impl LocalEngine {
                         &mut tree,
                         self.txn.oracle(),
                         Some(&mut vectors),
+                        txn,
                     )?;
                     QueryResult::from_records(&[])
                 }

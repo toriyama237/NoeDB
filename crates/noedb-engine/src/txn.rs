@@ -51,47 +51,34 @@ pub(crate) fn put_row_in_txn(
         .map_err(txn_err)
 }
 
-/// Execute `SELECT` under snapshot isolation when a txn is open.
-pub(crate) fn execute_select_in_txn(
-    manager: Arc<TxnManager>,
-    session_id: u64,
-    stmt: &Statement,
-    storage: &Arc<RwLock<LsmTree>>,
-) -> Result<QueryResult, EngineError> {
-    let view = manager.read_view(session_id).map_err(txn_err)?;
-    let overlay = build_read_overlay(&manager, session_id, &view)?;
-    let tree = storage.read();
-    #[allow(clippy::redundant_clone)]
-    let mgr = manager.clone();
-    let store = TxnOverlayStore {
-        base: &tree,
-        view,
-        overlay,
-        on_read: Some(Box::new(move |key| {
-            let _ = mgr.with_txn(session_id, |txn| {
-                txn.record_read(key.to_vec());
-            });
-        })),
-    };
-    let records = execute_sql_on(stmt, &store, &tree)?;
-    Ok(QueryResult::from_records(&records))
-}
-
-/// Merged MVCC + write-set view (no manager locks held during planner execution).
-struct TxnOverlayStore<'a> {
+/// Merged MVCC + write-set view for reads inside a transaction.
+pub(crate) struct TxnOverlayStore<'a> {
     base: &'a LsmTree,
     view: ReadView,
     overlay: BTreeMap<Vec<u8>, Option<Vec<u8>>>,
-    on_read: Option<Box<dyn Fn(&[u8]) + 'a>>,
+}
+
+impl<'a> TxnOverlayStore<'a> {
+    /// Build a snapshot view for `session_id` reads (SELECT and DML scans).
+    pub(crate) fn for_session(
+        manager: &TxnManager,
+        session_id: u64,
+        base: &'a LsmTree,
+    ) -> Result<TxnOverlayStore<'a>, EngineError> {
+        let view = manager.read_view(session_id).map_err(txn_err)?;
+        let overlay = build_read_overlay(manager, session_id, &view)?;
+        Ok(Self {
+            base,
+            view,
+            overlay,
+        })
+    }
 }
 
 impl StorageEngine for TxnOverlayStore<'_> {
     type Error = StorageError;
 
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
-        if let Some(hook) = &self.on_read {
-            hook(key);
-        }
         if let Some(op) = self.overlay.get(key) {
             return Ok(op.clone());
         }
@@ -99,15 +86,11 @@ impl StorageEngine for TxnOverlayStore<'_> {
     }
 
     fn put(&mut self, _key: &[u8], _value: &[u8]) -> Result<(), StorageError> {
-        Err(StorageError::invalid_input(
-            "txn overlay store is read-only",
-        ))
+        Err(StorageError::invalid_input("txn overlay store is read-only"))
     }
 
     fn delete(&mut self, _key: &[u8]) -> Result<bool, StorageError> {
-        Err(StorageError::invalid_input(
-            "txn overlay store is read-only",
-        ))
+        Err(StorageError::invalid_input("txn overlay store is read-only"))
     }
 
     fn iter(&self) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
@@ -130,6 +113,75 @@ impl StorageEngine for TxnOverlayStore<'_> {
             }
         }
         merged.into_iter()
+    }
+}
+
+/// Buffer a tombstone for one cell in the active transaction.
+pub(crate) fn delete_cell_in_txn(
+    manager: &TxnManager,
+    session_id: u64,
+    key: Vec<u8>,
+) -> Result<(), EngineError> {
+    manager
+        .with_txn(session_id, |txn| {
+            txn.delete(key);
+        })
+        .map_err(txn_err)
+}
+
+/// Execute `SELECT` under snapshot isolation when a txn is open.
+pub(crate) fn execute_select_in_txn(
+    manager: Arc<TxnManager>,
+    session_id: u64,
+    stmt: &Statement,
+    storage: &Arc<RwLock<LsmTree>>,
+) -> Result<QueryResult, EngineError> {
+    let view = manager.read_view(session_id).map_err(txn_err)?;
+    let overlay = build_read_overlay(&manager, session_id, &view)?;
+    let tree = storage.read();
+    #[allow(clippy::redundant_clone)]
+    let mgr = manager.clone();
+    let store = TxnOverlayStoreWithHook {
+        inner: TxnOverlayStore {
+            base: &tree,
+            view,
+            overlay,
+        },
+        on_read: Some(Box::new(move |key| {
+            let _ = mgr.with_txn(session_id, |txn| {
+                txn.record_read(key.to_vec());
+            });
+        })),
+    };
+    let records = execute_sql_on(stmt, &store, &tree)?;
+    Ok(QueryResult::from_records(&records))
+}
+
+struct TxnOverlayStoreWithHook<'a> {
+    inner: TxnOverlayStore<'a>,
+    on_read: Option<Box<dyn Fn(&[u8]) + 'a>>,
+}
+
+impl StorageEngine for TxnOverlayStoreWithHook<'_> {
+    type Error = StorageError;
+
+    fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
+        if let Some(hook) = &self.on_read {
+            hook(key);
+        }
+        self.inner.get(key)
+    }
+
+    fn put(&mut self, _key: &[u8], _value: &[u8]) -> Result<(), StorageError> {
+        self.inner.put(_key, _value)
+    }
+
+    fn delete(&mut self, _key: &[u8]) -> Result<bool, StorageError> {
+        self.inner.delete(_key)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
+        self.inner.iter()
     }
 }
 
