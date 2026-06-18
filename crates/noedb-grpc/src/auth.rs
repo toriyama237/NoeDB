@@ -6,11 +6,15 @@ use noedb_raft::ClusterAuth;
 use tonic::metadata::{MetadataKey, MetadataValue};
 use tonic::{Request, Status};
 
+use crate::auth_guard::AuthGuard;
+
 /// Metadata key carrying the 32-byte cluster token (hex).
 pub const AUTH_METADATA: &str = "x-noedb-auth";
 
 static AUTH_KEY: LazyLock<MetadataKey<tonic::metadata::Ascii>> =
     LazyLock::new(|| MetadataKey::from_static(AUTH_METADATA));
+
+static AUTH_GUARD: LazyLock<AuthGuard> = LazyLock::new(AuthGuard::default);
 
 /// Attach cluster auth to an outbound request.
 ///
@@ -23,12 +27,40 @@ pub fn inject_auth<T>(mut req: Request<T>, auth: &ClusterAuth) -> Result<Request
     Ok(req)
 }
 
+/// Verify inbound metadata with brute-force rate limiting per peer IP.
+///
+/// # Errors
+///
+/// Missing, malformed, wrong auth, or temporarily banned peer.
+pub fn verify_auth_guarded<T>(req: &Request<T>, expected: &ClusterAuth) -> Result<(), Status> {
+    let peer = req.remote_addr();
+    if AUTH_GUARD.is_banned(peer) {
+        return Err(Status::resource_exhausted(
+            "too many failed auth attempts — retry later",
+        ));
+    }
+    match verify_auth_inner(req, expected) {
+        Ok(()) => {
+            AUTH_GUARD.record_success(peer);
+            Ok(())
+        }
+        Err(e) => {
+            AUTH_GUARD.record_failure(peer);
+            Err(e)
+        }
+    }
+}
+
 /// Verify inbound metadata against the expected cluster token.
 ///
 /// # Errors
 ///
 /// Missing, malformed, or wrong auth.
 pub fn verify_auth<T>(req: &Request<T>, expected: &ClusterAuth) -> Result<(), Status> {
+    verify_auth_inner(req, expected)
+}
+
+fn verify_auth_inner<T>(req: &Request<T>, expected: &ClusterAuth) -> Result<(), Status> {
     let meta = req
         .metadata()
         .get(AUTH_METADATA)
@@ -77,5 +109,18 @@ mod tests {
         let b = ClusterAuth::from_passphrase("b");
         let req = inject_auth(Request::new(()), &a).unwrap();
         assert!(verify_auth(&req, &b).is_err());
+    }
+
+    #[test]
+    fn guard_bans_after_failures() {
+        AUTH_GUARD.clear();
+        let expected = ClusterAuth::from_passphrase("good");
+        let bad = ClusterAuth::from_passphrase("bad");
+        let req = inject_auth(Request::new(()), &bad).unwrap();
+        for _ in 0..8 {
+            let _ = verify_auth_guarded(&req, &expected);
+        }
+        assert!(verify_auth_guarded(&req, &expected).is_err());
+        AUTH_GUARD.clear();
     }
 }

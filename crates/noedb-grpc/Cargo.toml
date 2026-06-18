@@ -17,6 +17,7 @@ tonic = { workspace = true }
 prost = { workspace = true }
 thiserror = { workspace = true }
 hex = { workspace = true }
+parking_lot = { workspace = true }
 
 [build-dependencies]
 tonic-build = { workspace = true }
