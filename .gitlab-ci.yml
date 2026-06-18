@@ -29,6 +29,9 @@ variables:
 .default_rust:
   extends: .ci_rust_rules
   before_script:
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - mkdir -p "$CARGO_TARGET_DIR"
+    - chown -R "$(id -un):$(id -gn)" "$CI_PROJECT_DIR" 2>/dev/null || true
     - rustc --version || curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
     - source "$HOME/.cargo/env" || true
     - export PATH="$HOME/.cargo/bin:$PATH"
