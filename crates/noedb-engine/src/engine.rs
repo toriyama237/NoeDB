@@ -22,6 +22,7 @@ use crate::audit::AuditLog;
 use crate::command::Command;
 use crate::error::EngineError;
 use crate::machine::{apply_command, row_key};
+use crate::memory::MemoryBudget;
 use crate::prepared::{bind_parameters, PrepareCache};
 use crate::query_cache::QueryCache;
 use crate::region::RegionId;
@@ -137,6 +138,7 @@ pub struct LocalEngine {
     schema: Mutex<SchemaCatalog>,
     vector_indexes: Mutex<VectorIndexCatalog>,
     metrics: Arc<Metrics>,
+    memory: Arc<MemoryBudget>,
 }
 
 impl LocalEngine {
@@ -178,7 +180,14 @@ impl LocalEngine {
             schema: Mutex::new(SchemaCatalog::default()),
             vector_indexes: Mutex::new(VectorIndexCatalog::default()),
             metrics: Metrics::new_shared(),
+            memory: Arc::new(MemoryBudget::from_env()),
         }))
+    }
+
+    /// Memory budget guard (OOM prevention).
+    #[must_use]
+    pub fn memory_budget(&self) -> &Arc<MemoryBudget> {
+        &self.memory
     }
 
     /// Prometheus-style metrics for this engine.
@@ -295,6 +304,10 @@ impl LocalEngine {
         let start = Instant::now();
         let result = (|| {
             validate_sql(sql)?;
+            let pressure = self.storage.read().memtable_pressure_bytes();
+            self.memory
+                .gate_write(pressure, sql.len().saturating_mul(4096))?;
+            let _mem = self.memory.try_reserve(sql.len().max(4096))?;
             let stmt = noedb_parser::parse(sql)?;
             self.dispatch(session_id, stmt, sql)
         })();

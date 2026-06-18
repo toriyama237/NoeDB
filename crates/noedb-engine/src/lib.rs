@@ -22,6 +22,7 @@ mod dml;
 mod engine;
 mod error;
 mod machine;
+mod memory;
 mod prepared;
 mod query_cache;
 mod region;
@@ -42,6 +43,7 @@ pub use engine::{
 pub use noedb_metrics::{spawn_prometheus_listener, Metrics};
 pub use error::EngineError;
 pub use machine::{apply_command, row_key};
+pub use memory::{MemoryBudget, MemoryGuard, DEFAULT_MEM_BUDGET_BYTES};
 pub use noedb_txn::TxnManager;
 pub use prepared::{bind_parameters, PrepareCache, PreparedStatement};
 pub use query_cache::QueryCache;

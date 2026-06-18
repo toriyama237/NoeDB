@@ -209,6 +209,12 @@ impl LsmTree {
         self.level0.len()
     }
 
+    /// Active MemTable byte pressure (for memory budget / OOM guards).
+    #[must_use]
+    pub fn memtable_pressure_bytes(&self) -> usize {
+        self.active.approx_bytes()
+    }
+
     fn get_from_sst(&self, path: &Path, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
         let reader = {
             let mut cache = self.sst_cache.lock();
