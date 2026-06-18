@@ -51,10 +51,40 @@ fn rls_isolates_rows_by_role() {
 }
 
 #[test]
+fn ddl_requires_admin_role() {
+    let dir = std::env::temp_dir().join("noedb-phase1-ddl-guard");
+    let _ = std::fs::remove_dir_all(&dir);
+    let eng = LocalEngine::open(&dir).unwrap();
+    eng.execute("SET ROLE 'anonymous'").unwrap();
+    assert!(eng
+        .execute("CREATE TABLE secret (id INT PRIMARY KEY)")
+        .is_err());
+    assert!(eng.execute("SET ROLE 'admin'").is_err());
+    let dir2 = std::env::temp_dir().join("noedb-phase1-ddl-guard-admin");
+    let _ = std::fs::remove_dir_all(&dir2);
+    let admin = LocalEngine::open(&dir2).unwrap();
+    admin
+        .execute("CREATE TABLE secret (id INT PRIMARY KEY)")
+        .unwrap();
+}
+
+#[test]
+fn audit_hash_chain_is_valid() {
+    let dir = std::env::temp_dir().join("noedb-phase1-audit-chain");
+    let _ = std::fs::remove_dir_all(&dir);
+    let eng = LocalEngine::open(&dir).unwrap();
+    eng.execute("SELECT 1").unwrap();
+    eng.execute("SELECT 2").unwrap();
+    let log = noedb_engine::AuditLog::open(&dir).unwrap();
+    log.verify_chain().unwrap();
+}
+
+#[test]
 fn audit_log_records_queries() {
     let dir = std::env::temp_dir().join("noedb-phase1-audit");
     let _ = std::fs::remove_dir_all(&dir);
     let eng = LocalEngine::open(&dir).unwrap();
+    eng.execute("SET ROLE 'anonymous'").unwrap();
     eng.execute("SELECT 1").unwrap();
     let log = std::fs::read_to_string(dir.join("audit/audit.log")).unwrap();
     assert!(log.contains("SELECT 1"));

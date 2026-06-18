@@ -38,6 +38,9 @@ pub enum EngineError {
     /// MVCC / SSI conflict — safe to retry the transaction.
     #[error("serialization failure: {0}")]
     SerializationFailure(String),
+    /// Role or policy denied the statement.
+    #[error("access denied: {0}")]
+    AccessDenied(&'static str),
 }
 
 impl EngineError {
@@ -46,6 +49,7 @@ impl EngineError {
     pub fn grpc_code(&self) -> u32 {
         match self {
             Self::Storage(StorageError::ResourceExhausted { .. }) => 8,
+            Self::AccessDenied(_) => 7,
             _ => 1,
         }
     }

@@ -123,6 +123,7 @@ pub fn validate_sql(sql: &str) -> Result<(), EngineError> {
     if sql.bytes().any(|b| b == 0) {
         return Err(EngineError::InvalidSql("NUL byte in query"));
     }
+    crate::security::reject_multi_statement(sql)?;
     Ok(())
 }
 
@@ -322,6 +323,8 @@ impl LocalEngine {
         stmt: Statement,
         sql: &str,
     ) -> Result<QueryResult, EngineError> {
+        let role = self.session_role_for(session_id);
+        crate::security::authorize_statement(&role, &stmt)?;
         match stmt {
             Statement::Prepare(p) => {
                 if !matches!(*p.inner, Statement::Select(_)) {
@@ -342,6 +345,7 @@ impl LocalEngine {
                 self.run_data_statement(session_id, bound, sql)
             }
             Statement::SetRole(s) => {
+                crate::security::authorize_role_change(&role, &s.role)?;
                 if let Some(mut ctx) = self.sessions.get_mut(&session_id) {
                     ctx.role = s.role;
                 } else {

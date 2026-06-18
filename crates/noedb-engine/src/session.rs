@@ -10,12 +10,12 @@ pub struct SessionContext {
 }
 
 impl SessionContext {
-    /// Default dev session.
+    /// Default dev session (local engine — trusted operator).
     #[must_use]
     pub fn dev() -> Self {
         Self {
             tenant: "default".into(),
-            role: "anonymous".into(),
+            role: "noedb_admin".into(),
         }
     }
 }
