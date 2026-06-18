@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
+use rustls::client::danger::HandshakeSignatureValid;
 use rustls::pki_types::{CertificateDer, UnixTime};
 use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
-use rustls::server::WebPkiClientVerifier;
 use rustls::{DigitallySignedStruct, DistinguishedName, Error, SignatureScheme};
 use x509_parser::prelude::FromDer;
 use x509_parser::prelude::X509Certificate;
@@ -15,16 +15,13 @@ use crate::identity::SpiffeId;
 /// Web PKI + mandatory SPIFFE-style CN on presented client certificates.
 #[derive(Debug)]
 pub struct SpiffeClientVerifier {
-    inner: Arc<WebPkiClientVerifier>,
+    inner: Arc<dyn ClientCertVerifier>,
 }
 
 impl SpiffeClientVerifier {
     /// Wrap the dev-CA Web PKI verifier with SPIFFE CN checks.
-    ///
-    /// # Errors
-    ///
-    /// Rustls verifier construction failures.
-    pub fn new(inner: Arc<WebPkiClientVerifier>) -> Self {
+    #[must_use]
+    pub fn new(inner: Arc<dyn ClientCertVerifier>) -> Self {
         Self { inner }
     }
 
@@ -72,7 +69,7 @@ impl ClientCertVerifier for SpiffeClientVerifier {
         message: &[u8],
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
-    ) -> Result<ClientCertVerified, Error> {
+    ) -> Result<HandshakeSignatureValid, Error> {
         self.inner.verify_tls12_signature(message, cert, dss)
     }
 
@@ -81,7 +78,7 @@ impl ClientCertVerifier for SpiffeClientVerifier {
         message: &[u8],
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
-    ) -> Result<ClientCertVerified, Error> {
+    ) -> Result<HandshakeSignatureValid, Error> {
         self.inner.verify_tls13_signature(message, cert, dss)
     }
 
@@ -94,10 +91,12 @@ impl ClientCertVerifier for SpiffeClientVerifier {
 mod tests {
     use super::*;
     use crate::dev_certs::DevCertPem;
+    use rustls::server::WebPkiClientVerifier;
     use rustls::RootCertStore;
 
     #[test]
     fn spiffe_verifier_accepts_cluster_client_cert() {
+        crate::config::install_crypto_provider();
         let certs = DevCertPem::generate_cluster(2).unwrap();
         let ca = certs.ca_cert().unwrap();
         let mut roots = RootCertStore::empty();
