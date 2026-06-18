@@ -1,10 +1,11 @@
 //! WAL segment rotation and multi-file replay (Week 11).
 
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use super::{LogEntry, Wal};
+use crate::atomic_io::atomic_write;
 use crate::error::StorageError;
 use crate::memtable::MemTable;
 
@@ -148,10 +149,7 @@ impl WalSegmentManager {
 
     fn write_current(dir: &Path, id: u64) -> Result<(), StorageError> {
         let path = dir.join(CURRENT_FILE);
-        let mut file = File::create(path)?;
-        writeln!(file, "{id}")?;
-        file.sync_all()?;
-        Ok(())
+        atomic_write(&path, format!("{id}\n").as_bytes())
     }
 }
 

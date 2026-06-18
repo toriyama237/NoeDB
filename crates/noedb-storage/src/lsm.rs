@@ -8,9 +8,11 @@ use std::path::{Path, PathBuf};
 use crate::compaction::{self, L0_COMPACTION_TRIGGER};
 use crate::engine::StorageEngine;
 use crate::error::StorageError;
+use crate::manifest::ManifestSnapshot;
 use crate::memtable::{MemTable, DEFAULT_MAX_MEM_BYTES};
 use crate::sstable::{SstReader, SstWriteOptions, SstWriter};
 use crate::wal::{LogEntry, WalSegmentManager, WalSyncMode};
+use crate::write_stall::{WriteStallConfig, WriteStallController};
 
 /// Configuration for [`LsmTree`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +27,8 @@ pub struct LsmConfig {
     pub sst: SstWriteOptions,
     /// Group-commit: max WAL records before implicit sync on flush path.
     pub wal_batch_size: usize,
+    /// Write-stall thresholds when L0 / memtable pressure rises.
+    pub write_stall: WriteStallConfig,
 }
 
 impl Default for LsmConfig {
@@ -35,6 +39,7 @@ impl Default for LsmConfig {
             wal_sync: WalSyncMode::EveryAppend,
             sst: SstWriteOptions::default(),
             wal_batch_size: 1,
+            write_stall: WriteStallConfig::default(),
         }
     }
 }
@@ -49,6 +54,7 @@ impl LsmConfig {
             wal_sync: WalSyncMode::OnFlush,
             sst: SstWriteOptions::phase3_default(),
             wal_batch_size: 256,
+            write_stall: WriteStallConfig::relaxed(),
         }
     }
 }
@@ -64,6 +70,8 @@ pub struct LsmTree {
     flushed_wal_segment: u64,
     sst_cache: Mutex<HashMap<PathBuf, SstReader>>,
     pub(crate) wal_pending: usize,
+    write_stall: WriteStallController,
+    manifest_seq: u64,
 }
 
 impl LsmTree {
@@ -76,8 +84,18 @@ impl LsmTree {
         let mut active = MemTable::new();
         WalSegmentManager::replay_all(&dir, &mut active)?;
 
-        let level0 = compaction::list_sst_level(&dir.join("sst"), 0)?;
-        let level1 = compaction::list_sst_level(&dir.join("sst"), 1)?;
+        let manifest = ManifestSnapshot::load(&dir)?;
+        let level0 = if let Some(ref m) = manifest {
+            m.level0.clone()
+        } else {
+            compaction::list_sst_level(&dir.join("sst"), 0)?
+        };
+        let level1 = if let Some(ref m) = manifest {
+            m.level1.clone()
+        } else {
+            compaction::list_sst_level(&dir.join("sst"), 1)?
+        };
+        let manifest_seq = manifest.map(|m| m.sequence).unwrap_or(0);
         let wal = WalSegmentManager::open_with_sync(&dir, config.wal_sync)?;
 
         Ok(Self {
@@ -90,6 +108,8 @@ impl LsmTree {
             flushed_wal_segment: 0,
             sst_cache: Mutex::new(HashMap::new()),
             wal_pending: 0,
+            write_stall: WriteStallController::new(config.write_stall),
+            manifest_seq,
         })
     }
 
@@ -122,6 +142,7 @@ impl LsmTree {
 
     /// Insert or overwrite a key (WAL → MemTable → maybe flush).
     pub fn put(&mut self, key: &[u8], value: &[u8]) -> Result<(), StorageError> {
+        self.gate_write()?;
         self.wal
             .append(&LogEntry::put(key.to_vec(), value.to_vec()))?;
         self.wal_pending += 1;
@@ -133,6 +154,7 @@ impl LsmTree {
 
     /// Bulk insert with a single WAL sync at the end (ideal for ingest workloads).
     pub fn put_batch(&mut self, entries: &[(&[u8], &[u8])]) -> Result<(), StorageError> {
+        self.gate_write()?;
         for (key, value) in entries {
             self.wal
                 .append(&LogEntry::put(key.to_vec(), value.to_vec()))?;
@@ -145,6 +167,7 @@ impl LsmTree {
 
     /// Delete a key.
     pub fn delete(&mut self, key: &[u8]) -> Result<bool, StorageError> {
+        self.gate_write()?;
         self.wal.append(&LogEntry::delete(key.to_vec()))?;
         let removed = self.active.delete(key)?;
         self.maybe_flush_and_compact()?;
@@ -201,6 +224,24 @@ impl LsmTree {
         self.sst_cache.lock().clear();
     }
 
+    fn gate_write(&self) -> Result<(), StorageError> {
+        self.write_stall.gate_write(
+            self.level0.len(),
+            self.active.approx_bytes(),
+            self.config.max_mem_bytes,
+        )
+    }
+
+    fn persist_manifest(&mut self) -> Result<(), StorageError> {
+        self.manifest_seq += 1;
+        ManifestSnapshot {
+            level0: self.level0.clone(),
+            level1: self.level1.clone(),
+            sequence: self.manifest_seq,
+        }
+        .commit(&self.dir)
+    }
+
     pub(crate) fn maybe_flush_and_compact(&mut self) -> Result<(), StorageError> {
         if self.active.approx_bytes() < self.config.max_mem_bytes {
             return Ok(());
@@ -229,6 +270,7 @@ impl LsmTree {
         }
         self.flushed_wal_segment = self.wal.active_id();
         self.wal_pending = 0;
+        self.persist_manifest()?;
         Ok(())
     }
 
@@ -238,6 +280,7 @@ impl LsmTree {
         self.level0.clear();
         self.level1.push(l1_path);
         self.clear_sst_cache();
+        self.persist_manifest()?;
         Ok(())
     }
 }

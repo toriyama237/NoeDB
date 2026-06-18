@@ -1,6 +1,13 @@
 # NoeDB CI — builds and tests on the OVH GitLab Runner (LXC noedb-01).
 # ThinkPad: git push only. All compilation runs on AMD EPYC via shell executor.
 
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH =~ /^feat\//
+    - if: $CI_COMMIT_BRANCH =~ /^fix\//
+
 stages:
   - build
   - test
@@ -12,7 +19,15 @@ variables:
   CARGO_TERM_COLOR: always
   GIT_DEPTH: "0"
 
+.ci_rust_rules:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH =~ /^feat\//
+    - if: $CI_COMMIT_BRANCH =~ /^fix\//
+
 .default_rust:
+  extends: .ci_rust_rules
   before_script:
     - rustc --version || curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
     - source "$HOME/.cargo/env" || true
@@ -53,6 +68,16 @@ test:workspace:
   needs:
     - build:release
 
+test:storage:
+  stage: test
+  extends: .default_rust
+  tags:
+    - noedb-native
+  script:
+    - cargo test -p noedb-storage --release
+  needs:
+    - build:release
+
 bench:ycsb:
   stage: test
   extends: .default_rust
@@ -87,7 +112,8 @@ deploy:runner:
     - install -m 755 target/release/noedb /usr/local/bin/noedb
     - systemctl restart noedb.service || true
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE != "merge_request_event"
   needs:
     - build:release
     - test:workspace
+    - test:storage

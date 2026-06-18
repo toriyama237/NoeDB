@@ -4,7 +4,8 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-use super::format::{Footer, IndexEntry, BLOCK_SIZE, HEADER_LEN, SST_MAGIC, SST_VERSION};
+use super::block::encode_block;
+use super::format::{Footer, IndexEntry, BLOCK_SIZE, HEADER_LEN, SST_MAGIC, SST_VERSION_V3};
 use super::options::SstWriteOptions;
 use crate::bloom::BloomFilter;
 use crate::error::StorageError;
@@ -35,7 +36,7 @@ impl SstWriter {
         let path = path.as_ref();
         let mut file = File::create(path)?;
         file.write_all(&SST_MAGIC)?;
-        file.write_all(&SST_VERSION.to_le_bytes())?;
+        file.write_all(&SST_VERSION_V3.to_le_bytes());
         file.write_all(&(BLOCK_SIZE as u32).to_le_bytes())?;
         file.write_all(&0u32.to_le_bytes())?; // reserved
         file.write_all(&0u16.to_le_bytes())?; // pad to HEADER_LEN
@@ -102,10 +103,9 @@ impl SstWriter {
     }
 
     fn write_block(&mut self, block: &[u8]) -> Result<(), StorageError> {
-        let len = block.len() as u32;
-        self.file.write_all(&len.to_le_bytes())?;
-        self.file.write_all(block)?;
-        self.offset += 4 + block.len() as u64;
+        let wire = encode_block(block);
+        self.file.write_all(&wire)?;
+        self.offset += wire.len() as u64;
         Ok(())
     }
 }
@@ -125,7 +125,7 @@ fn write_footer(file: &mut File, footer: &Footer) -> Result<(), StorageError> {
     file.write_all(&footer.bloom_offset.to_le_bytes())?;
     file.write_all(&0u32.to_le_bytes())?; // reserved
     file.write_all(&SST_MAGIC)?;
-    file.write_all(&SST_VERSION.to_le_bytes())?;
+    file.write_all(&SST_VERSION_V3.to_le_bytes())?;
     file.write_all(&0u16.to_le_bytes())?; // pad to FOOTER_LEN
     Ok(())
 }

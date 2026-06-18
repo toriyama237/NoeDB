@@ -20,6 +20,7 @@
     clippy::cast_precision_loss
 )]
 
+mod atomic_io;
 mod bloom;
 mod checksum;
 mod compaction;
@@ -31,11 +32,14 @@ mod fast_wal;
 mod hnsw;
 mod lsm;
 mod lsm_mvcc;
+mod manifest;
 mod memtable;
 mod mmap_io;
 pub mod mvcc;
+mod scrub;
 mod sstable;
 mod wal;
+mod write_stall;
 mod xor_filter;
 
 pub use crate::bloom::BloomFilter;
@@ -45,6 +49,7 @@ pub use crate::engine::StorageEngine;
 pub use crate::error::StorageError;
 pub use crate::fast_wal::append_batch_sync;
 pub use crate::lsm::{LsmConfig, LsmTree};
+pub use crate::manifest::ManifestSnapshot;
 pub use crate::memtable::{
     MemTable, MemTableIter, MemTableRangeIter, DEFAULT_MAX_ENTRIES, DEFAULT_MAX_MEM_BYTES,
 };
@@ -53,12 +58,14 @@ pub use crate::mvcc::{
     encode_internal_key, gc_versions, CommitTs, GcStats, MvccMemTable, ReadView, SnapshotStore,
     TimestampOracle, TxnId, Version,
 };
+pub use crate::scrub::{scrub_data_dir, ScrubReport};
 pub use crate::sstable::{
-    SstReader, SstWriteOptions, SstWriter, SST_MAGIC, SST_VERSION, SST_VERSION_V2,
+    SstReader, SstWriteOptions, SstWriter, SST_MAGIC, SST_VERSION, SST_VERSION_V2, SST_VERSION_V3,
 };
 pub use crate::wal::{
     replay_into_memtable, replay_wal_dir, LogEntry, OpType, Wal, WalSegmentManager, WalSyncMode,
     WAL_MAGIC, WAL_VERSION,
 };
 pub use crate::hnsw::HnswIndex;
+pub use crate::write_stall::{WriteStallConfig, WriteStallController};
 pub use crate::xor_filter::XorFilter;
