@@ -31,5 +31,6 @@ tarpaulin-report.html
 # Local secrets / playgrounds
 /.cargo/config.toml.local
 /playground/
+secu-mdp.txt
 perf.data
 .antigravitycli/

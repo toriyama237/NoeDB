@@ -1,0 +1,93 @@
+# NoeDB CI — builds and tests on the OVH GitLab Runner (LXC noedb-01).
+# ThinkPad: git push only. All compilation runs on AMD EPYC via shell executor.
+
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  CARGO_TARGET_DIR: "$CI_PROJECT_DIR/target"
+  RUSTFLAGS: "-C target-cpu=native"
+  CARGO_TERM_COLOR: always
+  GIT_DEPTH: "0"
+
+.default_rust:
+  before_script:
+    - rustc --version || curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    - source "$HOME/.cargo/env" || true
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - |
+      mkdir -p "$HOME/.cargo"
+      cat > "$HOME/.cargo/config.toml" <<EOF
+      [build]
+      rustflags = ["-C", "target-cpu=native"]
+      jobs = 8
+      [profile.release]
+      lto = "thin"
+      codegen-units = 1
+      EOF
+
+build:release:
+  stage: build
+  extends: .default_rust
+  tags:
+    - noedb-native
+  script:
+    - cargo build --release -p noedb-cli
+    - cargo build --release -p noedb-engine --bench insert_storm
+    - cp target/release/noedb ./noedb-bin
+  artifacts:
+    paths:
+      - target/release/noedb
+      - noedb-bin
+    expire_in: 2 weeks
+
+test:workspace:
+  stage: test
+  extends: .default_rust
+  tags:
+    - noedb-native
+  script:
+    - cargo test --workspace --release
+  needs:
+    - build:release
+
+bench:ycsb:
+  stage: test
+  extends: .default_rust
+  tags:
+    - noedb-native
+  script:
+    - cargo bench -p noedb-engine --bench ycsb -- --nocapture
+  allow_failure: true
+  needs:
+    - build:release
+
+bench:insert-storm:
+  stage: test
+  extends: .default_rust
+  tags:
+    - noedb-native
+  variables:
+    NOEDB_STORM_RECORDS: "100000"
+  script:
+    - STORM=$(find target/release/deps -maxdepth 1 -name 'insert_storm-*' -executable -type f | head -1)
+    - test -n "$STORM"
+    - env NOEDB_STORM_RECORDS="$NOEDB_STORM_RECORDS" NOEDB_DATA_DIR="$CI_PROJECT_DIR/stress-data" "$STORM"
+  allow_failure: true
+  needs:
+    - build:release
+
+deploy:runner:
+  stage: deploy
+  tags:
+    - noedb-native
+  script:
+    - install -m 755 target/release/noedb /usr/local/bin/noedb
+    - systemctl restart noedb.service || true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  needs:
+    - build:release
+    - test:workspace
