@@ -12,17 +12,29 @@ use noedb_grpc::{
     Empty, PingRequest, ResultSet, Row, Sql, SqlClient, SqlRequest, SqlResponse, SqlServer,
 };
 use noedb_raft::ClusterAuth;
+use tokio::sync::Semaphore;
 use tonic::transport::{Channel, Endpoint, Server};
 use tonic::{Request, Response as GrpcResponse, Status};
+
+const DEFAULT_MAX_INFLIGHT: usize = 512;
 
 struct SqlServiceImpl {
     auth: ClusterAuth,
     engine: Arc<LocalEngine>,
+    permits: Arc<Semaphore>,
 }
 
 impl SqlServiceImpl {
     fn new(auth: ClusterAuth, engine: Arc<LocalEngine>) -> Self {
-        Self { auth, engine }
+        let max = std::env::var("NOEDB_GRPC_MAX_INFLIGHT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(DEFAULT_MAX_INFLIGHT);
+        Self {
+            auth,
+            engine,
+            permits: Arc::new(Semaphore::new(max)),
+        }
     }
 }
 
@@ -33,8 +45,14 @@ impl Sql for SqlServiceImpl {
         request: Request<SqlRequest>,
     ) -> Result<GrpcResponse<SqlResponse>, Status> {
         verify_auth(&request, &self.auth)?;
+        let _permit = self.permits.acquire().await.map_err(|_| {
+            Status::resource_exhausted("gRPC in-flight limit — retry with backoff")
+        })?;
         let query = request.into_inner().query;
-        let resp = dispatch_sql(&self.engine, &query);
+        let engine = Arc::clone(&self.engine);
+        let resp = tokio::task::spawn_blocking(move || dispatch_sql(&engine, &query))
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
         Ok(GrpcResponse::new(resp))
     }
 
@@ -43,13 +61,19 @@ impl Sql for SqlServiceImpl {
         request: Request<SqlRequest>,
     ) -> Result<GrpcResponse<SqlResponse>, Status> {
         verify_auth(&request, &self.auth)?;
+        let _permit = self.permits.acquire().await.map_err(|_| {
+            Status::resource_exhausted("gRPC in-flight limit — retry with backoff")
+        })?;
         let query = request.into_inner().query;
-        let resp = match self.engine.explain(&query) {
+        let engine = Arc::clone(&self.engine);
+        let resp = tokio::task::spawn_blocking(move || match engine.explain(&query) {
             Ok(text) => SqlResponse {
                 body: Some(noedb_grpc::generated::sql_response::Body::Explain(text)),
             },
             Err(e) => sql_error(&e),
-        };
+        })
+        .await
+        .map_err(|e| Status::internal(e.to_string()))?;
         Ok(GrpcResponse::new(resp))
     }
 
@@ -87,7 +111,7 @@ fn sql_error(e: &EngineError) -> SqlResponse {
     SqlResponse {
         body: Some(noedb_grpc::generated::sql_response::Body::Error(
             noedb_grpc::SqlError {
-                code: 1,
+                code: e.grpc_code(),
                 message: e.to_string(),
             },
         )),
@@ -112,7 +136,7 @@ pub(crate) async fn run_grpc_server(
         .max_encoding_message_size(MAX_GRPC_BYTES);
 
     let mode = if mtls { "mTLS 1.3" } else { "TLS 1.3" };
-    println!("noedb gRPC on {addr} ({mode}, HTTP/2)");
+    println!("noedb gRPC on {addr} ({mode}, HTTP/2, max_inflight={DEFAULT_MAX_INFLIGHT})");
     println!("  legacy TCP: use --legacy-tcp on port 5433");
 
     Server::builder()
