@@ -16,6 +16,7 @@ rcgen = "0.13"
 thiserror = { workspace = true }
 tokio-rustls = "0.26"
 tokio = { workspace = true, features = ["io-util", "net", "rt"] }
+x509-parser = "0.16"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
