@@ -76,7 +76,7 @@ fn maybe_init_otel(args: &[String]) -> Result<(), String> {
     {
         otel::init(&endpoint)?;
         println!("OpenTelemetry traces → {endpoint} (service: noedb)");
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(feature = "otel"))]
     {

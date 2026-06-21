@@ -65,7 +65,10 @@ impl AuditLog {
             .map_err(io_err)?;
         writeln!(file, "{line}").map_err(io_err)?;
         file.sync_data().map_err(io_err)?;
-        *self.last_hash.lock().unwrap() = entry.chain_hash.clone();
+        self.last_hash
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone_from(&entry.chain_hash);
         Ok(())
     }
 
@@ -80,7 +83,11 @@ impl AuditLog {
         let ts_unix_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_millis() as u64);
-        let prev = self.last_hash.lock().unwrap().clone();
+        let prev = self
+            .last_hash
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         let chain_hash = chain_link(&prev, ts_unix_ms, tenant, user, query, rows_affected);
         self.append(&AuditEntry {
             ts_unix_ms,
@@ -110,7 +117,7 @@ impl AuditLog {
             if entry.chain_hash != expected {
                 return Err(EngineError::Codec("audit chain tampered".into()));
             }
-            prev = entry.chain_hash.clone();
+            prev.clone_from(&entry.chain_hash);
         }
         Ok(())
     }
@@ -146,7 +153,7 @@ fn chain_link(
 
 fn load_last_hash(path: &Path) -> Result<String, EngineError> {
     let content = std::fs::read_to_string(path).map_err(io_err)?;
-    let Some(last) = content.lines().filter(|l| !l.is_empty()).next_back() else {
+    let Some(last) = content.lines().rfind(|l| !l.is_empty()) else {
         return Ok(GENESIS.to_string());
     };
     let entry: AuditEntry =
@@ -166,7 +173,7 @@ mod tests {
     fn hash_chain_survives_append() {
         let dir = std::env::temp_dir().join(format!(
             "noedb-audit-chain-{}",
-            std::time::SystemTime::now()
+            SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()

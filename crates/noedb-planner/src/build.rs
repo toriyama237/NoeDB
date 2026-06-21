@@ -140,17 +140,10 @@ pub fn build_select_scoped(
         if !extra_sort_items.is_empty() {
             let mut items = order_items.clone();
             items.extend(extra_sort_items);
-            if contains_aggregate(&window_items) {
-                sort_plan = LogicalPlan::Project {
-                    input: Box::new(sort_plan),
-                    items,
-                };
-            } else {
-                sort_plan = LogicalPlan::Project {
-                    input: Box::new(sort_plan),
-                    items,
-                };
-            }
+            sort_plan = LogicalPlan::Project {
+                input: Box::new(sort_plan),
+                items,
+            };
         }
         plan = LogicalPlan::Sort {
             input: Box::new(sort_plan),
@@ -223,19 +216,6 @@ fn aggregate_output_items(
         }
     }
     Ok(out)
-}
-
-fn resolve_order_keys(
-    items: &[SelectItem],
-    order_by: &[OrderKey],
-) -> Result<Vec<(String, bool)>, PlanError> {
-    order_by
-        .iter()
-        .map(|key| {
-            let name = resolve_sort_column(items, &key.expr)?;
-            Ok((name, key.asc))
-        })
-        .collect()
 }
 
 fn resolve_sort_column(items: &[SelectItem], expr: &Expr) -> Result<String, PlanError> {

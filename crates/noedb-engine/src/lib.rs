@@ -4,7 +4,7 @@
 //! deterministic in-process clustering for integration tests.
 
 #![forbid(unsafe_code)]
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 #![allow(
     clippy::cast_possible_truncation,
     clippy::needless_pass_by_value,

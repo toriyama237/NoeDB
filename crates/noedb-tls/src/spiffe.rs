@@ -87,6 +87,7 @@ impl ClientCertVerifier for SpiffeClientVerifier {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::dev_certs::DevCertPem;

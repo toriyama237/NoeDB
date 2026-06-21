@@ -41,7 +41,7 @@ pub(crate) fn try_hnsw_select(
     Ok(Some(QueryResult::from_records(&records)))
 }
 
-fn detect_knn<'a>(select: &'a SelectStmt) -> Option<KnnQuery<'a>> {
+fn detect_knn(select: &SelectStmt) -> Option<KnnQuery<'_>> {
     if select.distinct
         || !select.group_by.is_empty()
         || select.having_clause.is_some()

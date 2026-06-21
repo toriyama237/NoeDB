@@ -324,6 +324,8 @@ fn eval_binary(
             let r = eval_expr(right, row)?;
             Ok(Value::Float(vector_l2_distance(&l, &r)?))
         }
+        // Defensive fallback for any BinaryOp not handled above.
+        #[allow(unreachable_patterns)]
         _ => Err(ExecError::UnsupportedExpr),
     }
 }
@@ -505,7 +507,7 @@ fn decode_ndv1(bytes: &[u8]) -> Result<Vec<f32>, ExecError> {
         });
     }
     let payload = &bytes[MAGIC_LEN..];
-    if !payload.len().is_multiple_of(4) {
+    if payload.len() % 4 != 0 {
         return Err(ExecError::TypeMismatch {
             message: "invalid VECTOR payload".into(),
         });

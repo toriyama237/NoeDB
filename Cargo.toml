@@ -91,7 +91,8 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
-nursery = { level = "warn", priority = -1 }
+# `nursery` lints are explicitly unstable upstream and not meant to gate CI.
+nursery = { level = "allow", priority = -1 }
 unwrap_used = "warn"
 expect_used = "warn"
 panic = "warn"
@@ -109,6 +110,23 @@ must_use_candidate = "allow"
 return_self_not_must_use = "allow"
 multiple_crate_versions = "allow"
 redundant_pub_crate = "allow"
+# Style-only pedantic lints that fire on pre-existing code; not worth churning
+# correctness-critical paths (parser/planner) to satisfy:
+map_unwrap_or = "allow"
+match_same_arms = "allow"
+unnested_or_patterns = "allow"
+range_plus_one = "allow"
+too_many_lines = "allow"
+needless_pass_by_value = "allow"
+type_complexity = "allow"
+single_match_else = "allow"
+unnecessary_wraps = "allow"
+redundant_closure_for_method_calls = "allow"
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+# Error enums carry transport/status payloads; boxing every variant is churn.
+result_large_err = "allow"
 
 [profile.release]
 opt-level = 3

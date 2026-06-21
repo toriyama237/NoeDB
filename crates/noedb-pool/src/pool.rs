@@ -37,7 +37,6 @@ struct Inner {
 pub struct PooledClient {
     pool: Arc<GrpcPool>,
     inner: Option<Inner>,
-    route: Route,
     _permit: OwnedSemaphorePermit,
 }
 
@@ -90,12 +89,14 @@ impl GrpcPool {
             .await
             .map_err(|_| PoolError::Exhausted)?;
 
-        if let Some(mut inner) = self.idle.lock().pop() {
+        // Take the idle channel out under the lock, then drop the guard before
+        // any `.await` (holding a lock across await can deadlock the runtime).
+        let idle = self.idle.lock().pop();
+        if let Some(mut inner) = idle {
             if inner.last_ping.elapsed() < self.config.health_interval {
                 return Ok(PooledClient {
                     pool: Arc::clone(self),
                     inner: Some(inner),
-                    route,
                     _permit: permit,
                 });
             }
@@ -103,7 +104,6 @@ impl GrpcPool {
                 return Ok(PooledClient {
                     pool: Arc::clone(self),
                     inner: Some(inner),
-                    route,
                     _permit: permit,
                 });
             }
@@ -114,7 +114,6 @@ impl GrpcPool {
         Ok(PooledClient {
             pool: Arc::clone(self),
             inner: Some(inner),
-            route,
             _permit: permit,
         })
     }
@@ -175,9 +174,9 @@ impl Drop for PooledClient {
 async fn connect_inner(addr: &str, certs: &DevCertPem, mtls: bool) -> Result<Inner, PoolError> {
     let host = peer_host_from_addr(addr);
     let tls = if mtls {
-        client_tls_mtls(certs, host).map_err(|e| PoolError::Tls(e.to_string()))?
+        client_tls_mtls(certs, host).map_err(PoolError::Tls)?
     } else {
-        client_tls_one_way(certs, host).map_err(|e| PoolError::Tls(e.to_string()))?
+        client_tls_one_way(certs, host).map_err(PoolError::Tls)?
     };
     let uri = if addr.starts_with("http") {
         addr.to_string()
@@ -218,7 +217,6 @@ fn parse_rows(resp: SqlResponse) -> Result<QueryRows, PoolError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::router::Route;
 
     #[test]
     fn high_concurrency_config_allows_1024() {
