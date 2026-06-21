@@ -143,6 +143,7 @@ pub struct LocalEngine {
     memory: Arc<MemoryBudget>,
     rate_limiter: RateLimiter,
     stmt_timeout_ms: u64,
+    data_key: Option<crate::crypto::DataKey>,
 }
 
 impl LocalEngine {
@@ -190,6 +191,7 @@ impl LocalEngine {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0),
+            data_key: crate::crypto::DataKey::from_env(),
         }))
     }
 
@@ -281,6 +283,66 @@ impl LocalEngine {
             .map_err(EngineError::Storage)?;
         self.cache.lock().invalidate_table(table);
         Ok(())
+    }
+
+    /// Whether at-rest encryption is configured (`NOEDB_DATA_KEY`).
+    #[must_use]
+    pub fn encryption_enabled(&self) -> bool {
+        self.data_key.is_some()
+    }
+
+    /// Insert a cell whose value is sealed at rest (AEAD).
+    ///
+    /// The plaintext is encrypted with the engine data key and bound to the
+    /// `table/row/column` coordinates, then stored. Requires `NOEDB_DATA_KEY`.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Crypto`] when no data key is configured, or storage errors.
+    pub fn put_row_encrypted(
+        &self,
+        session_id: u64,
+        table: &str,
+        row: &str,
+        column: &str,
+        plaintext: &[u8],
+    ) -> Result<(), EngineError> {
+        let key = self
+            .data_key
+            .as_ref()
+            .ok_or(EngineError::Crypto("no data key configured"))?;
+        let aad = crate::crypto::cell_aad(table, row, column);
+        let sealed = key.seal(&aad, plaintext)?;
+        self.put_row(session_id, table, row, column, &sealed)
+    }
+
+    /// Read and decrypt a cell previously written with [`Self::put_row_encrypted`].
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Crypto`] when no key is configured or decryption fails.
+    pub fn get_row_decrypted(
+        &self,
+        table: &str,
+        row: &str,
+        column: &str,
+    ) -> Result<Option<Vec<u8>>, EngineError> {
+        let key = self
+            .data_key
+            .as_ref()
+            .ok_or(EngineError::Crypto("no data key configured"))?;
+        let storage_key = row_key(table, row, column);
+        let sealed = {
+            let tree = self.storage.read();
+            tree.get(&storage_key).map_err(EngineError::Storage)?
+        };
+        match sealed {
+            Some(bytes) => {
+                let aad = crate::crypto::cell_aad(table, row, column);
+                Ok(Some(key.open(&aad, &bytes)?))
+            }
+            None => Ok(None),
+        }
     }
 
     /// Convenience `put_row` on the default session.
