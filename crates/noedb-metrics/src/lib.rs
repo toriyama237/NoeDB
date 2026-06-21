@@ -73,6 +73,7 @@ impl Histogram {
 
     /// Sum of samples in seconds (for Prometheus).
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn sum_seconds(&self) -> f64 {
         let ns = self.sum_ns.load(Ordering::Relaxed);
         ns as f64 / 1_000_000_000.0
@@ -80,6 +81,7 @@ impl Histogram {
 
     /// Max sample in seconds.
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn max_seconds(&self) -> f64 {
         let ns = self.max_ns.load(Ordering::Relaxed);
         ns as f64 / 1_000_000_000.0
@@ -248,7 +250,7 @@ pub fn spawn_prometheus_listener(
                 let _ = serve_http(&metrics, stream);
             }
         })
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        .map_err(std::io::Error::other)
 }
 
 fn serve_http(metrics: &Metrics, mut stream: TcpStream) -> std::io::Result<()> {

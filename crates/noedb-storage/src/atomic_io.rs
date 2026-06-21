@@ -36,7 +36,7 @@ mod tests {
             .as_nanos();
         let path = std::env::temp_dir().join(format!("noedb-atomic-{nanos}.txt"));
         atomic_write(&path, b"manifest-v1").unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), b"manifest-v1");
-        let _ = std::fs::remove_file(path);
+        assert_eq!(fs::read(&path).unwrap(), b"manifest-v1");
+        let _ = fs::remove_file(path);
     }
 }

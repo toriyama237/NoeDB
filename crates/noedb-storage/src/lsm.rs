@@ -95,7 +95,7 @@ impl LsmTree {
         } else {
             compaction::list_sst_level(&dir.join("sst"), 1)?
         };
-        let manifest_seq = manifest.map(|m| m.sequence).unwrap_or(0);
+        let manifest_seq = manifest.map_or(0, |m| m.sequence);
         let wal = WalSegmentManager::open_with_sync(&dir, config.wal_sync)?;
 
         Ok(Self {

@@ -82,13 +82,11 @@ impl HnswIndex {
                     let da = self
                         .nodes
                         .get(a)
-                        .map(|v| l2(v, self.nodes.get(id).unwrap_or(v)))
-                        .unwrap_or(f32::MAX);
+                        .map_or(f32::MAX, |v| l2(v, self.nodes.get(id).unwrap_or(v)));
                     let db = self
                         .nodes
                         .get(b)
-                        .map(|v| l2(v, self.nodes.get(id).unwrap_or(v)))
-                        .unwrap_or(f32::MAX);
+                        .map_or(f32::MAX, |v| l2(v, self.nodes.get(id).unwrap_or(v)));
                     da.partial_cmp(&db).unwrap_or(Ordering::Equal)
                 });
                 entry.truncate(self.m);

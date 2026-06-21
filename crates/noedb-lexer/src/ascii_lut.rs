@@ -6,6 +6,7 @@
 pub(crate) const WHITESPACE: [u8; 256] = lut_whitespace();
 
 /// `1` when `b` can continue an identifier (`[A-Za-z0-9_]`).
+#[allow(dead_code)]
 pub(crate) const IDENT_CONTINUE: [u8; 256] = lut_ident_continue();
 
 /// `1` when `b` can start an identifier (`[A-Za-z_]`).
@@ -50,6 +51,7 @@ const fn lut_whitespace() -> [u8; 256] {
     t
 }
 
+#[allow(dead_code)]
 const fn lut_ident_continue() -> [u8; 256] {
     let mut t = [0u8; 256];
     let mut i = 0usize;
@@ -82,6 +84,7 @@ pub(crate) const fn is_whitespace(b: u8) -> bool {
 }
 
 #[inline]
+#[allow(dead_code)]
 pub(crate) const fn is_ident_continue(b: u8) -> bool {
     IDENT_CONTINUE[b as usize] != 0
 }
