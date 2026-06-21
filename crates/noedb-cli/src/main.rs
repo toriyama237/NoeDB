@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 use noedb_engine::{spawn_prometheus_listener, DistributedEngine, EngineError, LocalEngine, QueryResult};
 use noedb_metrics::Metrics;
+use noedb_storage::scrub_data_dir;
 use noedb_protocol::{decode_request, encode_response, Request, Response};
 use noedb_raft::ClusterAuth;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -98,6 +99,13 @@ fn main() {
     if args.iter().any(|a| a == "--ping") {
         if let Err(e) = run_ping(&args) {
             eprintln!("noedb ping error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if args.iter().any(|a| a == "--scrub") {
+        if let Err(e) = run_scrub(&args) {
+            eprintln!("noedb scrub error: {e}");
             std::process::exit(1);
         }
         return;
@@ -499,6 +507,22 @@ fn err_response(e: &EngineError) -> Response {
         code: 1,
         message: e.to_string(),
     }
+}
+
+fn run_scrub(args: &[String]) -> Result<(), String> {
+    let dir = data_dir(args);
+    let report = scrub_data_dir(&dir).map_err(|e| e.to_string())?;
+    println!(
+        "scrub OK — files={} blocks={} checksum_failures={}",
+        report.files_scanned, report.blocks_verified, report.checksum_failures
+    );
+    if report.checksum_failures > 0 {
+        return Err(format!(
+            "{} SST block(s) failed CRC32C verification",
+            report.checksum_failures
+        ));
+    }
+    Ok(())
 }
 
 fn data_dir(args: &[String]) -> PathBuf {

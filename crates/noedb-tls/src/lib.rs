@@ -13,6 +13,7 @@ mod error;
 mod identity;
 mod pin;
 mod reload;
+mod spiffe;
 
 pub use config::{
     build_client_config_mtls, build_client_config_tls, build_server_config_mtls,
@@ -25,6 +26,7 @@ pub use error::TlsError;
 pub use identity::{SpiffeId, SPIFFE_PREFIX};
 pub use pin::client_connector_mtls_pinned;
 pub use reload::ReloadingAcceptor;
+pub use spiffe::SpiffeClientVerifier;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]

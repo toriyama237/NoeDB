@@ -198,7 +198,20 @@ impl FileStorage {
         let mut out = Vec::with_capacity(4 + value.len());
         out.extend_from_slice(&crc.to_le_bytes());
         out.extend_from_slice(value);
-        std::fs::write(path, &out).map_err(StorageError::io)?;
+        let tmp = path.with_extension("tmp");
+        {
+            use std::fs::OpenOptions;
+            use std::io::Write;
+            let mut file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&tmp)
+                .map_err(StorageError::io)?;
+            file.write_all(&out).map_err(StorageError::io)?;
+            file.sync_all().map_err(StorageError::io)?;
+        }
+        std::fs::rename(&tmp, path).map_err(StorageError::io)?;
         Ok(())
     }
 }

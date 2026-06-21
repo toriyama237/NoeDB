@@ -40,6 +40,26 @@ pub enum EngineError {
     SerializationFailure(String),
 }
 
+impl EngineError {
+    /// gRPC-aligned error code (`8` = RESOURCE_EXHAUSTED).
+    #[must_use]
+    pub fn grpc_code(&self) -> u32 {
+        match self {
+            Self::Storage(StorageError::ResourceExhausted { .. }) => 8,
+            _ => 1,
+        }
+    }
+
+    /// Whether the client should back off and retry later.
+    #[must_use]
+    pub fn is_resource_exhausted(&self) -> bool {
+        matches!(
+            self,
+            Self::Storage(StorageError::ResourceExhausted { .. })
+        )
+    }
+}
+
 impl From<ExecError> for EngineError {
     fn from(e: ExecError) -> Self {
         Self::Exec(e)

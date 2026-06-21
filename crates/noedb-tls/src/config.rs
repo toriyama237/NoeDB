@@ -13,6 +13,7 @@ use tokio_rustls::{TlsAcceptor, TlsConnector};
 
 use crate::dev_certs::DevCertPem;
 use crate::error::TlsError;
+use crate::spiffe::SpiffeClientVerifier;
 
 /// Install the ring crypto provider (required once per process).
 pub fn install_crypto_provider() {
@@ -34,9 +35,10 @@ fn ca_root_store(certs: &DevCertPem) -> Result<RootCertStore, TlsError> {
 pub fn build_server_config_mtls(certs: &DevCertPem) -> Result<ServerConfig, TlsError> {
     install_crypto_provider();
     let roots = ca_root_store(certs)?;
-    let client_verifier = WebPkiClientVerifier::builder(roots.into())
+    let webpki = WebPkiClientVerifier::builder(roots.into())
         .build()
         .map_err(|e| TlsError::Handshake(e.to_string()))?;
+    let client_verifier = Arc::new(SpiffeClientVerifier::new(webpki));
     let (chain, key) = certs.server_identity()?;
     ServerConfig::builder()
         .with_client_cert_verifier(client_verifier)
