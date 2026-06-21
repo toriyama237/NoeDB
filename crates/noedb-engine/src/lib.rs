@@ -18,6 +18,7 @@
 
 mod audit;
 mod command;
+mod crypto;
 mod dml;
 mod engine;
 mod error;
@@ -40,6 +41,7 @@ mod vector_index;
 pub use vector_index::VectorIndexCatalog;
 pub use audit::{AuditEntry, AuditLog};
 pub use command::{Command, MAX_COMMAND_BYTES};
+pub use crypto::{cell_aad, is_sealed, DataKey};
 pub use engine::{
     validate_sql, DistributedEngine, LocalEngine, QueryResult, DEFAULT_SESSION, MAX_SQL_BYTES,
 };
