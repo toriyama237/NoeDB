@@ -9,7 +9,6 @@ use rustls::{DigitallySignedStruct, DistinguishedName, Error, SignatureScheme};
 use x509_parser::prelude::FromDer;
 use x509_parser::prelude::X509Certificate;
 
-use crate::error::TlsError;
 use crate::identity::SpiffeId;
 
 /// Web PKI + mandatory SPIFFE-style CN on presented client certificates.

@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 use noedb_ast::SqlType;
 use noedb_planner::Value;
 use noedb_storage::HnswIndex;
-use parking_lot::Mutex;
 
 use crate::dml::vector_from_bytes;
 
@@ -70,9 +69,6 @@ impl VectorIndexCatalog {
         }
     }
 }
-
-/// Shared vector-index handle stored on [`crate::engine::LocalEngine`].
-pub type SharedVectorIndexes = Mutex<VectorIndexCatalog>;
 
 fn value_as_f32s(value: &Value) -> Option<Vec<f32>> {
     match value {

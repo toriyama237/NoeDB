@@ -17,7 +17,7 @@ const SENSITIVE_KEYWORDS: &[&str] = &[
 ];
 
 /// Placeholder substituted for any redacted literal.
-pub const MASK: &str = "'***'";
+pub(crate) const MASK: &str = "'***'";
 
 /// Return a copy of `sql` with secret literals masked.
 ///
