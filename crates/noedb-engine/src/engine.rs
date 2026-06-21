@@ -25,6 +25,7 @@ use crate::machine::{apply_command, row_key};
 use crate::memory::MemoryBudget;
 use crate::prepared::{bind_parameters, PrepareCache};
 use crate::query_cache::QueryCache;
+use crate::ratelimit::{Deadline, RateLimiter};
 use crate::region::RegionId;
 use crate::rls::{apply_rls, RlsCatalog};
 use crate::schema::SchemaCatalog;
@@ -140,6 +141,8 @@ pub struct LocalEngine {
     vector_indexes: Mutex<VectorIndexCatalog>,
     metrics: Arc<Metrics>,
     memory: Arc<MemoryBudget>,
+    rate_limiter: RateLimiter,
+    stmt_timeout_ms: u64,
 }
 
 impl LocalEngine {
@@ -182,6 +185,11 @@ impl LocalEngine {
             vector_indexes: Mutex::new(VectorIndexCatalog::default()),
             metrics: Metrics::new_shared(),
             memory: Arc::new(MemoryBudget::from_env()),
+            rate_limiter: RateLimiter::from_env(),
+            stmt_timeout_ms: std::env::var("NOEDB_STMT_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
         }))
     }
 
@@ -303,14 +311,20 @@ impl LocalEngine {
     pub fn execute_session(&self, session_id: u64, sql: &str) -> Result<QueryResult, EngineError> {
         let _span = info_span!("noedb.sql.execute", session_id, len = sql.len()).entered();
         let start = Instant::now();
+        let deadline = Deadline::new(self.stmt_timeout_ms);
         let result = (|| {
             validate_sql(sql)?;
+            self.rate_limiter.acquire(session_id)?;
+            deadline.check()?;
             let pressure = self.storage.read().memtable_pressure_bytes();
             self.memory
                 .gate_write(pressure, sql.len().saturating_mul(4096))?;
             let _mem = self.memory.try_reserve(sql.len().max(4096))?;
             let stmt = noedb_parser::parse(sql)?;
-            self.dispatch(session_id, stmt, sql)
+            deadline.check()?;
+            let out = self.dispatch(session_id, stmt, sql);
+            deadline.check()?;
+            out
         })();
         self.metrics
             .record_query(start.elapsed(), result.is_ok());
@@ -536,7 +550,8 @@ impl LocalEngine {
             .get(&session_id)
             .map(|s| (s.tenant.clone(), s.role.clone()))
             .unwrap_or_else(|| ("default".into(), "anonymous".into()));
-        self.audit.record(&tenant, &role, sql, rows)
+        let safe_sql = crate::redact::redact_sql(sql);
+        self.audit.record(&tenant, &role, &safe_sql, rows)
     }
 
     /// `EXPLAIN` for a `SELECT`.
