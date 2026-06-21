@@ -116,6 +116,32 @@ hide behind a framework.
 
 ---
 
+## Security hardening
+
+NoeDB treats hostile input as the default. The engine ships a defense-in-depth
+layer that is enabled at the query boundary, not bolted on:
+
+| Threat | Defense | Where |
+|--------|---------|-------|
+| SQL injection via stacked queries | multi-statement batches rejected pre-parse | `security.rs` |
+| Privilege abuse | DDL / RLS / policy changes gated to admin roles; `SET ROLE` escalation blocked | `security.rs` |
+| Audit tampering | append-only log with SHA-256 hash chain + `--audit-verify` | `audit.rs` |
+| Credential leakage in logs | secret literals (`PASSWORD`, `IDENTIFIED BY`, `token`…) masked before audit write | `redact.rs` |
+| Query-flood / runaway DoS | per-session token-bucket rate limiter + wall-clock statement deadlines | `ratelimit.rs` |
+| Data theft from disk/backups | at-rest value encryption (XChaCha20-Poly1305, per-record nonce, cell-bound AAD) | `crypto.rs` |
+| Brute-forced cluster auth | per-IP failure tracking with temporary ban on the gRPC token check | `noedb-grpc/auth_guard.rs` |
+| Impersonation on the wire | mTLS with mandatory SPIFFE CN enforcement on client certs | `noedb-tls/spiffe.rs` |
+
+```bash
+# Verify the audit chain has not been tampered with, then export for a SIEM
+noedb --data /var/lib/noedb --audit-verify
+noedb --data /var/lib/noedb --audit-export > audit.tsv
+
+# Turn on at-rest encryption and per-session limits
+export NOEDB_DATA_KEY="$(openssl rand -hex 32)"
+export NOEDB_QPS=2000 NOEDB_STMT_TIMEOUT_MS=5000
+```
+
 ## Status
 
 > **v2.0.0** — 52-week sprint complete: MVCC, Raft, query engine v2, metrics,
