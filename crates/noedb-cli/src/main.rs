@@ -16,7 +16,9 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use noedb_engine::{spawn_prometheus_listener, DistributedEngine, EngineError, LocalEngine, QueryResult};
+use noedb_engine::{
+    spawn_prometheus_listener, AuditLog, DistributedEngine, EngineError, LocalEngine, QueryResult,
+};
 use noedb_metrics::Metrics;
 use noedb_storage::scrub_data_dir;
 use noedb_protocol::{decode_request, encode_response, Request, Response};
@@ -106,6 +108,20 @@ fn main() {
     if args.iter().any(|a| a == "--scrub") {
         if let Err(e) = run_scrub(&args) {
             eprintln!("noedb scrub error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if args.iter().any(|a| a == "--audit-verify") {
+        if let Err(e) = run_audit_verify(&args) {
+            eprintln!("noedb audit error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if args.iter().any(|a| a == "--audit-export") {
+        if let Err(e) = run_audit_export(&args) {
+            eprintln!("noedb audit error: {e}");
             std::process::exit(1);
         }
         return;
@@ -521,6 +537,41 @@ fn run_scrub(args: &[String]) -> Result<(), String> {
             "{} SST block(s) failed CRC32C verification",
             report.checksum_failures
         ));
+    }
+    Ok(())
+}
+
+fn run_audit_verify(args: &[String]) -> Result<(), String> {
+    let dir = data_dir(args);
+    let log = AuditLog::open(&dir).map_err(|e| e.to_string())?;
+    let entries = log.read_all().map_err(|e| e.to_string())?;
+    log.verify_chain().map_err(|e| {
+        format!("audit chain verification FAILED: {e} (log may be tampered)")
+    })?;
+    println!(
+        "audit chain OK — {} entr{} verified",
+        entries.len(),
+        if entries.len() == 1 { "y" } else { "ies" }
+    );
+    Ok(())
+}
+
+fn run_audit_export(args: &[String]) -> Result<(), String> {
+    let dir = data_dir(args);
+    let log = AuditLog::open(&dir).map_err(|e| e.to_string())?;
+    // Verify before export so downstream consumers trust the stream.
+    log.verify_chain()
+        .map_err(|e| format!("refusing to export tampered audit log: {e}"))?;
+    for entry in log.read_all().map_err(|e| e.to_string())? {
+        println!(
+            "{}\t{}\t{}\t{}\trows={}\thash={}",
+            entry.ts_unix_ms,
+            entry.tenant,
+            entry.user,
+            entry.query,
+            entry.rows_affected,
+            &entry.chain_hash[..16.min(entry.chain_hash.len())]
+        );
     }
     Ok(())
 }

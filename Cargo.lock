@@ -1387,6 +1387,7 @@ dependencies = [
  "noedb-metrics",
  "noedb-protocol",
  "noedb-raft",
+ "noedb-storage",
  "noedb-tls",
  "opentelemetry",
  "opentelemetry-otlp",
