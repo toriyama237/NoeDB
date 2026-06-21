@@ -5,10 +5,11 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::format::{Footer, IndexEntry, FOOTER_LEN, HEADER_LEN, SST_MAGIC, SST_VERSION};
+use super::block::decode_block_at;
+use super::format::{Footer, IndexEntry, FOOTER_LEN, HEADER_LEN, SST_MAGIC, SST_VERSION, SST_VERSION_V2, SST_VERSION_V3};
 use crate::bloom::BloomFilter;
 use crate::error::StorageError;
-use crate::mmap_io::{map_read_only, read_block_from_mmap, MappedFile};
+use crate::mmap_io::{map_read_only, MappedFile};
 
 /// Read-only handle to an on-disk SSTable.
 #[derive(Debug, Clone)]
@@ -17,6 +18,7 @@ pub struct SstReader {
     index: Vec<IndexEntry>,
     bloom: BloomFilter,
     mmap: Option<Arc<MappedFile>>,
+    checksum_blocks: bool,
 }
 
 impl SstReader {
@@ -32,9 +34,11 @@ impl SstReader {
         }
         let mut ver = [0u8; 2];
         file.read_exact(&mut ver)?;
-        if u16::from_le_bytes(ver) != SST_VERSION {
+        let version = u16::from_le_bytes(ver);
+        if version != SST_VERSION && version != SST_VERSION_V2 && version != SST_VERSION_V3 {
             return Err(StorageError::corrupt_sstable("unsupported SST version"));
         }
+        let checksum_blocks = version >= SST_VERSION_V3;
 
         let footer = read_footer(&mut file)?;
         let index = read_index(&mut file, &footer)?;
@@ -46,7 +50,18 @@ impl SstReader {
             index,
             bloom,
             mmap,
+            checksum_blocks,
         })
+    }
+
+    /// Verify every indexed block checksum (background scrub helper).
+    pub fn verify_all_blocks(&self) -> Result<usize, StorageError> {
+        let mut count = 0usize;
+        for entry in &self.index {
+            self.read_block(entry.offset)?;
+            count += 1;
+        }
+        Ok(count)
     }
 
     /// Path to the underlying file.
@@ -97,16 +112,10 @@ impl SstReader {
 
     fn read_block(&self, offset: u64) -> Result<Vec<u8>, StorageError> {
         if let Some(mmap) = &self.mmap {
-            return read_block_from_mmap(mmap, offset);
+            return decode_block_at(mmap.as_slice(), offset, self.checksum_blocks);
         }
-        let mut file = File::open(&self.path)?;
-        file.seek(SeekFrom::Start(offset))?;
-        let mut len_buf = [0u8; 4];
-        file.read_exact(&mut len_buf)?;
-        let len = u32::from_le_bytes(len_buf) as usize;
-        let mut block = vec![0u8; len];
-        file.read_exact(&mut block)?;
-        Ok(block)
+        let bytes = std::fs::read(&self.path)?;
+        decode_block_at(&bytes, offset, self.checksum_blocks)
     }
 
     pub(crate) fn index(&self) -> &[IndexEntry] {

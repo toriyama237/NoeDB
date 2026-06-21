@@ -28,6 +28,11 @@ pub enum StorageError {
         /// Human-readable reason.
         message: &'static str,
     },
+    /// Memory or LSM backlog limits reached — back off and retry.
+    ResourceExhausted {
+        /// Human-readable reason.
+        message: &'static str,
+    },
 }
 
 impl StorageError {
@@ -54,6 +59,12 @@ impl StorageError {
     pub const fn corrupt_sstable(message: &'static str) -> Self {
         Self::CorruptSstable { message }
     }
+
+    /// Construct a [`StorageError::ResourceExhausted`] error.
+    #[must_use]
+    pub const fn resource_exhausted(message: &'static str) -> Self {
+        Self::ResourceExhausted { message }
+    }
 }
 
 impl From<std::io::Error> for StorageError {
@@ -72,6 +83,7 @@ impl fmt::Display for StorageError {
             Self::CorruptWal { message } => write!(f, "corrupt WAL: {message}"),
             Self::ChecksumMismatch => write!(f, "WAL checksum mismatch"),
             Self::CorruptSstable { message } => write!(f, "corrupt SSTable: {message}"),
+            Self::ResourceExhausted { message } => write!(f, "resource exhausted: {message}"),
         }
     }
 }

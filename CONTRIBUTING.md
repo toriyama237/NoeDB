@@ -16,6 +16,31 @@ welcome - especially small ones.
 - This is a from-scratch DB: heavy external dependencies need a strong reason.
   The default answer is "no, write it yourself".
 
+## Essingan / OVH dev loop (ThinkPad = code only)
+
+On the Spitzkop Essingan sandbox, **the ThinkPad never compiles**. It only edits
+and pushes; **GitLab CI on LXC 115 (AMD EPYC)** runs `cargo build`, tests, and
+benchmarks.
+
+```bash
+# 1. Tunnel (keep open)
+ssh -N -L 8480:192.168.3.249:80 -L 2229:192.168.3.249:2222 root@217.182.95.243
+
+# 2. Feature branch (never commit parano/storage work directly on main)
+git checkout -b feat/my-change
+# … edit code only — no cargo build required on ThinkPad …
+git add -p && git commit -m "feat(storage): …"
+
+# 3. Push feature branch → GitLab opens MR pipeline on LXC 115
+./scripts/infra/push-feature.sh
+
+# 4. Open MR in browser → merge to main when CI is green
+#    http://127.0.0.1:8480/root/noedb/-/merge_requests
+```
+
+After merge to `main`, the `deploy:runner` job installs `/usr/local/bin/noedb`
+on LXC 115. GitHub `origin` stays optional; GitLab is the CI source of truth.
+
 ## Development setup
 
 You need:
@@ -27,11 +52,12 @@ You need:
 ```bash
 git clone https://github.com/toriyama237/NoeDB.git
 cd NoeDB
-cargo build --all-features
-cargo test  --all-features
+# Local build optional — on Essingan sandbox use GitLab CI instead:
+# cargo build --all-features
+# cargo test  --all-features
 ```
 
-## Local checks (must pass before pushing)
+## Local checks (optional on ThinkPad; mandatory in GitLab CI)
 
 ```bash
 cargo fmt --all -- --check

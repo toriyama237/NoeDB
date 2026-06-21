@@ -18,6 +18,8 @@ path = "src/lib.rs"
 [dependencies]
 parking_lot = { workspace = true }
 lz4_flex = { workspace = true }
+crc32fast = { workspace = true }
+crc32c = { workspace = true }
 
 [features]
 default = []

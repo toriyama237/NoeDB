@@ -7,6 +7,8 @@ pub const SST_MAGIC: [u8; 4] = *b"NOES";
 pub const SST_VERSION: u16 = 1;
 /// SSTable format v2 (LZ4 blocks + optional XOR filter).
 pub const SST_VERSION_V2: u16 = 2;
+/// SSTable format v3 (CRC32C per data block — bit-rot safe).
+pub const SST_VERSION_V3: u16 = 3;
 /// Header flag: LZ4-compressed blocks.
 pub(crate) const SST_FLAG_LZ4_BLOCKS: u16 = 1;
 /// Header flag: XOR filter instead of Bloom.
