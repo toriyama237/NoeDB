@@ -81,14 +81,7 @@ impl AuditLog {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_millis() as u64);
         let prev = self.last_hash.lock().unwrap().clone();
-        let chain_hash = chain_link(
-            &prev,
-            ts_unix_ms,
-            tenant,
-            user,
-            query,
-            rows_affected,
-        );
+        let chain_hash = chain_link(&prev, ts_unix_ms, tenant, user, query, rows_affected);
         self.append(&AuditEntry {
             ts_unix_ms,
             tenant: tenant.to_string(),

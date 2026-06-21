@@ -26,7 +26,11 @@ fn put_cell(
         .map_err(EngineError::Storage)
 }
 
-fn delete_cell(tree: &mut LsmTree, oracle: &TimestampOracle, key: &[u8]) -> Result<(), EngineError> {
+fn delete_cell(
+    tree: &mut LsmTree,
+    oracle: &TimestampOracle,
+    key: &[u8],
+) -> Result<(), EngineError> {
     let ts = oracle.next();
     tree.put_version(key, &Version::tombstone(ts))
         .map_err(EngineError::Storage)
@@ -403,18 +407,22 @@ pub(crate) fn vector_from_bytes(bytes: &[u8]) -> Option<Vec<f32>> {
 }
 
 fn parse_vector_text(bytes: &[u8], dim: u32) -> Result<Vec<f32>, EngineError> {
-    let s = std::str::from_utf8(bytes).map_err(|_| EngineError::Exec(ExecError::TypeMismatch {
-        message: "invalid UTF-8 for VECTOR literal".into(),
-    }))?;
+    let s = std::str::from_utf8(bytes).map_err(|_| {
+        EngineError::Exec(ExecError::TypeMismatch {
+            message: "invalid UTF-8 for VECTOR literal".into(),
+        })
+    })?;
     let s = s.trim().trim_start_matches('[').trim_end_matches(']');
     let floats: Result<Vec<f32>, _> = s
         .split(',')
         .map(str::trim)
         .filter(|p| !p.is_empty())
         .map(|p| {
-            p.parse::<f32>().map_err(|_| EngineError::Exec(ExecError::TypeMismatch {
-                message: format!("invalid float `{p}` in VECTOR literal"),
-            }))
+            p.parse::<f32>().map_err(|_| {
+                EngineError::Exec(ExecError::TypeMismatch {
+                    message: format!("invalid float `{p}` in VECTOR literal"),
+                })
+            })
         })
         .collect();
     let floats = floats?;
@@ -502,10 +510,7 @@ mod tests {
         };
         let oracle = TimestampOracle::new();
         execute_insert(&ins, &schema, &mut tree, &oracle, None, None).unwrap();
-        let name = tree
-            .get(&row_key("users", "1", "name"))
-            .unwrap()
-            .unwrap();
+        let name = tree.get(&row_key("users", "1", "name")).unwrap().unwrap();
         assert_eq!(name, b"Rykiel");
         let _ = std::fs::remove_dir_all(dir);
     }

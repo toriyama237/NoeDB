@@ -59,17 +59,15 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
             }
             let ge = cmp_values(&v, &lo, BinaryOp::Ge)?;
             let le = cmp_values(&v, &hi, BinaryOp::Le)?;
-            Ok(Value::Bool(if *negated {
-                !(ge && le)
-            } else {
-                ge && le
-            }))
+            Ok(Value::Bool(if *negated { !(ge && le) } else { ge && le }))
         }
         Expr::InSubquery { .. }
         | Expr::Exists { .. }
         | Expr::Parameter { .. }
         | Expr::CurrentUser { .. } => Err(ExecError::UnsupportedExpr),
-        Expr::Function { name, args, over, .. } => {
+        Expr::Function {
+            name, args, over, ..
+        } => {
             if over.is_some() {
                 return Err(ExecError::UnsupportedExpr);
             }
@@ -175,7 +173,9 @@ fn string_unary(v: Value, f: impl FnOnce(String) -> String) -> Result<Value, Exe
             message: "expected text argument".into(),
         });
     };
-    Ok(Value::Bytes(f(String::from_utf8_lossy(&b).into_owned()).into_bytes()))
+    Ok(Value::Bytes(
+        f(String::from_utf8_lossy(&b).into_owned()).into_bytes(),
+    ))
 }
 
 fn eval_in_rhs(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecError> {
@@ -469,11 +469,7 @@ fn vector_l2_distance(left: &Value, right: &Value) -> Result<f64, ExecError> {
     let b = vector_as_f32s(right)?;
     if a.len() != b.len() {
         return Err(ExecError::TypeMismatch {
-            message: format!(
-                "VECTOR dimension mismatch: {} vs {}",
-                a.len(),
-                b.len()
-            ),
+            message: format!("VECTOR dimension mismatch: {} vs {}", a.len(), b.len()),
         });
     }
     let sum: f64 = a

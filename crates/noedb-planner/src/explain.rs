@@ -178,8 +178,9 @@ impl<'a> ExplainWriter<'a> {
                 let cols = columns
                     .as_ref()
                     .map_or_else(|| "*".into(), |c| c.join(", "));
-                self.lines
-                    .push(format!("{pad}SubqueryScan(alias={prefix}, columns=[{cols}])"));
+                self.lines.push(format!(
+                    "{pad}SubqueryScan(alias={prefix}, columns=[{cols}])"
+                ));
                 self.write_plan(input, indent + 1);
             }
         }

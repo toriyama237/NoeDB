@@ -100,14 +100,10 @@ mod tests {
         let ca = certs.ca_cert().unwrap();
         let mut roots = RootCertStore::empty();
         roots.add(ca).unwrap();
-        let webpki = WebPkiClientVerifier::builder(roots.into())
-            .build()
-            .unwrap();
+        let webpki = WebPkiClientVerifier::builder(roots.into()).build().unwrap();
         let verifier = SpiffeClientVerifier::new(webpki);
         let client = certs.client_identity().unwrap().0[0].clone();
         let now = UnixTime::now();
-        assert!(verifier
-            .verify_client_cert(&client, &[], now)
-            .is_ok());
+        assert!(verifier.verify_client_cert(&client, &[], now).is_ok());
     }
 }

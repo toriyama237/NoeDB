@@ -45,9 +45,10 @@ impl Sql for SqlServiceImpl {
         request: Request<SqlRequest>,
     ) -> Result<GrpcResponse<SqlResponse>, Status> {
         verify_auth_guarded(&request, &self.auth)?;
-        let _permit = self.permits.acquire().await.map_err(|_| {
-            Status::resource_exhausted("gRPC in-flight limit — retry with backoff")
-        })?;
+        let _permit =
+            self.permits.acquire().await.map_err(|_| {
+                Status::resource_exhausted("gRPC in-flight limit — retry with backoff")
+            })?;
         let query = request.into_inner().query;
         let engine = Arc::clone(&self.engine);
         let resp = tokio::task::spawn_blocking(move || dispatch_sql(&engine, &query))
@@ -61,9 +62,10 @@ impl Sql for SqlServiceImpl {
         request: Request<SqlRequest>,
     ) -> Result<GrpcResponse<SqlResponse>, Status> {
         verify_auth_guarded(&request, &self.auth)?;
-        let _permit = self.permits.acquire().await.map_err(|_| {
-            Status::resource_exhausted("gRPC in-flight limit — retry with backoff")
-        })?;
+        let _permit =
+            self.permits.acquire().await.map_err(|_| {
+                Status::resource_exhausted("gRPC in-flight limit — retry with backoff")
+            })?;
         let query = request.into_inner().query;
         let engine = Arc::clone(&self.engine);
         let resp = tokio::task::spawn_blocking(move || match engine.explain(&query) {

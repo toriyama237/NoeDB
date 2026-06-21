@@ -106,7 +106,9 @@ pub fn estimate(plan: &PhysicalPlan, stats: &PlanStats) -> f64 {
         PhysicalPlan::SetOp { left, right, .. } => {
             estimate(left, stats) + estimate(right, stats) + output_rows(left, stats) as f64 * 0.2
         }
-        PhysicalPlan::Dedup { input } => estimate(input, stats) + output_rows(input, stats) as f64 * 0.1,
+        PhysicalPlan::Dedup { input } => {
+            estimate(input, stats) + output_rows(input, stats) as f64 * 0.1
+        }
         PhysicalPlan::SubqueryScan { input, .. } => estimate(input, stats),
     }
 }

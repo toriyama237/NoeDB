@@ -23,10 +23,7 @@ fn temp_engine() -> (Arc<LocalEngine>, std::path::PathBuf) {
             .unwrap()
             .as_nanos()
     ));
-    (
-        LocalEngine::open_throughput(&dir).unwrap(),
-        dir,
-    )
+    (LocalEngine::open_throughput(&dir).unwrap(), dir)
 }
 
 fn row_key(i: u32) -> String {

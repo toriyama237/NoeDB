@@ -654,7 +654,9 @@ struct AggSlot {
 impl AggSlot {
     fn finish(self, func: &AggFunc) -> Value {
         match func {
-            AggFunc::CountStar => Value::Integer(i64::try_from(self.count_star).unwrap_or(i64::MAX)),
+            AggFunc::CountStar => {
+                Value::Integer(i64::try_from(self.count_star).unwrap_or(i64::MAX))
+            }
             AggFunc::CountCol(_) => {
                 Value::Integer(i64::try_from(self.count_col).unwrap_or(i64::MAX))
             }
@@ -666,14 +668,8 @@ impl AggSlot {
                     Value::Float(self.sum / self.sum_count as f64)
                 }
             }
-            AggFunc::Min(_) => self
-                .min
-                .map(Value::Float)
-                .unwrap_or(Value::Null),
-            AggFunc::Max(_) => self
-                .max
-                .map(Value::Float)
-                .unwrap_or(Value::Null),
+            AggFunc::Min(_) => self.min.map(Value::Float).unwrap_or(Value::Null),
+            AggFunc::Max(_) => self.max.map(Value::Float).unwrap_or(Value::Null),
         }
     }
 }
@@ -713,10 +709,7 @@ pub(crate) fn compare_rows(a: &RowMap, b: &RowMap, keys: &[(String, bool)]) -> s
 }
 
 /// SQL `ORDER BY` with `NULLS LAST` (NULL sorts after all values).
-fn compare_sort_values(
-    a: Option<&Value>,
-    b: Option<&Value>,
-) -> std::cmp::Ordering {
+fn compare_sort_values(a: Option<&Value>, b: Option<&Value>) -> std::cmp::Ordering {
     match (a, b) {
         (None, None) | (Some(Value::Null), Some(Value::Null)) => std::cmp::Ordering::Equal,
         (None, Some(_)) | (Some(Value::Null), Some(_)) => std::cmp::Ordering::Greater,

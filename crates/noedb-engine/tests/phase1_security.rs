@@ -88,8 +88,14 @@ fn at_rest_encryption_round_trip_and_no_plaintext_on_disk() {
     assert!(eng.encryption_enabled());
 
     let secret = b"balance=4242.00";
-    eng.put_row_encrypted(noedb_engine::DEFAULT_SESSION, "accounts", "1", "bal", secret)
-        .unwrap();
+    eng.put_row_encrypted(
+        noedb_engine::DEFAULT_SESSION,
+        "accounts",
+        "1",
+        "bal",
+        secret,
+    )
+    .unwrap();
 
     let got = eng
         .get_row_decrypted("accounts", "1", "bal")
@@ -102,10 +108,7 @@ fn at_rest_encryption_round_trip_and_no_plaintext_on_disk() {
     let mut found_plaintext = false;
     for entry in walk(&dir) {
         if let Ok(bytes) = std::fs::read(&entry) {
-            if bytes
-                .windows(secret.len())
-                .any(|w| w == secret)
-            {
+            if bytes.windows(secret.len()).any(|w| w == secret) {
                 found_plaintext = true;
             }
         }

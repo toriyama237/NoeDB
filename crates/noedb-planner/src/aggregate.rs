@@ -105,7 +105,10 @@ fn validate_grouped_select(items: &[SelectItem], group_by: &[Expr]) -> Result<()
             continue;
         }
         let col = column_name_from_expr(&item.expr)?;
-        if !keys.iter().any(|k| k == &col || k.ends_with(&format!(".{col}"))) {
+        if !keys
+            .iter()
+            .any(|k| k == &col || k.ends_with(&format!(".{col}")))
+        {
             return Err(PlanError::UnsupportedStatement);
         }
     }
@@ -118,9 +121,10 @@ fn group_by_columns(group_by: &[Expr]) -> Result<Vec<String>, PlanError> {
 
 fn column_name_from_expr(expr: &Expr) -> Result<String, PlanError> {
     match expr {
-        Expr::Column(ColumnRef::Named { table: Some(t), column }) => {
-            Ok(format!("{}.{}", t.value, column.value))
-        }
+        Expr::Column(ColumnRef::Named {
+            table: Some(t),
+            column,
+        }) => Ok(format!("{}.{}", t.value, column.value)),
         Expr::Column(ColumnRef::Named { column, .. }) => Ok(column.value.clone()),
         _ => Err(PlanError::UnsupportedStatement),
     }
@@ -258,10 +262,7 @@ fn having_expr_matches(a: &Expr, b: &Expr) -> bool {
                 ..
             }),
         ) => t1 == t2 && c1 == c2,
-        (
-            Expr::Literal(l1),
-            Expr::Literal(l2),
-        ) => l1 == l2,
+        (Expr::Literal(l1), Expr::Literal(l2)) => l1 == l2,
         (
             Expr::Binary {
                 op: o1,
@@ -278,14 +279,10 @@ fn having_expr_matches(a: &Expr, b: &Expr) -> bool {
         ) => o1 == o2 && having_expr_matches(l1, l2) && having_expr_matches(r1, r2),
         (
             Expr::Unary {
-                op: o1,
-                expr: e1,
-                ..
+                op: o1, expr: e1, ..
             },
             Expr::Unary {
-                op: o2,
-                expr: e2,
-                ..
+                op: o2, expr: e2, ..
             },
         ) => o1 == o2 && having_expr_matches(e1, e2),
         (Expr::Paren(e1, _), Expr::Paren(e2, _)) => having_expr_matches(e1, e2),

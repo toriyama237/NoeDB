@@ -26,12 +26,14 @@ fn temp_engine() -> (Arc<LocalEngine>, std::path::PathBuf) {
 #[test]
 fn insert_update_delete_in_transaction() {
     let (eng, dir) = temp_engine();
-    eng.execute("CREATE TABLE t (id INT PRIMARY KEY, v VARCHAR)").unwrap();
+    eng.execute("CREATE TABLE t (id INT PRIMARY KEY, v VARCHAR)")
+        .unwrap();
     eng.execute("INSERT INTO t VALUES (1, 'old')").unwrap();
 
     eng.execute("BEGIN").unwrap();
     eng.execute("INSERT INTO t VALUES (2, 'new')").unwrap();
-    eng.execute("UPDATE t SET v = 'changed' WHERE id = '1'").unwrap();
+    eng.execute("UPDATE t SET v = 'changed' WHERE id = '1'")
+        .unwrap();
     let rows = eng.execute("SELECT id FROM t ORDER BY id").unwrap();
     assert_eq!(rows.rows.len(), 2);
     eng.execute("DELETE FROM t WHERE id = '1'").unwrap();

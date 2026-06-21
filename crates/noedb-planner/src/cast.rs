@@ -140,7 +140,10 @@ fn parse_vector_literal(bytes: &[u8], dim: u32) -> Result<Vec<f32>, ExecError> {
         .collect();
     let floats = floats?;
     if floats.len() != dim as usize {
-        return Err(type_err(&format!("VECTOR({dim}) literal has {} elements", floats.len())));
+        return Err(type_err(&format!(
+            "VECTOR({dim}) literal has {} elements",
+            floats.len()
+        )));
     }
     Ok(floats)
 }

@@ -7,13 +7,13 @@ use std::time::Instant;
 
 use dashmap::DashMap;
 use noedb_ast::Statement;
+use noedb_metrics::Metrics;
 use noedb_planner::{
-    apply_statement, execute_sql, explain_sql, explain_sql_with_schema,
-    ExecError, PlanError, Record, Value,
+    apply_statement, execute_sql, explain_sql, explain_sql_with_schema, ExecError, PlanError,
+    Record, Value,
 };
 use noedb_raft::{Cluster, NodeId, RaftError, Role};
 use noedb_storage::{LsmConfig, LsmTree, Version};
-use noedb_metrics::Metrics;
 use noedb_txn::TxnManager;
 use parking_lot::{Mutex, RwLock};
 use tracing::info_span;
@@ -249,9 +249,7 @@ impl LocalEngine {
         query: &[f32],
         k: usize,
     ) -> Vec<(String, f32)> {
-        self.vector_indexes
-            .lock()
-            .search(table, column, query, k)
+        self.vector_indexes.lock().search(table, column, query, k)
     }
 
     /// Underlying LSM read guard (tests / benchmarks).
@@ -388,8 +386,7 @@ impl LocalEngine {
             deadline.check()?;
             out
         })();
-        self.metrics
-            .record_query(start.elapsed(), result.is_ok());
+        self.metrics.record_query(start.elapsed(), result.is_ok());
         result
     }
 
@@ -524,26 +521,26 @@ impl LocalEngine {
             if let Some(hit) = crate::knn::try_hnsw_select(self, &stmt)? {
                 hit
             } else {
-            let role = self.session_role_for(session_id);
-            let cached = self.cache.lock().get(&role, sql);
-            if let Some(hit) = cached {
-                self.metrics.record_cache(true);
-                hit
-            } else {
-                self.metrics.record_cache(false);
-                let tree = self.storage.read();
-                let qschema = self.schema.lock().query_schema();
-                let records = noedb_planner::execute_sql_with_schema(
-                    &stmt,
-                    &*tree,
-                    &tree,
-                    Some(&qschema),
-                )
-                .map_err(EngineError::Exec)?;
-                let qr = QueryResult::from_records(&records);
-                self.cache.lock().put(&role, sql, qr.clone());
-                qr
-            }
+                let role = self.session_role_for(session_id);
+                let cached = self.cache.lock().get(&role, sql);
+                if let Some(hit) = cached {
+                    self.metrics.record_cache(true);
+                    hit
+                } else {
+                    self.metrics.record_cache(false);
+                    let tree = self.storage.read();
+                    let qschema = self.schema.lock().query_schema();
+                    let records = noedb_planner::execute_sql_with_schema(
+                        &stmt,
+                        &*tree,
+                        &tree,
+                        Some(&qschema),
+                    )
+                    .map_err(EngineError::Exec)?;
+                    let qr = QueryResult::from_records(&records);
+                    self.cache.lock().put(&role, sql, qr.clone());
+                    qr
+                }
             }
         } else {
             match &stmt {
@@ -816,8 +813,7 @@ impl DistributedEngine {
                 _ => Err(EngineError::UnsupportedStatement),
             }
         })();
-        self.metrics
-            .record_query(start.elapsed(), result.is_ok());
+        self.metrics.record_query(start.elapsed(), result.is_ok());
         result
     }
 

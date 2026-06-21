@@ -43,7 +43,10 @@ impl VectorIndexCatalog {
 
     /// Remove one row from an index.
     pub fn remove(&mut self, table: &str, column: &str, row_id: &str) {
-        if let Some(index) = self.indexes.get_mut(&(table.to_string(), column.to_string())) {
+        if let Some(index) = self
+            .indexes
+            .get_mut(&(table.to_string(), column.to_string()))
+        {
             index.remove(row_id);
         }
     }
@@ -57,11 +60,7 @@ impl VectorIndexCatalog {
     }
 
     /// Register indexes for all `VECTOR` columns in a table schema.
-    pub fn register_table_schema(
-        &mut self,
-        table: &str,
-        columns: &[crate::schema::ColumnMeta],
-    ) {
+    pub fn register_table_schema(&mut self, table: &str, columns: &[crate::schema::ColumnMeta]) {
         for col in columns {
             if let SqlType::Vector { dim } = col.data_type {
                 self.register_column(table, &col.name, dim);
@@ -73,9 +72,7 @@ impl VectorIndexCatalog {
 fn value_as_f32s(value: &Value) -> Option<Vec<f32>> {
     match value {
         Value::Vector(v) => Some(v.clone()),
-        Value::Bytes(b) => {
-            vector_from_bytes(b).or_else(|| parse_vector_text_bytes(b))
-        }
+        Value::Bytes(b) => vector_from_bytes(b).or_else(|| parse_vector_text_bytes(b)),
         _ => None,
     }
 }

@@ -1,7 +1,8 @@
 //! `SELECT` statement parsing.
 
-use noedb_ast::{CompoundSelect, CteBody, CteDef, Expr, FromItem, Join, JoinKind, OrderKey, SelectItem, SelectStmt, SetOpKind,
-    TableRef, WithClause,
+use noedb_ast::{
+    CompoundSelect, CteBody, CteDef, Expr, FromItem, Join, JoinKind, OrderKey, SelectItem,
+    SelectStmt, SetOpKind, TableRef, WithClause,
 };
 use noedb_lexer::{Keyword, Punctuation, Token};
 
@@ -230,7 +231,11 @@ fn is_table_alias_boundary(next: Option<&Token>, stop_at_rparen: bool) -> bool {
     matches!(
         next,
         Some(Token::Keyword(
-            Keyword::Inner | Keyword::Left | Keyword::Join | Keyword::Order | Keyword::Limit
+            Keyword::Inner
+                | Keyword::Left
+                | Keyword::Join
+                | Keyword::Order
+                | Keyword::Limit
                 | Keyword::Group
         )) | Some(Token::Keyword(Keyword::Where))
             | Some(Token::Keyword(Keyword::On))

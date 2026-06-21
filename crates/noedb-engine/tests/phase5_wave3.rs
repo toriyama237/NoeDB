@@ -26,11 +26,14 @@ fn temp_engine() -> (Arc<LocalEngine>, std::path::PathBuf) {
 #[test]
 fn having_filters_groups() {
     let (eng, dir) = temp_engine();
-    eng.put_row_default("sales", "a", "region", b"east").unwrap();
+    eng.put_row_default("sales", "a", "region", b"east")
+        .unwrap();
     eng.put_row_default("sales", "a", "amount", b"10").unwrap();
-    eng.put_row_default("sales", "b", "region", b"east").unwrap();
+    eng.put_row_default("sales", "b", "region", b"east")
+        .unwrap();
     eng.put_row_default("sales", "b", "amount", b"20").unwrap();
-    eng.put_row_default("sales", "c", "region", b"west").unwrap();
+    eng.put_row_default("sales", "c", "region", b"west")
+        .unwrap();
     eng.put_row_default("sales", "c", "amount", b"100").unwrap();
 
     let out = eng
@@ -87,9 +90,7 @@ fn derived_table_from_subquery() {
     eng.put_row_default("items", "b", "qty", b"1").unwrap();
 
     let out = eng
-        .execute(
-            "SELECT id FROM (SELECT id, qty FROM items) AS sub WHERE CAST(qty AS INT) >= 5",
-        )
+        .execute("SELECT id FROM (SELECT id, qty FROM items) AS sub WHERE CAST(qty AS INT) >= 5")
         .unwrap();
     let ids: Vec<_> = out.rows.into_iter().map(|r| r[0].clone()).collect();
     assert_eq!(ids, vec!["1"]);

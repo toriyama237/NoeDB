@@ -10,9 +10,7 @@ const ADMIN_ROLES: &[&str] = &["admin", "root", "noedb_admin"];
 /// Whether `role` has administrative privileges.
 #[must_use]
 pub fn is_admin_role(role: &str) -> bool {
-    ADMIN_ROLES
-        .iter()
-        .any(|r| role.eq_ignore_ascii_case(r))
+    ADMIN_ROLES.iter().any(|r| role.eq_ignore_ascii_case(r))
 }
 
 /// Reject multi-statement batches (classic SQL injection carrier).

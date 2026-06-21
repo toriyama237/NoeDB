@@ -67,10 +67,7 @@ impl EngineError {
     /// Whether the client should back off and retry later.
     #[must_use]
     pub fn is_resource_exhausted(&self) -> bool {
-        matches!(
-            self,
-            Self::Storage(StorageError::ResourceExhausted { .. })
-        )
+        matches!(self, Self::Storage(StorageError::ResourceExhausted { .. }))
     }
 }
 

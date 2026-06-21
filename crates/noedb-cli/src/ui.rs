@@ -24,9 +24,7 @@ pub(crate) fn skip_banner() -> bool {
 }
 
 pub(crate) fn maybe_clear_screen(studio: bool) {
-    if studio
-        || std::env::var("NOEDB_CLEAR").is_ok_and(|v| v != "0" && !v.is_empty())
-    {
+    if studio || std::env::var("NOEDB_CLEAR").is_ok_and(|v| v != "0" && !v.is_empty()) {
         print!("{ESC}[2J{ESC}[H");
         let _ = io::stdout().flush();
     }

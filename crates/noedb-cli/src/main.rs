@@ -20,9 +20,9 @@ use noedb_engine::{
     spawn_prometheus_listener, AuditLog, DistributedEngine, EngineError, LocalEngine, QueryResult,
 };
 use noedb_metrics::Metrics;
-use noedb_storage::scrub_data_dir;
 use noedb_protocol::{decode_request, encode_response, Request, Response};
 use noedb_raft::ClusterAuth;
+use noedb_storage::scrub_data_dir;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -215,7 +215,10 @@ fn dispatch_line(backend: &Backend, line: &str, studio: bool) -> Result<bool, St
         return Ok(true);
     }
     if trimmed.starts_with('#') || trimmed.starts_with("cargo ") || trimmed.starts_with("git ") {
-        ui::print_error("this is the SQL REPL — run shell commands in another terminal", studio);
+        ui::print_error(
+            "this is the SQL REPL — run shell commands in another terminal",
+            studio,
+        );
         return Ok(true);
     }
     if trimmed == "\\q" || trimmed.eq_ignore_ascii_case("quit") {
@@ -545,9 +548,8 @@ fn run_audit_verify(args: &[String]) -> Result<(), String> {
     let dir = data_dir(args);
     let log = AuditLog::open(&dir).map_err(|e| e.to_string())?;
     let entries = log.read_all().map_err(|e| e.to_string())?;
-    log.verify_chain().map_err(|e| {
-        format!("audit chain verification FAILED: {e} (log may be tampered)")
-    })?;
+    log.verify_chain()
+        .map_err(|e| format!("audit chain verification FAILED: {e} (log may be tampered)"))?;
     println!(
         "audit chain OK — {} entr{} verified",
         entries.len(),

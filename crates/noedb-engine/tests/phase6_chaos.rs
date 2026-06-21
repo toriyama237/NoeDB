@@ -31,5 +31,7 @@ fn raft_leader_crash_reelects_quickly() {
         "RTO smoke: re-election took {:?}",
         elapsed
     );
-    cluster.propose_on_leader(b"after-failover".to_vec()).unwrap();
+    cluster
+        .propose_on_leader(b"after-failover".to_vec())
+        .unwrap();
 }

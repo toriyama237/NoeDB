@@ -2,13 +2,17 @@
 
 use std::collections::HashSet;
 
-use noedb_ast::{ColumnRef, Expr, FromItem, OrderKey, SelectItem, SelectStmt, Statement, TableRef, WithClause};
+use noedb_ast::{
+    ColumnRef, Expr, FromItem, OrderKey, SelectItem, SelectStmt, Statement, TableRef, WithClause,
+};
 
 use crate::aggregate::{maybe_build_aggregate, rewrite_having_for_aggregate};
 use crate::logical::LogicalPlan;
 use crate::schema::QuerySchema;
 use crate::star::expand_select_items;
-use crate::subquery::{apply_exists_subqueries, apply_in_subqueries, peel_exists_subqueries, peel_in_subqueries};
+use crate::subquery::{
+    apply_exists_subqueries, apply_in_subqueries, peel_exists_subqueries, peel_in_subqueries,
+};
 use crate::window::wrap_window;
 use crate::PlanError;
 

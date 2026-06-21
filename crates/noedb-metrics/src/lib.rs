@@ -62,8 +62,7 @@ impl Histogram {
         let ns = u64::try_from(d.as_nanos()).unwrap_or(u64::MAX);
         self.sum_ns.fetch_add(ns, Ordering::Relaxed);
         self.count.fetch_add(1, Ordering::Relaxed);
-        self.max_ns
-            .fetch_max(ns, Ordering::Relaxed);
+        self.max_ns.fetch_max(ns, Ordering::Relaxed);
     }
 
     /// Total observed count.
@@ -156,7 +155,12 @@ impl Metrics {
     #[must_use]
     pub fn render_prometheus(&self) -> String {
         let mut out = String::with_capacity(1024);
-        write_counter(&mut out, "noedb_queries_total", "SQL statements executed", &self.queries_total);
+        write_counter(
+            &mut out,
+            "noedb_queries_total",
+            "SQL statements executed",
+            &self.queries_total,
+        );
         write_counter(
             &mut out,
             "noedb_query_errors_total",
