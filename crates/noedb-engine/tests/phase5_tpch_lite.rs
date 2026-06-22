@@ -7,8 +7,10 @@ use std::sync::Arc;
 use noedb_engine::LocalEngine;
 
 fn temp_engine() -> (Arc<LocalEngine>, std::path::PathBuf) {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
-        "noedb-phase5-tpch-{}-{}",
+        "noedb-phase5-tpch-{}-{}-{seq}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
