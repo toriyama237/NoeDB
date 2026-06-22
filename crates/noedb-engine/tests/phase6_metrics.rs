@@ -2,6 +2,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -51,7 +52,6 @@ fn http_metrics_endpoint_serves_prometheus() {
     std::thread::sleep(Duration::from_millis(50));
 
     let mut stream = TcpStream::connect(addr).unwrap();
-    use std::io::{Read, Write};
     stream
         .write_all(b"GET /metrics HTTP/1.1\r\nHost: localhost\r\n\r\n")
         .unwrap();

@@ -48,6 +48,7 @@ pub use crate::durable::DurableStore;
 pub use crate::engine::StorageEngine;
 pub use crate::error::StorageError;
 pub use crate::fast_wal::append_batch_sync;
+pub use crate::hnsw::HnswIndex;
 pub use crate::lsm::{LsmConfig, LsmTree};
 pub use crate::manifest::ManifestSnapshot;
 pub use crate::memtable::{
@@ -66,6 +67,5 @@ pub use crate::wal::{
     replay_into_memtable, replay_wal_dir, LogEntry, OpType, Wal, WalSegmentManager, WalSyncMode,
     WAL_MAGIC, WAL_VERSION,
 };
-pub use crate::hnsw::HnswIndex;
 pub use crate::write_stall::{WriteStallConfig, WriteStallController};
 pub use crate::xor_filter::XorFilter;

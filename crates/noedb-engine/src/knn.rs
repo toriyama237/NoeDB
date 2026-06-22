@@ -26,8 +26,7 @@ pub(crate) fn try_hnsw_select(
     let Some(spec) = detect_knn(select) else {
         return Ok(None);
     };
-    let hits = eng
-        .vector_search(spec.table, spec.vector_col, &spec.query, spec.limit);
+    let hits = eng.vector_search(spec.table, spec.vector_col, &spec.query, spec.limit);
     if hits.is_empty() {
         return Ok(None);
     }
@@ -42,7 +41,7 @@ pub(crate) fn try_hnsw_select(
     Ok(Some(QueryResult::from_records(&records)))
 }
 
-fn detect_knn<'a>(select: &'a SelectStmt) -> Option<KnnQuery<'a>> {
+fn detect_knn(select: &SelectStmt) -> Option<KnnQuery<'_>> {
     if select.distinct
         || !select.group_by.is_empty()
         || select.having_clause.is_some()
@@ -77,10 +76,7 @@ fn detect_knn<'a>(select: &'a SelectStmt) -> Option<KnnQuery<'a>> {
 fn is_simple_column(item: &SelectItem) -> bool {
     matches!(
         item.expr,
-        Expr::Column(ColumnRef::Named {
-            table: None,
-            ..
-        })
+        Expr::Column(ColumnRef::Named { table: None, .. })
     )
 }
 
@@ -95,7 +91,11 @@ fn distance_spec(expr: &Expr) -> Option<(&str, Vec<f32>)> {
         return None;
     };
     let col = match left.as_ref() {
-        Expr::Column(ColumnRef::Named { column, table: None, .. }) => column.value.as_str(),
+        Expr::Column(ColumnRef::Named {
+            column,
+            table: None,
+            ..
+        }) => column.value.as_str(),
         _ => return None,
     };
     let query = literal_vector(right.as_ref())?;

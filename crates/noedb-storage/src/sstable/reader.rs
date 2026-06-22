@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::block::decode_block_at;
-use super::format::{Footer, IndexEntry, FOOTER_LEN, HEADER_LEN, SST_MAGIC, SST_VERSION, SST_VERSION_V2, SST_VERSION_V3};
+use super::format::{
+    Footer, IndexEntry, FOOTER_LEN, HEADER_LEN, SST_MAGIC, SST_VERSION, SST_VERSION_V2,
+    SST_VERSION_V3,
+};
 use crate::bloom::BloomFilter;
 use crate::error::StorageError;
 use crate::mmap_io::{map_read_only, MappedFile};

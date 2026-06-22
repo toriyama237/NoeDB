@@ -6,8 +6,8 @@ use noedb_storage::LsmTree;
 use crate::cost::{estimate, index_beats_seq_scan, PlanStats};
 use crate::index::SecondaryIndex;
 use crate::join::extract_equi_join;
-use crate::logical::LogicalPlan;
 use crate::logical::AggFunc;
+use crate::logical::LogicalPlan;
 use crate::physical::PhysicalPlan;
 
 /// Planning context (storage + stats).
@@ -43,16 +43,15 @@ pub fn optimize(logical: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
 
 fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
     match plan {
-        LogicalPlan::Filter { input, predicate } => {
-            match *input {
-                LogicalPlan::Join { left, right, on: _ } if extract_equi_join(&predicate).is_some() => {
-                    pushdown_predicates(LogicalPlan::Join {
-                        left: Box::new(pushdown_predicates(*left)),
-                        right: Box::new(pushdown_predicates(*right)),
-                        on: predicate,
-                    })
-                }
-                LogicalPlan::Join { left, right, on } => {
+        LogicalPlan::Filter { input, predicate } => match *input {
+            LogicalPlan::Join { left, right, on: _ } if extract_equi_join(&predicate).is_some() => {
+                pushdown_predicates(LogicalPlan::Join {
+                    left: Box::new(pushdown_predicates(*left)),
+                    right: Box::new(pushdown_predicates(*right)),
+                    on: predicate,
+                })
+            }
+            LogicalPlan::Join { left, right, on } => {
                 let left = pushdown_predicates(*left);
                 let right = pushdown_predicates(*right);
                 let join = LogicalPlan::Join {
@@ -69,8 +68,7 @@ fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
                 input: Box::new(pushdown_predicates(other)),
                 predicate,
             },
-            }
-        }
+        },
         LogicalPlan::Project { input, items } => LogicalPlan::Project {
             input: Box::new(pushdown_predicates(*input)),
             items,
@@ -621,10 +619,7 @@ pub fn index_wins(table_rows: u64, column: &str) -> bool {
             "t".into(),
             TableStats {
                 row_count: table_rows,
-                columns: HashMap::from([(
-                    column.to_string(),
-                    ColumnStats { ndv: table_rows },
-                )]),
+                columns: HashMap::from([(column.to_string(), ColumnStats { ndv: table_rows })]),
             },
         )]),
     };

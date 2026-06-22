@@ -336,7 +336,11 @@ pub struct RollbackTxnStmt {
 }
 
 /// Top-level SQL statement.
+///
+/// `Select` is intentionally unboxed: it is by far the hottest variant and
+/// boxing it would add an allocation + indirection on the critical read path.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 #[non_exhaustive]
 pub enum Statement {
     /// `SELECT`.

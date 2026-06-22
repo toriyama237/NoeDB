@@ -20,9 +20,7 @@ pub fn expand_select_items(
                 out.extend(expand_bare_star(stmt, schema, *span, qualify)?);
             }
             Expr::Column(ColumnRef::QualifiedStar { table, span }) => {
-                out.extend(expand_qualified_star(
-                    stmt, schema, table, *span, qualify,
-                )?);
+                out.extend(expand_qualified_star(stmt, schema, table, *span, qualify)?);
             }
             _ => out.push(item),
         }
@@ -41,12 +39,7 @@ fn expand_bare_star(
     };
     let mut items = expand_from_item(from, schema, span, qualify)?;
     for join in &stmt.joins {
-        items.extend(expand_table_columns(
-            &join.table,
-            schema,
-            span,
-            true,
-        )?);
+        items.extend(expand_table_columns(&join.table, schema, span, true)?);
     }
     Ok(items)
 }
@@ -96,11 +89,7 @@ fn expand_subquery_columns(
                 .as_ref()
                 .map_or_else(|| projection_label(&item.expr), |a| a.value.clone());
             let (table_ref, column, alias_out) = if prefix.is_empty() {
-                (
-                    None,
-                    Ident::new(col_name.clone(), span),
-                    None,
-                )
+                (None, Ident::new(col_name.clone(), span), None)
             } else {
                 (
                     Some(Ident::new(prefix.clone(), span)),
@@ -151,11 +140,7 @@ fn expand_table_columns(
         .iter()
         .map(|col| {
             let (table_ref, column, alias) = if prefix.is_empty() {
-                (
-                    None,
-                    Ident::new(col.clone(), span),
-                    None,
-                )
+                (None, Ident::new(col.clone(), span), None)
             } else {
                 (
                     Some(Ident::new(prefix.clone(), span)),

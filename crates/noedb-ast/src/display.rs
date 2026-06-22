@@ -205,11 +205,7 @@ impl fmt::Display for Expr {
                 write!(f, "{query}")?;
                 write!(f, ")")
             }
-            Self::Exists {
-                query,
-                negated,
-                ..
-            } => {
+            Self::Exists { query, negated, .. } => {
                 if *negated {
                     write_keyword(f, Keyword::Not)?;
                     write!(f, " ")?;

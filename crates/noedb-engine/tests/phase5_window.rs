@@ -8,8 +8,13 @@ use noedb_ast::{Expr, WindowFunc};
 use noedb_engine::LocalEngine;
 
 fn temp_engine() -> (Arc<LocalEngine>, std::path::PathBuf) {
+    // Unique per call even when the platform clock is coarse (macOS) and tests
+    // run in parallel: combine a process-wide counter with the timestamp.
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
-        "noedb-phase5-{}",
+        "noedb-phase5-{}-{}-{seq}",
+        std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

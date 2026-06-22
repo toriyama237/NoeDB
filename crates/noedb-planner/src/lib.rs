@@ -22,8 +22,8 @@ mod lower;
 mod optimize;
 mod parallel;
 mod physical;
-mod setops;
 mod schema;
+mod setops;
 mod simd_pred;
 mod star;
 mod stats;
@@ -33,10 +33,9 @@ mod window;
 mod window_exec;
 
 pub use adaptive::ExecutionFeedback;
-pub use eval::{eval_expr, eval_predicate};
 pub use build::{build, build_select, build_with_schema, cte_names_from};
-pub use schema::QuerySchema;
 pub use cost::{estimate, index_beats_seq_scan, PlanStats, INDEX_LOOKUP_COST, SEQ_SCAN_ROW_COST};
+pub use eval::{eval_expr, eval_predicate};
 pub use executor::{execute, ExecutionContext, Executor};
 pub use explain::explain;
 pub use index::{BTreeIndex, SecondaryIndex};
@@ -44,8 +43,12 @@ pub use logical::{AggFunc, LogicalPlan};
 pub use lower::lower;
 pub use optimize::{index_wins, optimize, PlanContext};
 pub use physical::PhysicalPlan;
+pub use schema::QuerySchema;
 pub use simd_pred::{filter_eq_i64, filter_range_i64};
-pub use stats::{analyze_table, increment_row_count, load_plan_stats, persist_table_stats, ColumnStats, TableStats};
+pub use stats::{
+    analyze_table, increment_row_count, load_plan_stats, persist_table_stats, ColumnStats,
+    TableStats,
+};
 pub use value::{Record, Value};
 
 use noedb_ast::Statement;
@@ -460,8 +463,7 @@ mod tests {
         put_row(&mut tree, "users", "1", "id", b"52");
         put_row(&mut tree, "users", "2", "id", b"99");
         put_row(&mut tree, "users", "3", "id", b"53");
-        let stmt =
-            noedb_parser::parse("SELECT id FROM users WHERE id IN ('52', '53')").unwrap();
+        let stmt = noedb_parser::parse("SELECT id FROM users WHERE id IN ('52', '53')").unwrap();
         let rows = execute_sql(&stmt, &tree).unwrap();
         assert_eq!(rows.len(), 2);
         let _ = std::fs::remove_dir_all(dir);
@@ -485,8 +487,8 @@ mod tests {
         put_row(&mut tree, "users", "1", "id", b"3");
         put_row(&mut tree, "users", "2", "id", b"7");
         put_row(&mut tree, "users", "3", "id", b"9");
-        let stmt = noedb_parser::parse("SELECT id FROM users WHERE id BETWEEN '5' AND '8'")
-            .unwrap();
+        let stmt =
+            noedb_parser::parse("SELECT id FROM users WHERE id BETWEEN '5' AND '8'").unwrap();
         let rows = execute_sql(&stmt, &tree).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].fields[0].1, Value::Bytes(b"7".to_vec()));

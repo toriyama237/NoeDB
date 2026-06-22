@@ -65,10 +65,8 @@ fn lexer_iterator_api() {
 #[test]
 fn distance_operator_lex() {
     use noedb_lexer::{Operator, Token};
-    let tokens = noedb_lexer::tokenize("emb <-> \"[0,0,0]\"").unwrap();
-    assert!(
-        tokens
-            .iter()
-            .any(|t| matches!(t.kind, Token::Op(Operator::Distance)))
-    );
+    let tokens = tokenize("emb <-> \"[0,0,0]\"").unwrap();
+    assert!(tokens
+        .iter()
+        .any(|t| matches!(t.kind, Token::Op(Operator::Distance))));
 }

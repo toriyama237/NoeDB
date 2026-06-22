@@ -45,7 +45,7 @@ on LXC 115. GitHub `origin` stays optional; GitLab is the CI source of truth.
 
 You need:
 
-- Rust **stable** (1.78+; `rust-toolchain.toml` pins the channel).
+- Rust **stable** (1.88+; `rust-toolchain.toml` pins the channel).
 - `git`.
 - Optional: `cargo-deny`, `cargo-llvm-cov`, `git-cliff`.
 

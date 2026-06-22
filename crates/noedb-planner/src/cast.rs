@@ -41,11 +41,9 @@ pub fn cast_value(val: &Value, ty: &SqlType) -> Result<Value, ExecError> {
                 "TEXT" => Ok(Value::Bytes(value_to_string(val)?.into_bytes())),
                 "DATE" => cast_to_date(val),
                 "TIMESTAMP" | "TIMESTAMPTZ" => cast_to_timestamp(val),
-                "VECTOR" => {
-                    return Err(ExecError::TypeMismatch {
-                        message: "VECTOR requires VECTOR(n) dimension".into(),
-                    });
-                }
+                "VECTOR" => Err(ExecError::TypeMismatch {
+                    message: "VECTOR requires VECTOR(n) dimension".into(),
+                }),
                 _ => Err(ExecError::TypeMismatch {
                     message: format!("unsupported CAST target type {name}"),
                 }),
@@ -140,7 +138,10 @@ fn parse_vector_literal(bytes: &[u8], dim: u32) -> Result<Vec<f32>, ExecError> {
         .collect();
     let floats = floats?;
     if floats.len() != dim as usize {
-        return Err(type_err(&format!("VECTOR({dim}) literal has {} elements", floats.len())));
+        return Err(type_err(&format!(
+            "VECTOR({dim}) literal has {} elements",
+            floats.len()
+        )));
     }
     Ok(floats)
 }

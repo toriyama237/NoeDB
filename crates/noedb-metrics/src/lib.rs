@@ -62,8 +62,7 @@ impl Histogram {
         let ns = u64::try_from(d.as_nanos()).unwrap_or(u64::MAX);
         self.sum_ns.fetch_add(ns, Ordering::Relaxed);
         self.count.fetch_add(1, Ordering::Relaxed);
-        self.max_ns
-            .fetch_max(ns, Ordering::Relaxed);
+        self.max_ns.fetch_max(ns, Ordering::Relaxed);
     }
 
     /// Total observed count.
@@ -74,6 +73,7 @@ impl Histogram {
 
     /// Sum of samples in seconds (for Prometheus).
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn sum_seconds(&self) -> f64 {
         let ns = self.sum_ns.load(Ordering::Relaxed);
         ns as f64 / 1_000_000_000.0
@@ -81,6 +81,7 @@ impl Histogram {
 
     /// Max sample in seconds.
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn max_seconds(&self) -> f64 {
         let ns = self.max_ns.load(Ordering::Relaxed);
         ns as f64 / 1_000_000_000.0
@@ -156,7 +157,12 @@ impl Metrics {
     #[must_use]
     pub fn render_prometheus(&self) -> String {
         let mut out = String::with_capacity(1024);
-        write_counter(&mut out, "noedb_queries_total", "SQL statements executed", &self.queries_total);
+        write_counter(
+            &mut out,
+            "noedb_queries_total",
+            "SQL statements executed",
+            &self.queries_total,
+        );
         write_counter(
             &mut out,
             "noedb_query_errors_total",
@@ -244,7 +250,7 @@ pub fn spawn_prometheus_listener(
                 let _ = serve_http(&metrics, stream);
             }
         })
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        .map_err(std::io::Error::other)
 }
 
 fn serve_http(metrics: &Metrics, mut stream: TcpStream) -> std::io::Result<()> {

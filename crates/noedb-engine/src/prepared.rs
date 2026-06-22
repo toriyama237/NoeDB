@@ -81,10 +81,7 @@ fn substitute_params(stmt: &Statement, params: &[Literal]) -> Statement {
                 .iter()
                 .map(|e| substitute_expr(e, params))
                 .collect(),
-            having_clause: s
-                .having_clause
-                .as_ref()
-                .map(|e| substitute_expr(e, params)),
+            having_clause: s.having_clause.as_ref().map(|e| substitute_expr(e, params)),
             order_by: s.order_by.clone(),
             limit: s.limit,
             offset: s.offset,

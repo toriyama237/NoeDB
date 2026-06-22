@@ -1,16 +1,27 @@
 //! Cluster auth on gRPC metadata (`x-noedb-auth`).
 
-use std::sync::LazyLock;
+use std::sync::OnceLock;
 
 use noedb_raft::ClusterAuth;
 use tonic::metadata::{MetadataKey, MetadataValue};
 use tonic::{Request, Status};
 
+use crate::auth_guard::AuthGuard;
+
 /// Metadata key carrying the 32-byte cluster token (hex).
 pub const AUTH_METADATA: &str = "x-noedb-auth";
 
-static AUTH_KEY: LazyLock<MetadataKey<tonic::metadata::Ascii>> =
-    LazyLock::new(|| MetadataKey::from_static(AUTH_METADATA));
+/// Lazily-initialized metadata key.
+fn auth_key() -> &'static MetadataKey<tonic::metadata::Ascii> {
+    static AUTH_KEY: OnceLock<MetadataKey<tonic::metadata::Ascii>> = OnceLock::new();
+    AUTH_KEY.get_or_init(|| MetadataKey::from_static(AUTH_METADATA))
+}
+
+/// Process-wide brute-force guard for inbound cluster auth.
+fn auth_guard() -> &'static AuthGuard {
+    static AUTH_GUARD: OnceLock<AuthGuard> = OnceLock::new();
+    AUTH_GUARD.get_or_init(AuthGuard::default)
+}
 
 /// Attach cluster auth to an outbound request.
 ///
@@ -19,8 +30,33 @@ static AUTH_KEY: LazyLock<MetadataKey<tonic::metadata::Ascii>> =
 /// Invalid metadata encoding.
 pub fn inject_auth<T>(mut req: Request<T>, auth: &ClusterAuth) -> Result<Request<T>, Status> {
     let value = auth_metadata_value(auth)?;
-    req.metadata_mut().insert(AUTH_KEY.clone(), value);
+    req.metadata_mut().insert(auth_key().clone(), value);
     Ok(req)
+}
+
+/// Verify inbound metadata with brute-force rate limiting per peer IP.
+///
+/// # Errors
+///
+/// Missing, malformed, wrong auth, or temporarily banned peer.
+pub fn verify_auth_guarded<T>(req: &Request<T>, expected: &ClusterAuth) -> Result<(), Status> {
+    let peer = req.remote_addr();
+    let guard = auth_guard();
+    if guard.is_banned(peer) {
+        return Err(Status::resource_exhausted(
+            "too many failed auth attempts — retry later",
+        ));
+    }
+    match verify_auth_inner(req, expected) {
+        Ok(()) => {
+            guard.record_success(peer);
+            Ok(())
+        }
+        Err(e) => {
+            guard.record_failure(peer);
+            Err(e)
+        }
+    }
 }
 
 /// Verify inbound metadata against the expected cluster token.
@@ -29,6 +65,10 @@ pub fn inject_auth<T>(mut req: Request<T>, auth: &ClusterAuth) -> Result<Request
 ///
 /// Missing, malformed, or wrong auth.
 pub fn verify_auth<T>(req: &Request<T>, expected: &ClusterAuth) -> Result<(), Status> {
+    verify_auth_inner(req, expected)
+}
+
+fn verify_auth_inner<T>(req: &Request<T>, expected: &ClusterAuth) -> Result<(), Status> {
     let meta = req
         .metadata()
         .get(AUTH_METADATA)
@@ -77,5 +117,18 @@ mod tests {
         let b = ClusterAuth::from_passphrase("b");
         let req = inject_auth(Request::new(()), &a).unwrap();
         assert!(verify_auth(&req, &b).is_err());
+    }
+
+    #[test]
+    fn guard_bans_after_failures() {
+        auth_guard().clear();
+        let expected = ClusterAuth::from_passphrase("good");
+        let bad = ClusterAuth::from_passphrase("bad");
+        let req = inject_auth(Request::new(()), &bad).unwrap();
+        for _ in 0..8 {
+            let _ = verify_auth_guarded(&req, &expected);
+        }
+        assert!(verify_auth_guarded(&req, &expected).is_err());
+        auth_guard().clear();
     }
 }

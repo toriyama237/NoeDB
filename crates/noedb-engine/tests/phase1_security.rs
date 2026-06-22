@@ -51,10 +51,93 @@ fn rls_isolates_rows_by_role() {
 }
 
 #[test]
+fn ddl_requires_admin_role() {
+    let dir = std::env::temp_dir().join("noedb-phase1-ddl-guard");
+    let _ = std::fs::remove_dir_all(&dir);
+    let eng = LocalEngine::open(&dir).unwrap();
+    eng.execute("SET ROLE 'anonymous'").unwrap();
+    assert!(eng
+        .execute("CREATE TABLE secret (id INT PRIMARY KEY)")
+        .is_err());
+    assert!(eng.execute("SET ROLE 'admin'").is_err());
+    let dir2 = std::env::temp_dir().join("noedb-phase1-ddl-guard-admin");
+    let _ = std::fs::remove_dir_all(&dir2);
+    let admin = LocalEngine::open(&dir2).unwrap();
+    admin
+        .execute("CREATE TABLE secret (id INT PRIMARY KEY)")
+        .unwrap();
+}
+
+#[test]
+fn audit_hash_chain_is_valid() {
+    let dir = std::env::temp_dir().join("noedb-phase1-audit-chain");
+    let _ = std::fs::remove_dir_all(&dir);
+    let eng = LocalEngine::open(&dir).unwrap();
+    eng.execute("SELECT 1").unwrap();
+    eng.execute("SELECT 2").unwrap();
+    let log = noedb_engine::AuditLog::open(&dir).unwrap();
+    log.verify_chain().unwrap();
+}
+
+#[test]
+fn at_rest_encryption_round_trip_and_no_plaintext_on_disk() {
+    let dir = std::env::temp_dir().join("noedb-phase1-encrypt");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::env::set_var("NOEDB_DATA_KEY", "phase1-test-master-key");
+    let eng = LocalEngine::open(&dir).unwrap();
+    assert!(eng.encryption_enabled());
+
+    let secret = b"balance=4242.00";
+    eng.put_row_encrypted(
+        noedb_engine::DEFAULT_SESSION,
+        "accounts",
+        "1",
+        "bal",
+        secret,
+    )
+    .unwrap();
+
+    let got = eng
+        .get_row_decrypted("accounts", "1", "bal")
+        .unwrap()
+        .unwrap();
+    assert_eq!(got, secret);
+
+    // Force a flush so bytes hit an SST, then scan the data dir for plaintext.
+    drop(eng);
+    let mut found_plaintext = false;
+    for entry in walk(&dir) {
+        if let Ok(bytes) = std::fs::read(&entry) {
+            if bytes.windows(secret.len()).any(|w| w == secret) {
+                found_plaintext = true;
+            }
+        }
+    }
+    std::env::remove_var("NOEDB_DATA_KEY");
+    assert!(!found_plaintext, "plaintext secret leaked to disk");
+}
+
+fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                out.extend(walk(&p));
+            } else {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
+#[test]
 fn audit_log_records_queries() {
     let dir = std::env::temp_dir().join("noedb-phase1-audit");
     let _ = std::fs::remove_dir_all(&dir);
     let eng = LocalEngine::open(&dir).unwrap();
+    eng.execute("SET ROLE 'anonymous'").unwrap();
     eng.execute("SELECT 1").unwrap();
     let log = std::fs::read_to_string(dir.join("audit/audit.log")).unwrap();
     assert!(log.contains("SELECT 1"));

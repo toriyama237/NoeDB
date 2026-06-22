@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 noedb-engine = { workspace = true }
+noedb-storage = { workspace = true }
 noedb-metrics = { workspace = true }
 noedb-grpc = { workspace = true }
 noedb-protocol = { workspace = true }

@@ -120,7 +120,7 @@ impl MvccMemTable {
             if !view.is_visible(ver, writer) {
                 continue;
             }
-            if best.map_or(true, |b| ver.commit_ts > b.commit_ts) {
+            if best.is_none_or(|b| ver.commit_ts > b.commit_ts) {
                 best = Some(ver);
             }
         }

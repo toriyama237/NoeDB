@@ -29,3 +29,6 @@ tokenise = "tokenise"
 decorrelate = "decorrelate"
 decorrelated = "decorrelated"
 decorrelation = "decorrelation"
+# Technical acronyms (not typos).
+RTO = "RTO"
+FPR = "FPR"

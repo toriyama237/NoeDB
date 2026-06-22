@@ -7,8 +7,10 @@ use std::sync::Arc;
 use noedb_engine::LocalEngine;
 
 fn temp_engine() -> (Arc<LocalEngine>, std::path::PathBuf) {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
-        "noedb-phase5-tpch-{}-{}",
+        "noedb-phase5-tpch-{}-{}-{seq}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -40,18 +42,21 @@ fn seed_mini(eng: &LocalEngine) {
     }
     for i in 0..10u32 {
         let k = i.to_string();
-        let ty = if i == 0 {
-            "STANDARD BRASS"
-        } else {
-            "OTHER"
-        };
-        eng.put_row_default("part", &k, "p_partkey", k.as_bytes()).unwrap();
-        eng.put_row_default("part", &k, "p_type", ty.as_bytes()).unwrap();
+        let ty = if i == 0 { "STANDARD BRASS" } else { "OTHER" };
+        eng.put_row_default("part", &k, "p_partkey", k.as_bytes())
+            .unwrap();
+        eng.put_row_default("part", &k, "p_type", ty.as_bytes())
+            .unwrap();
     }
     for i in 0..80u32 {
         let k = i.to_string();
-        eng.put_row_default("lineitem", &k, "l_orderkey", (i % 50).to_string().as_bytes())
-            .unwrap();
+        eng.put_row_default(
+            "lineitem",
+            &k,
+            "l_orderkey",
+            (i % 50).to_string().as_bytes(),
+        )
+        .unwrap();
         eng.put_row_default("lineitem", &k, "l_partkey", (i % 10).to_string().as_bytes())
             .unwrap();
         eng.put_row_default("lineitem", &k, "l_quantity", b"15")
@@ -116,7 +121,9 @@ fn tpch_lite_corpus_executes() {
     ];
 
     for (name, sql) in queries {
-        let out = eng.execute(sql).unwrap_or_else(|e| panic!("{name} failed: {e:?}"));
+        let out = eng
+            .execute(sql)
+            .unwrap_or_else(|e| panic!("{name} failed: {e:?}"));
         assert!(
             !out.columns.is_empty() || out.rows.is_empty(),
             "{name} returned columns"
@@ -131,9 +138,7 @@ fn tpch_lite_corpus_executes() {
         )
         .unwrap();
     assert!(
-        explain.contains("Join")
-            || explain.contains("SemiJoin")
-            || explain.contains("SeqScan"),
+        explain.contains("Join") || explain.contains("SemiJoin") || explain.contains("SeqScan"),
         "{explain}"
     );
 

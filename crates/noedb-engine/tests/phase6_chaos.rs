@@ -28,8 +28,9 @@ fn raft_leader_crash_reelects_quickly() {
     assert!(elected.is_some(), "cluster should elect a new leader");
     assert!(
         elapsed < Duration::from_secs(2),
-        "RTO smoke: re-election took {:?}",
-        elapsed
+        "RTO smoke: re-election took {elapsed:?}"
     );
-    cluster.propose_on_leader(b"after-failover".to_vec()).unwrap();
+    cluster
+        .propose_on_leader(b"after-failover".to_vec())
+        .unwrap();
 }

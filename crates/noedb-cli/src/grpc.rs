@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use noedb_engine::{EngineError, LocalEngine, QueryResult};
 use noedb_grpc::{
-    auth::{inject_auth, verify_auth},
+    auth::{inject_auth, verify_auth_guarded},
     tls::{
         client_tls_mtls, client_tls_one_way, peer_host_from_addr, server_tls_mtls,
         server_tls_one_way, MAX_GRPC_BYTES,
@@ -44,10 +44,11 @@ impl Sql for SqlServiceImpl {
         &self,
         request: Request<SqlRequest>,
     ) -> Result<GrpcResponse<SqlResponse>, Status> {
-        verify_auth(&request, &self.auth)?;
-        let _permit = self.permits.acquire().await.map_err(|_| {
-            Status::resource_exhausted("gRPC in-flight limit — retry with backoff")
-        })?;
+        verify_auth_guarded(&request, &self.auth)?;
+        let _permit =
+            self.permits.acquire().await.map_err(|_| {
+                Status::resource_exhausted("gRPC in-flight limit — retry with backoff")
+            })?;
         let query = request.into_inner().query;
         let engine = Arc::clone(&self.engine);
         let resp = tokio::task::spawn_blocking(move || dispatch_sql(&engine, &query))
@@ -60,10 +61,11 @@ impl Sql for SqlServiceImpl {
         &self,
         request: Request<SqlRequest>,
     ) -> Result<GrpcResponse<SqlResponse>, Status> {
-        verify_auth(&request, &self.auth)?;
-        let _permit = self.permits.acquire().await.map_err(|_| {
-            Status::resource_exhausted("gRPC in-flight limit — retry with backoff")
-        })?;
+        verify_auth_guarded(&request, &self.auth)?;
+        let _permit =
+            self.permits.acquire().await.map_err(|_| {
+                Status::resource_exhausted("gRPC in-flight limit — retry with backoff")
+            })?;
         let query = request.into_inner().query;
         let engine = Arc::clone(&self.engine);
         let resp = tokio::task::spawn_blocking(move || match engine.explain(&query) {
@@ -81,7 +83,7 @@ impl Sql for SqlServiceImpl {
         &self,
         request: Request<PingRequest>,
     ) -> Result<GrpcResponse<SqlResponse>, Status> {
-        verify_auth(&request, &self.auth)?;
+        verify_auth_guarded(&request, &self.auth)?;
         let _ = request.into_inner();
         Ok(GrpcResponse::new(SqlResponse {
             body: Some(noedb_grpc::generated::sql_response::Body::Pong(Empty {})),

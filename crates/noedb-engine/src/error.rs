@@ -38,6 +38,18 @@ pub enum EngineError {
     /// MVCC / SSI conflict — safe to retry the transaction.
     #[error("serialization failure: {0}")]
     SerializationFailure(String),
+    /// Role or policy denied the statement.
+    #[error("access denied: {0}")]
+    AccessDenied(&'static str),
+    /// Per-session statement rate limit exceeded.
+    #[error("rate limit exceeded: {0}")]
+    RateLimited(&'static str),
+    /// Statement exceeded its execution deadline.
+    #[error("statement timeout after {0} ms")]
+    Timeout(u64),
+    /// Encryption / decryption failure (at-rest crypto).
+    #[error("crypto error: {0}")]
+    Crypto(&'static str),
 }
 
 impl EngineError {
@@ -45,7 +57,9 @@ impl EngineError {
     #[must_use]
     pub fn grpc_code(&self) -> u32 {
         match self {
-            Self::Storage(StorageError::ResourceExhausted { .. }) => 8,
+            Self::Storage(StorageError::ResourceExhausted { .. }) | Self::RateLimited(_) => 8,
+            Self::AccessDenied(_) => 7,
+            Self::Timeout(_) => 4,
             _ => 1,
         }
     }
@@ -53,10 +67,7 @@ impl EngineError {
     /// Whether the client should back off and retry later.
     #[must_use]
     pub fn is_resource_exhausted(&self) -> bool {
-        matches!(
-            self,
-            Self::Storage(StorageError::ResourceExhausted { .. })
-        )
+        matches!(self, Self::Storage(StorageError::ResourceExhausted { .. }))
     }
 }
 

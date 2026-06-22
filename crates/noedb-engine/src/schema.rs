@@ -88,11 +88,12 @@ impl SchemaCatalog {
     /// Snapshot for the query planner (`SELECT *` expansion).
     #[must_use]
     pub fn query_schema(&self) -> QuerySchema {
-        QuerySchema::from_tables(
-            self.tables
-                .iter()
-                .map(|(name, t)| (name.clone(), t.columns.iter().map(|c| c.name.clone()).collect())),
-        )
+        QuerySchema::from_tables(self.tables.iter().map(|(name, t)| {
+            (
+                name.clone(),
+                t.columns.iter().map(|c| c.name.clone()).collect(),
+            )
+        }))
     }
 
     /// Roll back a table created in the current txn (not yet committed to LSM).

@@ -7,13 +7,13 @@ use std::time::Instant;
 
 use dashmap::DashMap;
 use noedb_ast::Statement;
+use noedb_metrics::Metrics;
 use noedb_planner::{
-    apply_statement, execute_sql, explain_sql, explain_sql_with_schema,
-    ExecError, PlanError, Record, Value,
+    apply_statement, execute_sql, explain_sql, explain_sql_with_schema, ExecError, PlanError,
+    Record, Value,
 };
 use noedb_raft::{Cluster, NodeId, RaftError, Role};
 use noedb_storage::{LsmConfig, LsmTree, Version};
-use noedb_metrics::Metrics;
 use noedb_txn::TxnManager;
 use parking_lot::{Mutex, RwLock};
 use tracing::info_span;
@@ -25,6 +25,7 @@ use crate::machine::{apply_command, row_key};
 use crate::memory::MemoryBudget;
 use crate::prepared::{bind_parameters, PrepareCache};
 use crate::query_cache::QueryCache;
+use crate::ratelimit::{Deadline, RateLimiter};
 use crate::region::RegionId;
 use crate::rls::{apply_rls, RlsCatalog};
 use crate::schema::SchemaCatalog;
@@ -123,6 +124,7 @@ pub fn validate_sql(sql: &str) -> Result<(), EngineError> {
     if sql.bytes().any(|b| b == 0) {
         return Err(EngineError::InvalidSql("NUL byte in query"));
     }
+    crate::security::reject_multi_statement(sql)?;
     Ok(())
 }
 
@@ -139,6 +141,9 @@ pub struct LocalEngine {
     vector_indexes: Mutex<VectorIndexCatalog>,
     metrics: Arc<Metrics>,
     memory: Arc<MemoryBudget>,
+    rate_limiter: RateLimiter,
+    stmt_timeout_ms: u64,
+    data_key: Option<crate::crypto::DataKey>,
 }
 
 impl LocalEngine {
@@ -181,6 +186,12 @@ impl LocalEngine {
             vector_indexes: Mutex::new(VectorIndexCatalog::default()),
             metrics: Metrics::new_shared(),
             memory: Arc::new(MemoryBudget::from_env()),
+            rate_limiter: RateLimiter::from_env(),
+            stmt_timeout_ms: std::env::var("NOEDB_STMT_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+            data_key: crate::crypto::DataKey::from_env(),
         }))
     }
 
@@ -238,9 +249,7 @@ impl LocalEngine {
         query: &[f32],
         k: usize,
     ) -> Vec<(String, f32)> {
-        self.vector_indexes
-            .lock()
-            .search(table, column, query, k)
+        self.vector_indexes.lock().search(table, column, query, k)
     }
 
     /// Underlying LSM read guard (tests / benchmarks).
@@ -274,6 +283,66 @@ impl LocalEngine {
         Ok(())
     }
 
+    /// Whether at-rest encryption is configured (`NOEDB_DATA_KEY`).
+    #[must_use]
+    pub fn encryption_enabled(&self) -> bool {
+        self.data_key.is_some()
+    }
+
+    /// Insert a cell whose value is sealed at rest (AEAD).
+    ///
+    /// The plaintext is encrypted with the engine data key and bound to the
+    /// `table/row/column` coordinates, then stored. Requires `NOEDB_DATA_KEY`.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Crypto`] when no data key is configured, or storage errors.
+    pub fn put_row_encrypted(
+        &self,
+        session_id: u64,
+        table: &str,
+        row: &str,
+        column: &str,
+        plaintext: &[u8],
+    ) -> Result<(), EngineError> {
+        let key = self
+            .data_key
+            .as_ref()
+            .ok_or(EngineError::Crypto("no data key configured"))?;
+        let aad = crate::crypto::cell_aad(table, row, column);
+        let sealed = key.seal(&aad, plaintext)?;
+        self.put_row(session_id, table, row, column, &sealed)
+    }
+
+    /// Read and decrypt a cell previously written with [`Self::put_row_encrypted`].
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Crypto`] when no key is configured or decryption fails.
+    pub fn get_row_decrypted(
+        &self,
+        table: &str,
+        row: &str,
+        column: &str,
+    ) -> Result<Option<Vec<u8>>, EngineError> {
+        let key = self
+            .data_key
+            .as_ref()
+            .ok_or(EngineError::Crypto("no data key configured"))?;
+        let storage_key = row_key(table, row, column);
+        let sealed = {
+            let tree = self.storage.read();
+            tree.get(&storage_key).map_err(EngineError::Storage)?
+        };
+        match sealed {
+            Some(bytes) => {
+                let aad = crate::crypto::cell_aad(table, row, column);
+                Ok(Some(key.open(&aad, &bytes)?))
+            }
+            None => Ok(None),
+        }
+    }
+
     /// Convenience `put_row` on the default session.
     pub fn put_row_default(
         &self,
@@ -302,17 +371,22 @@ impl LocalEngine {
     pub fn execute_session(&self, session_id: u64, sql: &str) -> Result<QueryResult, EngineError> {
         let _span = info_span!("noedb.sql.execute", session_id, len = sql.len()).entered();
         let start = Instant::now();
+        let deadline = Deadline::new(self.stmt_timeout_ms);
         let result = (|| {
             validate_sql(sql)?;
+            self.rate_limiter.acquire(session_id)?;
+            deadline.check()?;
             let pressure = self.storage.read().memtable_pressure_bytes();
             self.memory
                 .gate_write(pressure, sql.len().saturating_mul(4096))?;
             let _mem = self.memory.try_reserve(sql.len().max(4096))?;
             let stmt = noedb_parser::parse(sql)?;
-            self.dispatch(session_id, stmt, sql)
+            deadline.check()?;
+            let out = self.dispatch(session_id, stmt, sql);
+            deadline.check()?;
+            out
         })();
-        self.metrics
-            .record_query(start.elapsed(), result.is_ok());
+        self.metrics.record_query(start.elapsed(), result.is_ok());
         result
     }
 
@@ -322,6 +396,8 @@ impl LocalEngine {
         stmt: Statement,
         sql: &str,
     ) -> Result<QueryResult, EngineError> {
+        let role = self.session_role_for(session_id);
+        crate::security::authorize_statement(&role, &stmt)?;
         match stmt {
             Statement::Prepare(p) => {
                 if !matches!(*p.inner, Statement::Select(_)) {
@@ -342,6 +418,7 @@ impl LocalEngine {
                 self.run_data_statement(session_id, bound, sql)
             }
             Statement::SetRole(s) => {
+                crate::security::authorize_role_change(&role, &s.role)?;
                 if let Some(mut ctx) = self.sessions.get_mut(&session_id) {
                     ctx.role = s.role;
                 } else {
@@ -444,26 +521,26 @@ impl LocalEngine {
             if let Some(hit) = crate::knn::try_hnsw_select(self, &stmt)? {
                 hit
             } else {
-            let role = self.session_role_for(session_id);
-            let cached = self.cache.lock().get(&role, sql);
-            if let Some(hit) = cached {
-                self.metrics.record_cache(true);
-                hit
-            } else {
-                self.metrics.record_cache(false);
-                let tree = self.storage.read();
-                let qschema = self.schema.lock().query_schema();
-                let records = noedb_planner::execute_sql_with_schema(
-                    &stmt,
-                    &*tree,
-                    &tree,
-                    Some(&qschema),
-                )
-                .map_err(EngineError::Exec)?;
-                let qr = QueryResult::from_records(&records);
-                self.cache.lock().put(&role, sql, qr.clone());
-                qr
-            }
+                let role = self.session_role_for(session_id);
+                let cached = self.cache.lock().get(&role, sql);
+                if let Some(hit) = cached {
+                    self.metrics.record_cache(true);
+                    hit
+                } else {
+                    self.metrics.record_cache(false);
+                    let tree = self.storage.read();
+                    let qschema = self.schema.lock().query_schema();
+                    let records = noedb_planner::execute_sql_with_schema(
+                        &stmt,
+                        &*tree,
+                        &tree,
+                        Some(&qschema),
+                    )
+                    .map_err(EngineError::Exec)?;
+                    let qr = QueryResult::from_records(&records);
+                    self.cache.lock().put(&role, sql, qr.clone());
+                    qr
+                }
             }
         } else {
             match &stmt {
@@ -532,7 +609,8 @@ impl LocalEngine {
             .get(&session_id)
             .map(|s| (s.tenant.clone(), s.role.clone()))
             .unwrap_or_else(|| ("default".into(), "anonymous".into()));
-        self.audit.record(&tenant, &role, sql, rows)
+        let safe_sql = crate::redact::redact_sql(sql);
+        self.audit.record(&tenant, &role, &safe_sql, rows)
     }
 
     /// `EXPLAIN` for a `SELECT`.
@@ -735,8 +813,7 @@ impl DistributedEngine {
                 _ => Err(EngineError::UnsupportedStatement),
             }
         })();
-        self.metrics
-            .record_query(start.elapsed(), result.is_ok());
+        self.metrics.record_query(start.elapsed(), result.is_ok());
         result
     }
 

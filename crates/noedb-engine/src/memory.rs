@@ -59,7 +59,8 @@ impl MemoryBudget {
         Ok(())
     }
 
-    /// Reserve `bytes` for the duration of a query (released via [`Self::release`]).
+    /// Reserve `bytes` for the duration of a query (released when the returned
+    /// [`MemoryGuard`] is dropped).
     pub fn try_reserve(&self, bytes: usize) -> Result<MemoryGuard<'_>, EngineError> {
         loop {
             let cur = self.reserved.load(Ordering::Acquire);

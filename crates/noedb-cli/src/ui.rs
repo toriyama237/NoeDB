@@ -24,9 +24,7 @@ pub(crate) fn skip_banner() -> bool {
 }
 
 pub(crate) fn maybe_clear_screen(studio: bool) {
-    if studio
-        || std::env::var("NOEDB_CLEAR").is_ok_and(|v| v != "0" && !v.is_empty())
-    {
+    if studio || std::env::var("NOEDB_CLEAR").is_ok_and(|v| v != "0" && !v.is_empty()) {
         print!("{ESC}[2J{ESC}[H");
         let _ = io::stdout().flush();
     }
@@ -63,7 +61,6 @@ pub(crate) fn print_banner(distributed: bool, data_dir: &str) {
 {gray}  │{reset} \\help                                       {gray}(show panel again){reset}
 {gray}  └────────────────────────────────────────────────────────────────┘{reset}
 ",
-        dim = dim,
     );
 }
 pub(crate) fn studio_prompt() -> String {
@@ -115,7 +112,7 @@ fn format_query_table(r: &QueryResult, studio: bool) -> String {
     };
 
     if studio {
-        format!("{}\n{ESC}[2m  {count}{ESC}[0m", table)
+        format!("{table}\n{ESC}[2m  {count}{ESC}[0m")
     } else {
         format!("{table}\n{count}")
     }

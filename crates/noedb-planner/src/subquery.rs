@@ -137,8 +137,7 @@ fn extract_exists_join_keys(
         else {
             continue;
         };
-        if let Some((outer, inner)) =
-            corr_pair(left, right, outer_tables, inner_tables, inner_key)
+        if let Some((outer, inner)) = corr_pair(left, right, outer_tables, inner_tables, inner_key)
         {
             return Some((outer, inner));
         }

@@ -109,8 +109,10 @@ fn setup() -> (Arc<LocalEngine>, std::path::PathBuf) {
         } else {
             "ECONOMY STEEL"
         };
-        eng.put_row_default("part", &k, "p_partkey", k.as_bytes()).unwrap();
-        eng.put_row_default("part", &k, "p_type", ty.as_bytes()).unwrap();
+        eng.put_row_default("part", &k, "p_partkey", k.as_bytes())
+            .unwrap();
+        eng.put_row_default("part", &k, "p_type", ty.as_bytes())
+            .unwrap();
     }
 
     for i in 0..LINEITEMS {

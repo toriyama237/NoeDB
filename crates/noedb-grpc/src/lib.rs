@@ -8,9 +8,11 @@
 #![allow(clippy::all, clippy::nursery, unused_qualifications)]
 
 pub mod auth;
+pub mod auth_guard;
 pub mod tls;
 
-pub use auth::{inject_auth, verify_auth, AUTH_METADATA};
+pub use auth::{inject_auth, verify_auth, verify_auth_guarded, AUTH_METADATA};
+pub use auth_guard::AuthGuard;
 pub use tls::{
     client_tls_mtls, client_tls_one_way, peer_host_from_addr, server_tls_mtls, server_tls_one_way,
     DEFAULT_GRPC_ADDR, MAX_GRPC_BYTES,

@@ -36,7 +36,7 @@ impl SstWriter {
         let path = path.as_ref();
         let mut file = File::create(path)?;
         file.write_all(&SST_MAGIC)?;
-        file.write_all(&SST_VERSION_V3.to_le_bytes());
+        file.write_all(&SST_VERSION_V3.to_le_bytes())?;
         file.write_all(&(BLOCK_SIZE as u32).to_le_bytes())?;
         file.write_all(&0u32.to_le_bytes())?; // reserved
         file.write_all(&0u16.to_le_bytes())?; // pad to HEADER_LEN

@@ -10,7 +10,7 @@
 [![Security audit](https://github.com/toriyama237/NoeDB/actions/workflows/audit.yml/badge.svg?branch=main)](https://github.com/toriyama237/NoeDB/actions/workflows/audit.yml)
 [![CodeQL](https://github.com/toriyama237/NoeDB/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/toriyama237/NoeDB/actions/workflows/codeql.yml)
 [![Rust stable](https://img.shields.io/badge/rust-stable-orange.svg?logo=rust)](https://www.rust-lang.org)
-[![MSRV 1.78](https://img.shields.io/badge/MSRV-1.78-blue.svg?logo=rust)](https://www.rust-lang.org)
+[![MSRV 1.88](https://img.shields.io/badge/MSRV-1.88-blue.svg?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![crates.io](https://img.shields.io/badge/crates.io-not%20published%20yet-lightgrey.svg)](#)
 [![GitHub stars](https://img.shields.io/github/stars/toriyama237/NoeDB?style=social)](https://github.com/toriyama237/NoeDB/stargazers)
@@ -115,6 +115,32 @@ hide behind a framework.
   for optional follow-ups (`madsim`, crates.io, OTEL exporter).
 
 ---
+
+## Security hardening
+
+NoeDB treats hostile input as the default. The engine ships a defense-in-depth
+layer that is enabled at the query boundary, not bolted on:
+
+| Threat | Defense | Where |
+|--------|---------|-------|
+| SQL injection via stacked queries | multi-statement batches rejected pre-parse | `security.rs` |
+| Privilege abuse | DDL / RLS / policy changes gated to admin roles; `SET ROLE` escalation blocked | `security.rs` |
+| Audit tampering | append-only log with SHA-256 hash chain + `--audit-verify` | `audit.rs` |
+| Credential leakage in logs | secret literals (`PASSWORD`, `IDENTIFIED BY`, `token`…) masked before audit write | `redact.rs` |
+| Query-flood / runaway DoS | per-session token-bucket rate limiter + wall-clock statement deadlines | `ratelimit.rs` |
+| Data theft from disk/backups | at-rest value encryption (XChaCha20-Poly1305, per-record nonce, cell-bound AAD) | `crypto.rs` |
+| Brute-forced cluster auth | per-IP failure tracking with temporary ban on the gRPC token check | `noedb-grpc/auth_guard.rs` |
+| Impersonation on the wire | mTLS with mandatory SPIFFE CN enforcement on client certs | `noedb-tls/spiffe.rs` |
+
+```bash
+# Verify the audit chain has not been tampered with, then export for a SIEM
+noedb --data /var/lib/noedb --audit-verify
+noedb --data /var/lib/noedb --audit-export > audit.tsv
+
+# Turn on at-rest encryption and per-session limits
+export NOEDB_DATA_KEY="$(openssl rand -hex 32)"
+export NOEDB_QPS=2000 NOEDB_STMT_TIMEOUT_MS=5000
+```
 
 ## Status
 

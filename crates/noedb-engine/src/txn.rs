@@ -86,11 +86,15 @@ impl StorageEngine for TxnOverlayStore<'_> {
     }
 
     fn put(&mut self, _key: &[u8], _value: &[u8]) -> Result<(), StorageError> {
-        Err(StorageError::invalid_input("txn overlay store is read-only"))
+        Err(StorageError::invalid_input(
+            "txn overlay store is read-only",
+        ))
     }
 
     fn delete(&mut self, _key: &[u8]) -> Result<bool, StorageError> {
-        Err(StorageError::invalid_input("txn overlay store is read-only"))
+        Err(StorageError::invalid_input(
+            "txn overlay store is read-only",
+        ))
     }
 
     fn iter(&self) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
@@ -172,12 +176,12 @@ impl StorageEngine for TxnOverlayStoreWithHook<'_> {
         self.inner.get(key)
     }
 
-    fn put(&mut self, _key: &[u8], _value: &[u8]) -> Result<(), StorageError> {
-        self.inner.put(_key, _value)
+    fn put(&mut self, key: &[u8], value: &[u8]) -> Result<(), StorageError> {
+        self.inner.put(key, value)
     }
 
-    fn delete(&mut self, _key: &[u8]) -> Result<bool, StorageError> {
-        self.inner.delete(_key)
+    fn delete(&mut self, key: &[u8]) -> Result<bool, StorageError> {
+        self.inner.delete(key)
     }
 
     fn iter(&self) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
