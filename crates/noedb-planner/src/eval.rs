@@ -507,7 +507,7 @@ fn decode_ndv1(bytes: &[u8]) -> Result<Vec<f32>, ExecError> {
         });
     }
     let payload = &bytes[MAGIC_LEN..];
-    if payload.len() % 4 != 0 {
+    if !payload.len().is_multiple_of(4) {
         return Err(ExecError::TypeMismatch {
             message: "invalid VECTOR payload".into(),
         });

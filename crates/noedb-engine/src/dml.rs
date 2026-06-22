@@ -395,7 +395,7 @@ pub(crate) fn vector_from_bytes(bytes: &[u8]) -> Option<Vec<f32>> {
         return None;
     }
     let payload = &bytes[VECTOR_MAGIC.len()..];
-    if payload.len() % 4 != 0 {
+    if !payload.len().is_multiple_of(4) {
         return None;
     }
     Some(

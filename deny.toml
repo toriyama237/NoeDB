@@ -28,6 +28,8 @@ allow = [
     "Zlib",
     "CC0-1.0",
     "0BSD",
+    # Boost Software License — permissive, OSI-approved (clipboard-win, error-code).
+    "BSL-1.0",
 ]
 confidence-threshold = 0.93
 exceptions = []
