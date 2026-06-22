@@ -72,11 +72,11 @@ jobs:
         run: cargo build -p noedb-cli --features otel
 
   msrv:
-    name: msrv (1.78)
+    name: msrv (1.88)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.78.0
+      - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
         with:
           key: msrv

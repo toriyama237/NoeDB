@@ -10,7 +10,7 @@
 [![Security audit](https://github.com/toriyama237/NoeDB/actions/workflows/audit.yml/badge.svg?branch=main)](https://github.com/toriyama237/NoeDB/actions/workflows/audit.yml)
 [![CodeQL](https://github.com/toriyama237/NoeDB/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/toriyama237/NoeDB/actions/workflows/codeql.yml)
 [![Rust stable](https://img.shields.io/badge/rust-stable-orange.svg?logo=rust)](https://www.rust-lang.org)
-[![MSRV 1.78](https://img.shields.io/badge/MSRV-1.78-blue.svg?logo=rust)](https://www.rust-lang.org)
+[![MSRV 1.88](https://img.shields.io/badge/MSRV-1.88-blue.svg?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![crates.io](https://img.shields.io/badge/crates.io-not%20published%20yet-lightgrey.svg)](#)
 [![GitHub stars](https://img.shields.io/github/stars/toriyama237/NoeDB?style=social)](https://github.com/toriyama237/NoeDB/stargazers)
