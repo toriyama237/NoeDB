@@ -58,6 +58,7 @@ static KEYWORD_TABLE: &[(&str, Keyword)] = &[
     ("GRANT", Keyword::Grant),
     ("GROUP", Keyword::Group),
     ("HAVING", Keyword::Having),
+    ("IF", Keyword::If),
     ("IN", Keyword::In),
     ("INDEX", Keyword::Index),
     ("INNER", Keyword::Inner),

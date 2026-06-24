@@ -61,6 +61,7 @@ pub enum Keyword {
     Grant,
     Group,
     Having,
+    If,
     In,
     Index,
     Inner,
@@ -141,6 +142,8 @@ pub enum Operator {
     Plus,
     /// `/`
     Div,
+    /// `%`
+    Mod,
     /// `<->` pgvector-style distance
     Distance,
 }
