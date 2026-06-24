@@ -42,6 +42,7 @@ mod wal;
 mod write_stall;
 mod xor_filter;
 
+pub use crate::atomic_io::atomic_write;
 pub use crate::bloom::BloomFilter;
 pub use crate::compaction::{compact_level0_to_l1, L0_COMPACTION_TRIGGER};
 pub use crate::durable::DurableStore;
