@@ -115,7 +115,7 @@ pub fn execute_sql_on_with_schema<S: StorageEngine<Error = StorageError>>(
     let cte_tables = if let Statement::Select(s) = stmt {
         s.with_clause
             .as_ref()
-            .map(|with| cte::materialize_with_clause(with, exec_store, index_store))
+            .map(|with| cte::materialize_with_clause(with, exec_store, index_store, schema))
             .transpose()?
             .unwrap_or_default()
     } else {
