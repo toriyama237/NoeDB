@@ -18,7 +18,7 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
         } => eval_binary(*op, left, right, row),
         Expr::IsNull { expr, negated, .. } => {
             let v = eval_expr(expr, row)?;
-            let is_null = matches!(v, Value::Null);
+            let is_null = is_sql_null(&v);
             Ok(Value::Bool(if *negated { !is_null } else { is_null }))
         }
         Expr::In {
@@ -86,6 +86,10 @@ pub fn eval_predicate(expr: &Expr, row: &[(String, Value)]) -> Result<bool, Exec
             message: format!("expected boolean predicate, got {other:?}"),
         }),
     }
+}
+
+fn is_sql_null(v: &Value) -> bool {
+    matches!(v, Value::Null) || matches!(v, Value::Bytes(b) if b.is_empty())
 }
 
 fn eval_scalar_function(
@@ -314,7 +318,7 @@ fn eval_binary(
             let r = eval_expr(right, row)?;
             Ok(Value::Bool(like_match(&l, &r)))
         }
-        BinaryOp::Plus | BinaryOp::Minus | BinaryOp::Div => {
+        BinaryOp::Plus | BinaryOp::Minus | BinaryOp::Div | BinaryOp::Mul | BinaryOp::Mod => {
             let l = eval_expr(left, row)?;
             let r = eval_expr(right, row)?;
             eval_arithmetic(op, l, r)
@@ -392,6 +396,15 @@ fn eval_arithmetic(op: BinaryOp, l: Value, r: Value) -> Result<Value, ExecError>
                 });
             }
             Ok(Value::Float(a / b))
+        }
+        BinaryOp::Mul => Ok(Value::Float(a * b)),
+        BinaryOp::Mod => {
+            if b == 0.0 {
+                return Err(ExecError::TypeMismatch {
+                    message: "modulo by zero".into(),
+                });
+            }
+            Ok(Value::Float(a % b))
         }
         _ => Err(ExecError::UnsupportedExpr),
     }

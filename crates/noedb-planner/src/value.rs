@@ -58,6 +58,8 @@ impl Value {
             (Self::Integer(a), Self::Integer(b)) => Some(a == b),
             (Self::Float(a), Self::Float(b)) => Some(a == b),
             (Self::Bool(a), Self::Bool(b)) => Some(a == b),
+            (Self::Bool(a), Self::Bytes(b)) if b.len() == 1 => Some(*a == (b[0] != 0)),
+            (Self::Bytes(b), Self::Bool(a)) if b.len() == 1 => Some(*a == (b[0] != 0)),
             (Self::Bytes(a), Self::Bytes(b)) => Some(a == b),
             (Self::Date(a), Self::Date(b)) => Some(a == b),
             (Self::Timestamp(a), Self::Timestamp(b)) => Some(a == b),
