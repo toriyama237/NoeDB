@@ -362,8 +362,10 @@ fn binary_op(op: BinaryOp) -> &'static str {
         BinaryOp::Or => "OR",
         BinaryOp::Plus => "+",
         BinaryOp::Minus => "-",
-        BinaryOp::Like => "LIKE",
         BinaryOp::Div => "/",
+        BinaryOp::Mul => "*",
+        BinaryOp::Mod => "%",
+        BinaryOp::Like => "LIKE",
         BinaryOp::Distance => "<->",
     }
 }

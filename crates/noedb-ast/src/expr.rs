@@ -49,6 +49,10 @@ pub enum BinaryOp {
     Minus,
     /// `/`
     Div,
+    /// `%`
+    Mod,
+    /// `*`
+    Mul,
     /// `LIKE`
     Like,
     /// Vector L2 distance `<->` (pgvector-style).

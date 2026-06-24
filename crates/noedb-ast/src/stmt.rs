@@ -222,6 +222,8 @@ pub struct DeleteStmt {
 pub struct CreateTableStmt {
     /// New table name.
     pub name: Ident,
+    /// `IF NOT EXISTS` — skip when the table is already registered.
+    pub if_not_exists: bool,
     /// Column definitions.
     pub columns: Vec<ColumnDef>,
     /// Table-level `PRIMARY KEY (cols…)` when present.

@@ -60,6 +60,13 @@ fn parse_create_table(
     p: &mut Parser<'_>,
     start: noedb_lexer::Span,
 ) -> Result<CreateTableStmt, ParseError> {
+    let if_not_exists = if p.match_keyword(Keyword::If) {
+        p.expect_keyword(Keyword::Not)?;
+        p.expect_keyword(Keyword::Exists)?;
+        true
+    } else {
+        false
+    };
     let name = p.parse_ident()?;
     p.expect_punct(Punctuation::LParen)?;
 
@@ -91,6 +98,7 @@ fn parse_create_table(
 
     Ok(CreateTableStmt {
         name,
+        if_not_exists,
         columns,
         primary_key,
         span: Parser::merge_span(start, end),
