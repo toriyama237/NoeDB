@@ -147,12 +147,28 @@ impl TxnManager {
         Ok(self.mvcc.lock().get(key, &view))
     }
 
-    /// `COMMIT` — SSI check, apply write set with `commit_ts`, purge intents.
+    /// `COMMIT` — SSI check, optional durable flush, then apply write set with `commit_ts`.
     #[allow(
         clippy::significant_drop_tightening,
         clippy::significant_drop_in_scrutinee
     )]
     pub fn commit(&self, session_id: u64) -> Result<CommitResult, TxnError> {
+        self.commit_with_durable(session_id, |_, _| Ok(()))
+    }
+
+    /// `COMMIT` with a durable hook invoked **before** the in-memory txn is closed.
+    ///
+    /// If `durable` fails, the session keeps its open transaction so the caller can retry or
+    /// roll back — preventing split-brain where the txn manager thinks the commit succeeded but
+    /// LSM persistence failed.
+    pub fn commit_with_durable<F>(
+        &self,
+        session_id: u64,
+        durable: F,
+    ) -> Result<CommitResult, TxnError>
+    where
+        F: FnOnce(CommitTs, &[(Vec<u8>, WriteOp)]) -> Result<(), TxnError>,
+    {
         let txn_id = *self
             .sessions
             .get(&session_id)
@@ -163,7 +179,7 @@ impl TxnManager {
             self.deadlock.lock().poll(&active, txn_id)?;
         }
 
-        let (write_set, read_set) = {
+        let write_set = {
             let decision = {
                 let active = self.active.lock();
                 let txn = active.get(&txn_id).ok_or(TxnError::NoActiveTxn)?;
@@ -175,17 +191,19 @@ impl TxnManager {
                     return Err(TxnError::SerializationFailure(msg));
                 }
             }
-            let mut active = self.active.lock();
-            let txn = active.get_mut(&txn_id).ok_or(TxnError::NoActiveTxn)?;
-            txn.state = TxnState::Committed;
-            (txn.write_set.clone(), txn.read_set.clone())
+            let active = self.active.lock();
+            let txn = active.get(&txn_id).ok_or(TxnError::NoActiveTxn)?;
+            txn.write_set.clone()
         };
 
+        let pending: Vec<(Vec<u8>, WriteOp)> = write_set.into_iter().collect();
         let commit_ts = self.oracle.next();
-        let keys_written = write_set.len();
+        durable(commit_ts, &pending)?;
+
+        let keys_written = pending.len();
         {
             let mut mvcc = self.mvcc.lock();
-            for (key, op) in &write_set {
+            for (key, op) in &pending {
                 match op {
                     WriteOp::Put(v) => mvcc.put(key.clone(), v.clone(), commit_ts),
                     WriteOp::Delete => mvcc.delete(key.clone(), commit_ts),
@@ -193,15 +211,20 @@ impl TxnManager {
             }
         }
 
-        let write_keys: BTreeSet<_> = write_set.keys().cloned().collect();
+        let write_keys: BTreeSet<_> = pending.iter().map(|(k, _)| k.clone()).collect();
         self.ssi.lock().register_commit(txn_id, write_keys);
         self.deadlock.lock().clear(txn_id);
         self.ssi.lock().purge(txn_id);
 
-        self.active.lock().remove(&txn_id);
+        {
+            let mut active = self.active.lock();
+            if let Some(txn) = active.get_mut(&txn_id) {
+                txn.state = TxnState::Committed;
+            }
+            active.remove(&txn_id);
+        }
         self.sessions.remove(&session_id);
 
-        let _ = (read_set,);
         Ok(CommitResult {
             commit_ts,
             keys_written,

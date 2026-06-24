@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use noedb_ast::Statement;
-use noedb_planner::execute_sql_on;
+use noedb_planner::execute_sql_on_with_schema;
 use noedb_storage::{LsmTree, ReadView, StorageEngine, StorageError, Version};
 use noedb_txn::{TxnError, TxnManager, WriteOp};
 use parking_lot::RwLock;
@@ -19,16 +19,20 @@ pub(crate) fn commit_to_storage(
     session_id: u64,
     tree: &mut LsmTree,
 ) -> Result<(), EngineError> {
-    let pending = pending_writes(manager, session_id)?;
-    let result = manager.commit(session_id).map_err(txn_err)?;
-    for (key, op) in pending {
-        let version = match op {
-            WriteOp::Put(v) => Version::put(result.commit_ts, v),
-            WriteOp::Delete => Version::tombstone(result.commit_ts),
-        };
-        tree.put_version(&key, &version)?;
-    }
-    let min_retain = result.commit_ts.saturating_sub(1);
+    manager
+        .commit_with_durable(session_id, |commit_ts, pending| {
+            for (key, op) in pending {
+                let version = match op {
+                    WriteOp::Put(v) => Version::put(commit_ts, v.clone()),
+                    WriteOp::Delete => Version::tombstone(commit_ts),
+                };
+                tree.put_version(key, &version)
+                    .map_err(|e| TxnError::Storage(e.to_string()))?;
+            }
+            Ok(())
+        })
+        .map_err(txn_err)?;
+    let min_retain = manager.oracle().now().saturating_sub(1);
     let _ = manager.gc(min_retain);
     let _ = tree.gc_mvcc_active(min_retain);
     Ok(())
@@ -139,6 +143,7 @@ pub(crate) fn execute_select_in_txn(
     session_id: u64,
     stmt: &Statement,
     storage: &Arc<RwLock<LsmTree>>,
+    schema: &noedb_planner::QuerySchema,
 ) -> Result<QueryResult, EngineError> {
     let view = manager.read_view(session_id).map_err(txn_err)?;
     let overlay = build_read_overlay(&manager, session_id, &view)?;
@@ -157,7 +162,7 @@ pub(crate) fn execute_select_in_txn(
             });
         })),
     };
-    let records = execute_sql_on(stmt, &store, &tree)?;
+    let records = execute_sql_on_with_schema(stmt, &store, &tree, Some(schema))?;
     Ok(QueryResult::from_records(&records))
 }
 
@@ -215,19 +220,6 @@ fn build_read_overlay(
         })
         .map_err(txn_err)?;
     Ok(overlay)
-}
-
-fn pending_writes(
-    manager: &TxnManager,
-    session_id: u64,
-) -> Result<Vec<(Vec<u8>, WriteOp)>, EngineError> {
-    let mut out = Vec::new();
-    manager
-        .with_txn(session_id, |txn| {
-            out = txn.write_set.clone().into_iter().collect();
-        })
-        .map_err(txn_err)?;
-    Ok(out)
 }
 
 pub(crate) fn txn_err(e: TxnError) -> EngineError {
