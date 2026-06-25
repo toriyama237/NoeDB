@@ -185,8 +185,9 @@ fn parse_expr_prec(p: &mut Parser<'_>, min: Prec) -> Result<Expr, ParseError> {
         }
 
         if (min as u8) <= Prec::Add as u8 {
-            if let Token::Op(op @ (Operator::Plus | Operator::Minus | Operator::Div)) =
-                p.peek_kind().clone()
+            if let Token::Op(
+                op @ (Operator::Plus | Operator::Minus | Operator::Div | Operator::Mod),
+            ) = p.peek_kind().clone()
             {
                 p.bump();
                 let bin = Parser::operator_to_binary(op);
@@ -195,6 +196,21 @@ fn parse_expr_prec(p: &mut Parser<'_>, min: Prec) -> Result<Expr, ParseError> {
                 let end = right.span();
                 left = Expr::Binary {
                     op: bin,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    span: Parser::merge_span(left_span, end),
+                };
+                continue;
+            }
+            if (min as u8) <= Prec::Add as u8
+                && matches!(p.peek_kind(), Token::Punct(Punctuation::Star))
+            {
+                p.bump();
+                let left_span = left.span();
+                let right = parse_expr_prec(p, Prec::Add)?;
+                let end = right.span();
+                left = Expr::Binary {
+                    op: BinaryOp::Mul,
                     left: Box::new(left),
                     right: Box::new(right),
                     span: Parser::merge_span(left_span, end),
@@ -224,8 +240,11 @@ fn parse_prefix(p: &mut Parser<'_>) -> Result<Expr, ParseError> {
         });
     }
 
-    if p.match_keyword(Keyword::Not) && p.match_keyword(Keyword::Exists) {
-        let start = p.tokens[p.pos.saturating_sub(2)].span;
+    if matches!(p.peek_kind(), Token::Keyword(Keyword::Not))
+        && matches!(p.peek_ahead(1), Some(Token::Keyword(Keyword::Exists)))
+    {
+        let start = p.bump().span;
+        p.expect_keyword(Keyword::Exists)?;
         p.expect_punct(Punctuation::LParen)?;
         let query = parse_select_subquery(p)?;
         let end = p.expect_punct(Punctuation::RParen)?;
@@ -272,6 +291,17 @@ fn parse_prefix(p: &mut Parser<'_>) -> Result<Expr, ParseError> {
 
     if matches!(p.peek_kind(), Token::Punct(Punctuation::LParen)) {
         let start = p.bump().span;
+        if matches!(
+            p.peek_kind(),
+            Token::Keyword(Keyword::Select | Keyword::With)
+        ) {
+            let query = parse_select_subquery(p)?;
+            let end = p.expect_punct(Punctuation::RParen)?;
+            return Ok(Expr::ScalarSubquery {
+                query: Box::new(query),
+                span: Parser::merge_span(start, end),
+            });
+        }
         let inner = parse_expr(p)?;
         let end = p.expect_punct(Punctuation::RParen)?;
         return Ok(Expr::Paren(Box::new(inner), Parser::merge_span(start, end)));

@@ -50,6 +50,15 @@ pub enum EngineError {
     /// Encryption / decryption failure (at-rest crypto).
     #[error("crypto error: {0}")]
     Crypto(&'static str),
+    /// Schema catalog error (duplicate table, unknown table, …).
+    #[error("schema error: {0}")]
+    Schema(#[from] crate::schema::SchemaError),
+}
+
+impl From<String> for EngineError {
+    fn from(msg: String) -> Self {
+        Self::Codec(msg)
+    }
 }
 
 impl EngineError {

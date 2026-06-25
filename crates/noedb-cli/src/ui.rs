@@ -148,7 +148,7 @@ pub(crate) fn print_help(studio: bool) {
 {ESC}[90m│{ESC}[0m  {ESC}[1;36m\\clear{ESC}[0m             {ESC}[2mClear screen and redraw dashboard{ESC}[0m
 {ESC}[90m│{ESC}[0m  {ESC}[1;36m\\explain SELECT …{ESC}[0m   {ESC}[2mDisplay optimizer plan{ESC}[0m
 {ESC}[90m│{ESC}[0m
-{ESC}[90m│{ESC}[0m  {ESC}[1;33mSQL{ESC}[0m  One statement per line, or several separated by {ESC}[2m;{ESC}[0m
+{ESC}[90m│{ESC}[0m  {ESC}[1;33mSQL{ESC}[0m  End each statement with {ESC}[2m;{ESC}[0m — may span multiple lines{ESC}[0m
 {ESC}[90m└──────────────────────────────────────────────────────────────────{ESC}[0m
 "
         );
@@ -156,7 +156,7 @@ pub(crate) fn print_help(studio: bool) {
         println!("\\q          quit");
         println!("\\help       this message");
         println!("\\explain    show plan for SELECT");
-        println!("SELECT ...;  one query per line");
+        println!("SELECT ...;  end statements with ; (may span lines)");
     }
 }
 

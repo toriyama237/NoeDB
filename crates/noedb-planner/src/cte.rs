@@ -8,6 +8,7 @@ use noedb_storage::{LsmTree, StorageEngine, StorageError};
 use crate::build::{build_select_scoped, cte_names_from};
 use crate::executor::{execute, ExecutionContext, RowMap};
 use crate::optimize::{optimize, PlanContext};
+use crate::schema::QuerySchema;
 use crate::ExecError;
 
 /// Materialize all CTEs in a `WITH` clause (in definition order).
@@ -15,13 +16,16 @@ pub fn materialize_with_clause<S: StorageEngine<Error = StorageError>>(
     with: &WithClause,
     exec_store: &S,
     index_store: &LsmTree,
+    schema: Option<&QuerySchema>,
 ) -> Result<HashMap<String, Vec<RowMap>>, ExecError> {
     let mut tables: HashMap<String, Vec<RowMap>> = HashMap::new();
     let mut scope: HashSet<String> = HashSet::new();
 
     for cte in &with.ctes {
         let rows = match &cte.body {
-            CteBody::Select(stmt) => run_select(stmt, &scope, &tables, exec_store, index_store)?,
+            CteBody::Select(stmt) => {
+                run_select(stmt, &scope, &tables, exec_store, index_store, schema)?
+            }
             CteBody::Union {
                 anchor,
                 all: _,
@@ -38,6 +42,7 @@ pub fn materialize_with_clause<S: StorageEngine<Error = StorageError>>(
                     &tables,
                     exec_store,
                     index_store,
+                    schema,
                 )?
             }
         };
@@ -47,6 +52,7 @@ pub fn materialize_with_clause<S: StorageEngine<Error = StorageError>>(
     Ok(tables)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn materialize_recursive<S: StorageEngine<Error = StorageError>>(
     name: &str,
     anchor: &SelectStmt,
@@ -55,8 +61,16 @@ fn materialize_recursive<S: StorageEngine<Error = StorageError>>(
     prior_tables: &HashMap<String, Vec<RowMap>>,
     exec_store: &S,
     index_store: &LsmTree,
+    schema: Option<&QuerySchema>,
 ) -> Result<Vec<RowMap>, ExecError> {
-    let mut acc = run_select(anchor, prior_scope, prior_tables, exec_store, index_store)?;
+    let mut acc = run_select(
+        anchor,
+        prior_scope,
+        prior_tables,
+        exec_store,
+        index_store,
+        schema,
+    )?;
     let mut working = prior_tables.clone();
     working.insert(name.to_string(), acc.clone());
 
@@ -64,7 +78,7 @@ fn materialize_recursive<S: StorageEngine<Error = StorageError>>(
     scope.insert(name.to_string());
 
     loop {
-        let new_rows = run_select(recursive, &scope, &working, exec_store, index_store)?;
+        let new_rows = run_select(recursive, &scope, &working, exec_store, index_store, schema)?;
         let mut seen: HashSet<Vec<u8>> = acc.iter().map(crate::setops::row_key).collect();
         let mut added = 0usize;
         for row in new_rows {
@@ -88,10 +102,11 @@ fn run_select<S: StorageEngine<Error = StorageError>>(
     cte_tables: &HashMap<String, Vec<RowMap>>,
     exec_store: &S,
     index_store: &LsmTree,
+    schema: Option<&QuerySchema>,
 ) -> Result<Vec<RowMap>, ExecError> {
     let mut scope = cte_scope.clone();
     scope.extend(cte_names_from(stmt.with_clause.as_ref()));
-    let logical = build_select_scoped(stmt, &scope, None)?;
+    let logical = build_select_scoped(stmt, &scope, schema)?;
     let plan_ctx = PlanContext::with_stats(index_store, crate::load_plan_stats(index_store));
     let physical = optimize(logical, &plan_ctx);
     let records = execute(

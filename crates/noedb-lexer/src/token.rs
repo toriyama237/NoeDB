@@ -14,6 +14,7 @@ use crate::span::Span;
 #[non_exhaustive]
 #[allow(missing_docs)] // per-variant docs land in Week 04 with the full token set
 pub enum Keyword {
+    Add,
     All,
     Alter,
     Analyze,
@@ -61,6 +62,7 @@ pub enum Keyword {
     Grant,
     Group,
     Having,
+    If,
     In,
     Index,
     Inner,
@@ -141,6 +143,8 @@ pub enum Operator {
     Plus,
     /// `/`
     Div,
+    /// `%`
+    Mod,
     /// `<->` pgvector-style distance
     Distance,
 }

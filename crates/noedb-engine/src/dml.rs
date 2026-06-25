@@ -292,6 +292,55 @@ fn enforce_primary_key(
             }));
         }
     }
+
+    enforce_unique_columns(table, col_names, values, table_schema, tree, txn)?;
+    Ok(())
+}
+
+/// Reject inserts that duplicate a value in any `UNIQUE` column.
+fn enforce_unique_columns(
+    table: &str,
+    col_names: &[String],
+    values: &[Value],
+    table_schema: &crate::schema::TableSchema,
+    tree: &LsmTree,
+    txn: Option<(&TxnManager, u64)>,
+) -> Result<(), EngineError> {
+    let unique_cols: Vec<&str> = table_schema
+        .columns
+        .iter()
+        .filter(|c| c.unique && !c.primary_key)
+        .map(|c| c.name.as_str())
+        .collect();
+    if unique_cols.is_empty() {
+        return Ok(());
+    }
+
+    let existing: Vec<(String, RowMap)> = if let Some((mgr, sid)) = txn {
+        let overlay = TxnOverlayStore::for_session(mgr, sid, tree)?;
+        scan_table(&overlay, table)?
+    } else {
+        scan_table(tree, table)?
+    };
+
+    for col in unique_cols {
+        let Some(idx) = col_names.iter().position(|c| c == col) else {
+            continue;
+        };
+        let new_val = &values[idx];
+        if matches!(new_val, Value::Null) {
+            continue;
+        }
+        for (_, row) in &existing {
+            if let Some((_, prev)) = row.iter().find(|(name, _)| name == col) {
+                if prev.sql_eq(new_val).unwrap_or(false) {
+                    return Err(EngineError::Exec(ExecError::TypeMismatch {
+                        message: format!("UNIQUE constraint failed: duplicate `{col}`"),
+                    }));
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -471,25 +520,29 @@ mod tests {
 
     fn users_schema() -> SchemaCatalog {
         let mut schema = SchemaCatalog::default();
-        schema.create_table(
-            "users",
-            1,
-            vec![
-                ColumnMeta {
-                    name: "id".into(),
-                    data_type: SqlType::Text,
-                    not_null: true,
-                    primary_key: true,
-                },
-                ColumnMeta {
-                    name: "name".into(),
-                    data_type: SqlType::Text,
-                    not_null: false,
-                    primary_key: false,
-                },
-            ],
-            vec!["id".into()],
-        );
+        schema
+            .create_table(
+                "users",
+                1,
+                vec![
+                    ColumnMeta {
+                        name: "id".into(),
+                        data_type: SqlType::Text,
+                        not_null: true,
+                        primary_key: true,
+                        unique: false,
+                    },
+                    ColumnMeta {
+                        name: "name".into(),
+                        data_type: SqlType::Text,
+                        not_null: false,
+                        primary_key: false,
+                        unique: false,
+                    },
+                ],
+                vec!["id".into()],
+            )
+            .unwrap();
         schema
     }
 

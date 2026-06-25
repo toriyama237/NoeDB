@@ -35,9 +35,7 @@ impl<'a> ExplainWriter<'a> {
         let pad = "  ".repeat(indent);
         match plan {
             PhysicalPlan::SeqScan { table, columns, .. } => {
-                let cols = columns
-                    .as_ref()
-                    .map_or_else(|| "*".into(), |c| c.join(", "));
+                let cols = display_columns(columns.as_ref(), Some(table));
                 let rows = self.stats.rows_for(table);
                 self.lines.push(format!(
                     "{pad}SeqScan(table={table}, rows≈{rows}, columns=[{cols}])"
@@ -49,9 +47,7 @@ impl<'a> ExplainWriter<'a> {
                 point_key,
                 columns,
             } => {
-                let cols = columns
-                    .as_ref()
-                    .map_or_else(|| "*".into(), |c| c.join(", "));
+                let cols = display_columns(columns.as_ref(), Some(table));
                 let key = point_key
                     .as_ref()
                     .map_or_else(|| "?".into(), |k| format!("{k:?}"));
@@ -143,9 +139,7 @@ impl<'a> ExplainWriter<'a> {
                 self.write_plan(right, indent + 1);
             }
             PhysicalPlan::CteScan { name, columns, .. } => {
-                let cols = columns
-                    .as_ref()
-                    .map_or_else(|| "*".into(), |c| c.join(", "));
+                let cols = display_columns(columns.as_ref(), None);
                 self.lines
                     .push(format!("{pad}CteScan(name={name}, columns=[{cols}])"));
             }
@@ -175,9 +169,7 @@ impl<'a> ExplainWriter<'a> {
                 columns,
                 ..
             } => {
-                let cols = columns
-                    .as_ref()
-                    .map_or_else(|| "*".into(), |c| c.join(", "));
+                let cols = display_columns(columns.as_ref(), None);
                 self.lines.push(format!(
                     "{pad}SubqueryScan(alias={prefix}, columns=[{cols}])"
                 ));
@@ -195,4 +187,34 @@ impl<'a> ExplainWriter<'a> {
         let _ = writeln!(s, "Total cost: {:.2}", self.total_cost);
         s
     }
+}
+
+/// Format a scan's projected columns for `EXPLAIN`, hiding internal helper
+/// columns (e.g. `__sort_0__`) and, when scanning a known table, keeping only
+/// that table's own columns so a join plan does not echo every column on both
+/// scans.
+fn display_columns(columns: Option<&Vec<String>>, table: Option<&str>) -> String {
+    let Some(cols) = columns else {
+        return "*".into();
+    };
+    let mut visible: Vec<&str> = cols
+        .iter()
+        .map(String::as_str)
+        .filter(|c| !is_internal_column(c))
+        .filter(|c| match (table, c.split_once('.')) {
+            // Qualified column on a table scan: keep only matching qualifier.
+            (Some(t), Some((qual, _))) => qual == t,
+            _ => true,
+        })
+        .collect();
+    visible.dedup();
+    if visible.is_empty() {
+        return "*".into();
+    }
+    visible.join(", ")
+}
+
+fn is_internal_column(name: &str) -> bool {
+    let bare = name.rsplit('.').next().unwrap_or(name);
+    bare.starts_with("__") && bare.ends_with("__")
 }

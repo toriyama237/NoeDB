@@ -41,25 +41,48 @@ fn parse_create_policy(
     })
 }
 
-pub(crate) fn parse_alter_table_rls(p: &mut Parser<'_>) -> Result<Statement, ParseError> {
+pub(crate) fn parse_alter_table(p: &mut Parser<'_>) -> Result<Statement, ParseError> {
     let start = p.expect_keyword(Keyword::Alter)?;
     p.expect_keyword(Keyword::Table)?;
     let table = p.parse_ident()?;
-    p.expect_keyword(Keyword::Enable)?;
-    p.expect_keyword(Keyword::Row)?;
-    p.expect_keyword(Keyword::Level)?;
-    p.expect_keyword(Keyword::Security)?;
-    p.expect_eof()?;
-    Ok(Statement::EnableRls(noedb_ast::EnableRlsStmt {
-        table,
-        span: Parser::merge_span(start, p.tokens[p.pos.saturating_sub(1)].span),
-    }))
+
+    if p.match_keyword(Keyword::Enable) {
+        p.expect_keyword(Keyword::Row)?;
+        p.expect_keyword(Keyword::Level)?;
+        p.expect_keyword(Keyword::Security)?;
+        p.expect_eof()?;
+        return Ok(Statement::EnableRls(noedb_ast::EnableRlsStmt {
+            table,
+            span: Parser::merge_span(start, p.tokens[p.pos.saturating_sub(1)].span),
+        }));
+    }
+
+    if p.match_keyword(Keyword::Add) {
+        let _ = p.match_keyword(Keyword::Column);
+        let column = parse_column_def(p)?;
+        p.expect_eof()?;
+        let end = p.tokens[p.pos.saturating_sub(1)].span;
+        return Ok(Statement::AlterTable(noedb_ast::AlterTableStmt {
+            table,
+            action: noedb_ast::AlterTableAction::AddColumn(column),
+            span: Parser::merge_span(start, end),
+        }));
+    }
+
+    Err(p.unexpected("ENABLE ROW LEVEL SECURITY or ADD COLUMN after ALTER TABLE"))
 }
 
 fn parse_create_table(
     p: &mut Parser<'_>,
     start: noedb_lexer::Span,
 ) -> Result<CreateTableStmt, ParseError> {
+    let if_not_exists = if p.match_keyword(Keyword::If) {
+        p.expect_keyword(Keyword::Not)?;
+        p.expect_keyword(Keyword::Exists)?;
+        true
+    } else {
+        false
+    };
     let name = p.parse_ident()?;
     p.expect_punct(Punctuation::LParen)?;
 
@@ -91,6 +114,7 @@ fn parse_create_table(
 
     Ok(CreateTableStmt {
         name,
+        if_not_exists,
         columns,
         primary_key,
         span: Parser::merge_span(start, end),
@@ -103,12 +127,15 @@ fn parse_column_def(p: &mut Parser<'_>) -> Result<ColumnDef, ParseError> {
     let data_type = crate::types::parse_sql_type(p)?;
     let mut not_null = false;
     let mut primary_key = false;
+    let mut unique = false;
     loop {
         if p.match_keyword(Keyword::Not) && p.match_keyword(Keyword::Null) {
             not_null = true;
         } else if p.match_keyword(Keyword::Primary) && p.match_keyword(Keyword::Key) {
             primary_key = true;
             not_null = true;
+        } else if p.match_keyword(Keyword::Unique) {
+            unique = true;
         } else {
             break;
         }
@@ -119,6 +146,7 @@ fn parse_column_def(p: &mut Parser<'_>) -> Result<ColumnDef, ParseError> {
         data_type,
         not_null,
         primary_key,
+        unique,
         span: Parser::merge_span(start, end),
     })
 }

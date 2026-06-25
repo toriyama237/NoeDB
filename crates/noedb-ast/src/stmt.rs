@@ -176,6 +176,8 @@ pub struct ColumnDef {
     pub not_null: bool,
     /// Whether `PRIMARY KEY` was specified on this column.
     pub primary_key: bool,
+    /// Whether a `UNIQUE` constraint was specified on this column.
+    pub unique: bool,
     /// Span of the column definition.
     pub span: Span,
 }
@@ -222,6 +224,8 @@ pub struct DeleteStmt {
 pub struct CreateTableStmt {
     /// New table name.
     pub name: Ident,
+    /// `IF NOT EXISTS` — skip when the table is already registered.
+    pub if_not_exists: bool,
     /// Column definitions.
     pub columns: Vec<ColumnDef>,
     /// Table-level `PRIMARY KEY (cols…)` when present.
@@ -272,6 +276,24 @@ pub struct EnableRlsStmt {
     pub table: Ident,
     /// Span covering the statement.
     pub span: Span,
+}
+
+/// `ALTER TABLE … ADD COLUMN …`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlterTableStmt {
+    /// Table being altered.
+    pub table: Ident,
+    /// Requested alteration.
+    pub action: AlterTableAction,
+    /// Span covering the statement.
+    pub span: Span,
+}
+
+/// Supported `ALTER TABLE` actions.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AlterTableAction {
+    /// `ADD COLUMN <def>`.
+    AddColumn(ColumnDef),
 }
 
 /// `PREPARE name AS …`.
@@ -365,6 +387,8 @@ pub enum Statement {
     SetRole(SetRoleStmt),
     /// `ALTER TABLE … ENABLE ROW LEVEL SECURITY`.
     EnableRls(EnableRlsStmt),
+    /// `ALTER TABLE … ADD COLUMN …`.
+    AlterTable(AlterTableStmt),
     /// `CREATE POLICY`.
     CreatePolicy(CreatePolicyStmt),
     /// `BEGIN` transaction.
@@ -393,6 +417,7 @@ impl Statement {
             Self::Execute(s) => s.span,
             Self::SetRole(s) => s.span,
             Self::EnableRls(s) => s.span,
+            Self::AlterTable(s) => s.span,
             Self::CreatePolicy(s) => s.span,
             Self::BeginTxn(s) => s.span,
             Self::CommitTxn(s) => s.span,

@@ -1,7 +1,7 @@
 //! Local and distributed SQL engines.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -86,6 +86,9 @@ fn value_to_string(v: &Value) -> String {
         Value::Float(f) => f.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Bytes(b) | Value::Date(b) => {
+            if b.len() == 1 && (b[0] == 0 || b[0] == 1) {
+                return (b[0] != 0).to_string();
+            }
             if let Some(v) = crate::dml::vector_from_bytes(b) {
                 format!(
                     "[{}]",
@@ -130,6 +133,7 @@ pub fn validate_sql(sql: &str) -> Result<(), EngineError> {
 
 /// Single-node engine (no Raft) — concurrent via interior mutability.
 pub struct LocalEngine {
+    data_dir: PathBuf,
     storage: Arc<RwLock<LsmTree>>,
     sessions: DashMap<u64, SessionContext>,
     prepare: Mutex<PrepareCache>,
@@ -172,9 +176,11 @@ impl LocalEngine {
         let data_dir = path.as_ref().to_path_buf();
         let tree = LsmTree::open(&data_dir, config)?;
         let audit = AuditLog::open(&data_dir)?;
+        let schema = SchemaCatalog::load(&data_dir).map_err(EngineError::from)?;
         let sessions = DashMap::new();
         sessions.insert(DEFAULT_SESSION, SessionContext::dev());
         Ok(Arc::new(Self {
+            data_dir,
             storage: Arc::new(RwLock::new(tree)),
             sessions,
             prepare: Mutex::new(PrepareCache::default()),
@@ -182,7 +188,7 @@ impl LocalEngine {
             audit,
             txn: Arc::new(TxnManager::new()),
             cache: Mutex::new(QueryCache::default()),
-            schema: Mutex::new(SchemaCatalog::default()),
+            schema: Mutex::new(schema),
             vector_indexes: Mutex::new(VectorIndexCatalog::default()),
             metrics: Metrics::new_shared(),
             memory: Arc::new(MemoryBudget::from_env()),
@@ -390,6 +396,13 @@ impl LocalEngine {
         result
     }
 
+    fn persist_schema(&self) -> Result<(), EngineError> {
+        self.schema
+            .lock()
+            .save(&self.data_dir)
+            .map_err(EngineError::from)
+    }
+
     fn dispatch(
         &self,
         session_id: u64,
@@ -438,12 +451,32 @@ impl LocalEngine {
                 self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
             }
+            Statement::AlterTable(a) => {
+                let noedb_ast::AlterTableAction::AddColumn(col) = &a.action;
+                let ts = self.txn.oracle().next();
+                let meta = crate::schema::ColumnMeta {
+                    name: col.name.value.clone(),
+                    data_type: col.data_type.clone(),
+                    not_null: col.not_null || col.primary_key,
+                    primary_key: col.primary_key,
+                    unique: col.unique,
+                };
+                self.schema.lock().add_column(&a.table.value, meta, ts)?;
+                self.cache.lock().invalidate_table(&a.table.value);
+                self.persist_schema()?;
+                self.audit_record(session_id, sql, 0)?;
+                Ok(empty_ok())
+            }
             Statement::CreatePolicy(p) => {
                 self.rls.lock().add_policy(&p);
                 self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
             }
             Statement::CreateTable(t) => {
+                if t.if_not_exists && self.schema.lock().contains(&t.name.value) {
+                    self.audit_record(session_id, sql, 0)?;
+                    return Ok(empty_ok());
+                }
                 let ts = self.txn.oracle().next();
                 let pk_from_table: Vec<String> =
                     t.primary_key.iter().map(|c| c.value.clone()).collect();
@@ -455,6 +488,7 @@ impl LocalEngine {
                         data_type: c.data_type.clone(),
                         not_null: c.not_null || c.primary_key,
                         primary_key: c.primary_key,
+                        unique: c.unique,
                     })
                     .collect();
                 let pk = if pk_from_table.is_empty() {
@@ -467,11 +501,20 @@ impl LocalEngine {
                 };
                 self.schema
                     .lock()
-                    .create_table(&t.name.value, ts, cols.clone(), pk);
+                    .create_table(&t.name.value, ts, cols.clone(), pk)?;
                 self.vector_indexes
                     .lock()
                     .register_table_schema(&t.name.value, &cols);
                 self.cache.lock().invalidate_table("");
+                self.persist_schema()?;
+                self.audit_record(session_id, sql, 0)?;
+                Ok(empty_ok())
+            }
+            Statement::DropTable(t) => {
+                self.schema.lock().drop_table(&t.name.value)?;
+                self.vector_indexes.lock().drop_table(&t.name.value);
+                self.cache.lock().invalidate_table(&t.name.value);
+                self.persist_schema()?;
                 self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
             }
@@ -516,7 +559,8 @@ impl LocalEngine {
         let in_txn = self.txn.in_txn(session_id);
         let txn = in_txn.then_some((self.txn.as_ref(), session_id));
         let result = if in_txn && matches!(stmt, Statement::Select(_)) {
-            execute_select_in_txn(self.txn.clone(), session_id, &stmt, &self.storage)?
+            let qschema = self.schema.lock().query_schema();
+            execute_select_in_txn(self.txn.clone(), session_id, &stmt, &self.storage, &qschema)?
         } else if matches!(stmt, Statement::Select(_)) {
             if let Some(hit) = crate::knn::try_hnsw_select(self, &stmt)? {
                 hit

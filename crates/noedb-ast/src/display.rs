@@ -61,6 +61,8 @@ fn keyword_display(kw: Keyword) -> &'static str {
         Keyword::True => "TRUE",
         Keyword::False => "FALSE",
         Keyword::Alter => "ALTER",
+        Keyword::Add => "ADD",
+        Keyword::Column => "COLUMN",
         Keyword::Enable => "ENABLE",
         Keyword::Execute => "EXECUTE",
         Keyword::Prepare => "PREPARE",
@@ -83,6 +85,7 @@ fn keyword_display(kw: Keyword) -> &'static str {
         Keyword::Cast => "CAST",
         Keyword::All => "ALL",
         Keyword::Union => "UNION",
+        Keyword::Unique => "UNIQUE",
         Keyword::Intersect => "INTERSECT",
         Keyword::Except => "EXCEPT",
         Keyword::With => "WITH",
@@ -215,6 +218,7 @@ impl fmt::Display for Expr {
                 write!(f, "{query}")?;
                 write!(f, ")")
             }
+            Self::ScalarSubquery { query, .. } => write!(f, "({query})"),
             Self::Between {
                 expr,
                 low,
@@ -362,8 +366,10 @@ fn binary_op(op: BinaryOp) -> &'static str {
         BinaryOp::Or => "OR",
         BinaryOp::Plus => "+",
         BinaryOp::Minus => "-",
-        BinaryOp::Like => "LIKE",
         BinaryOp::Div => "/",
+        BinaryOp::Mul => "*",
+        BinaryOp::Mod => "%",
+        BinaryOp::Like => "LIKE",
         BinaryOp::Distance => "<->",
     }
 }
@@ -606,6 +612,10 @@ impl fmt::Display for ColumnDef {
             write!(f, " ")?;
             write_keyword(f, Keyword::Key)?;
         }
+        if self.unique {
+            write!(f, " ")?;
+            write_keyword(f, Keyword::Unique)?;
+        }
         Ok(())
     }
 }
@@ -789,6 +799,27 @@ impl fmt::Display for Statement {
                 write_keyword(f, Keyword::Level)?;
                 write!(f, " ")?;
                 write_keyword(f, Keyword::Security)
+            }
+            Self::AlterTable(s) => {
+                write_keyword(f, Keyword::Alter)?;
+                write!(f, " ")?;
+                write_keyword(f, Keyword::Table)?;
+                write!(f, " {} ", s.table)?;
+                match &s.action {
+                    crate::stmt::AlterTableAction::AddColumn(col) => {
+                        write_keyword(f, Keyword::Add)?;
+                        write!(f, " ")?;
+                        write_keyword(f, Keyword::Column)?;
+                        write!(f, " {} {}", col.name, col.data_type)?;
+                        if col.not_null {
+                            write!(f, " ")?;
+                            write_keyword(f, Keyword::Not)?;
+                            write!(f, " ")?;
+                            write_keyword(f, Keyword::Null)?;
+                        }
+                        Ok(())
+                    }
+                }
             }
             Self::CreatePolicy(s) => {
                 write_keyword(f, Keyword::Create)?;

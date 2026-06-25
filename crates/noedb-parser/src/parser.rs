@@ -56,7 +56,7 @@ impl<'a> Parser<'a> {
             Token::Keyword(Keyword::Drop) => {
                 crate::ddl::parse_drop_table(self).map(Statement::DropTable)
             }
-            Token::Keyword(Keyword::Alter) => crate::ddl::parse_alter_table_rls(self),
+            Token::Keyword(Keyword::Alter) => crate::ddl::parse_alter_table(self),
             Token::Keyword(Keyword::Analyze) => crate::analyze::parse_analyze(self),
             Token::Keyword(Keyword::Prepare) => crate::prepare::parse_prepare(self),
             Token::Keyword(Keyword::Execute) => crate::prepare::parse_execute(self),
@@ -193,6 +193,7 @@ impl<'a> Parser<'a> {
             Operator::Plus => noedb_ast::BinaryOp::Plus,
             Operator::Minus => noedb_ast::BinaryOp::Minus,
             Operator::Div => noedb_ast::BinaryOp::Div,
+            Operator::Mod => noedb_ast::BinaryOp::Mod,
             Operator::Distance => noedb_ast::BinaryOp::Distance,
             _ => noedb_ast::BinaryOp::Eq,
         }

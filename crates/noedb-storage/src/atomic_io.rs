@@ -7,7 +7,7 @@ use std::path::Path;
 use crate::error::StorageError;
 
 /// Write `content` to `path` via a temporary file and atomic rename.
-pub(crate) fn atomic_write(path: &Path, content: &[u8]) -> Result<(), StorageError> {
+pub fn atomic_write(path: &Path, content: &[u8]) -> Result<(), StorageError> {
     let parent = path
         .parent()
         .ok_or_else(|| StorageError::invalid_input("atomic write path has no parent"))?;

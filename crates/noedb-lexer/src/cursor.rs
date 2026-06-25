@@ -91,6 +91,8 @@ impl<'src> Cursor<'src> {
                 | b'>'
                 | b'+'
                 | b'-'
+                | b'/'
+                | b'%'
                 | b'$'
         )
     }
@@ -222,6 +224,7 @@ impl<'src> Cursor<'src> {
             b'+' => Token::Op(Operator::Plus),
             b'-' => Token::Op(Operator::Minus),
             b'/' => Token::Op(Operator::Div),
+            b'%' => Token::Op(Operator::Mod),
             b'!' if self.peek_byte() == Some(b'=') => {
                 self.bump();
                 Token::Op(Operator::Ne)

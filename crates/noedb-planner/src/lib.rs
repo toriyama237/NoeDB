@@ -15,6 +15,7 @@ mod cte;
 mod eval;
 mod executor;
 mod explain;
+mod fold;
 mod index;
 mod join;
 mod logical;
@@ -112,10 +113,12 @@ pub fn execute_sql_on_with_schema<S: StorageEngine<Error = StorageError>>(
     index_store: &LsmTree,
     schema: Option<&QuerySchema>,
 ) -> Result<Vec<Record>, ExecError> {
+    let folded = fold::fold_scalar_subqueries(stmt, exec_store, index_store, schema)?;
+    let stmt = folded.as_ref().unwrap_or(stmt);
     let cte_tables = if let Statement::Select(s) = stmt {
         s.with_clause
             .as_ref()
-            .map(|with| cte::materialize_with_clause(with, exec_store, index_store))
+            .map(|with| cte::materialize_with_clause(with, exec_store, index_store, schema))
             .transpose()?
             .unwrap_or_default()
     } else {
@@ -159,6 +162,10 @@ pub fn explain_sql_with_schema(
     store: &LsmTree,
     schema: Option<&QuerySchema>,
 ) -> Result<String, PlanError> {
+    let folded = fold::fold_scalar_subqueries(stmt, store, store, schema)
+        .ok()
+        .flatten();
+    let stmt = folded.as_ref().unwrap_or(stmt);
     let logical = build_with_schema(stmt, schema)?;
     let stats = load_plan_stats(store);
     let ctx = PlanContext::with_stats(store, stats);

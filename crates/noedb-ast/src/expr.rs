@@ -49,6 +49,10 @@ pub enum BinaryOp {
     Minus,
     /// `/`
     Div,
+    /// `%`
+    Mod,
+    /// `*`
+    Mul,
     /// `LIKE`
     Like,
     /// Vector L2 distance `<->` (pgvector-style).
@@ -131,6 +135,13 @@ pub enum Expr {
         /// Span covering the whole predicate.
         span: Span,
     },
+    /// `(SELECT …)` used as a scalar value (single row, single column).
+    ScalarSubquery {
+        /// Subquery body.
+        query: Box<SelectStmt>,
+        /// Span covering the whole expression.
+        span: Span,
+    },
     /// `expr [NOT] BETWEEN low AND high`.
     Between {
         /// Subject expression.
@@ -202,6 +213,7 @@ impl Expr {
             | Self::In { span, .. }
             | Self::InSubquery { span, .. }
             | Self::Exists { span, .. }
+            | Self::ScalarSubquery { span, .. }
             | Self::Between { span, .. }
             | Self::Paren(_, span)
             | Self::Parameter { span, .. }

@@ -5,6 +5,7 @@ use crate::token::Keyword;
 static KW_LEN_02: &[(&str, Keyword)] = &[
     ("AS", Keyword::As),
     ("BY", Keyword::By),
+    ("IF", Keyword::If),
     ("IN", Keyword::In),
     ("IS", Keyword::Is),
     ("OF", Keyword::Of),
@@ -14,6 +15,7 @@ static KW_LEN_02: &[(&str, Keyword)] = &[
 ];
 
 static KW_LEN_03: &[(&str, Keyword)] = &[
+    ("ADD", Keyword::Add),
     ("ALL", Keyword::All),
     ("AND", Keyword::And),
     ("ANY", Keyword::Any),
