@@ -43,7 +43,7 @@ pub enum LogicalPlan {
         /// Projection items.
         items: Vec<SelectItem>,
     },
-    /// Inner join.
+    /// Inner or left-outer join.
     Join {
         /// Left subtree.
         left: Box<Self>,
@@ -51,6 +51,8 @@ pub enum LogicalPlan {
         right: Box<Self>,
         /// `ON` predicate.
         on: Expr,
+        /// `true` for `LEFT [OUTER] JOIN` (unmatched left rows are preserved).
+        left_outer: bool,
     },
     /// Hash aggregate (`GROUP BY` / global agg).
     Aggregate {

@@ -85,18 +85,12 @@ fn decorrelate_exists(
 
     let mut inner_stmt = pred.query.clone();
     inner_stmt.where_clause = inner_where;
-    let inner_plan = crate::build::build_select_scoped(&inner_stmt, cte_scope, None)?;
 
     if corr.is_empty() {
+        let inner_plan = crate::build::build_select_scoped(&inner_stmt, cte_scope, None)?;
         let has_rows = !matches!(inner_plan, LogicalPlan::Scan { table, .. } if table.is_empty())
             && !inner_tables.is_empty();
-        if pred.negated == has_rows {
-            return Ok(LogicalPlan::Filter {
-                input: Box::new(plan),
-                predicate: Expr::Literal(noedb_ast::Literal::Boolean(false, pred.query.span)),
-            });
-        }
-        if !pred.negated && !has_rows {
+        if (pred.negated == has_rows) || (!pred.negated && !has_rows) {
             return Ok(LogicalPlan::Filter {
                 input: Box::new(plan),
                 predicate: Expr::Literal(noedb_ast::Literal::Boolean(false, pred.query.span)),
@@ -105,10 +99,23 @@ fn decorrelate_exists(
         return Ok(plan);
     }
 
-    let inner_key = subquery_column_name(&pred.query)?;
-    let (left_key, right_key) =
-        extract_exists_join_keys(&corr, &inner_key, outer_tables, &inner_tables)
-            .unwrap_or_else(|| ("__exists_outer__".into(), inner_key.clone()));
+    // Correlated EXISTS: derive the semi-join keys. Prefer the column the
+    // subquery projects (legacy path); when the projection is not a plain
+    // column — e.g. `EXISTS (SELECT 1 …)` or `SELECT *` — derive the inner key
+    // from the correlation predicate and project it so the semi-join can read
+    // the value back.
+    let (left_key, right_key) = match subquery_column_name(&pred.query) {
+        Ok(inner_key) => extract_exists_join_keys(&corr, &inner_key, outer_tables, &inner_tables)
+            .unwrap_or_else(|| ("__exists_outer__".into(), inner_key.clone())),
+        Err(_) => {
+            let (lk, rk) = exists_join_keys(&corr, outer_tables, &inner_tables)
+                .ok_or(PlanError::UnsupportedStatement)?;
+            inner_stmt.items = vec![bare_column_item(&rk, pred.query.span)];
+            (lk, rk)
+        }
+    };
+
+    let inner_plan = crate::build::build_select_scoped(&inner_stmt, cte_scope, None)?;
     let corr_on = and_exprs(corr);
 
     Ok(LogicalPlan::SemiJoin {
@@ -119,6 +126,52 @@ fn decorrelate_exists(
         corr_on,
         negated: pred.negated,
     })
+}
+
+/// Derive `(outer_key, inner_key)` directly from a correlation equality such as
+/// `inner.col = outer.col`, used when the `EXISTS` subquery does not project a
+/// plain column to key on.
+fn exists_join_keys(
+    corr: &[Expr],
+    outer_tables: &[String],
+    inner_tables: &[String],
+) -> Option<(String, String)> {
+    for expr in corr {
+        let Expr::Binary {
+            op: BinaryOp::Eq,
+            left,
+            right,
+            ..
+        } = expr
+        else {
+            continue;
+        };
+        match (
+            side_column(left, outer_tables, inner_tables),
+            side_column(right, outer_tables, inner_tables),
+        ) {
+            (Some((true, outer_col)), Some((false, inner_col)))
+            | (Some((false, inner_col)), Some((true, outer_col))) => {
+                return Some((
+                    unqualified_column(&outer_col),
+                    unqualified_column(&inner_col),
+                ));
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Build a bare `column` projection item for a synthesised inner projection.
+fn bare_column_item(col: &str, span: noedb_lexer::Span) -> noedb_ast::SelectItem {
+    noedb_ast::SelectItem {
+        expr: Expr::Column(ColumnRef::Named {
+            table: None,
+            column: noedb_ast::Ident::new(col.to_string(), span),
+        }),
+        alias: None,
+    }
 }
 
 fn extract_exists_join_keys(

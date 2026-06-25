@@ -365,10 +365,27 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
             right,
             left_key,
             right_key,
+            left_outer,
             ..
         } => {
             let left_rows = execute_to_rows(*left, ctx)?;
             let right_rows = execute_to_rows(*right, ctx)?;
+            // For LEFT joins, gather the right side's column names so unmatched
+            // left rows can be padded with NULLs (a projection of a missing
+            // column would otherwise error rather than yield NULL).
+            let right_cols: Vec<String> = if left_outer {
+                let mut cols: Vec<String> = Vec::new();
+                for row in &right_rows {
+                    for (name, _) in row {
+                        if !cols.iter().any(|c| c == name) {
+                            cols.push(name.clone());
+                        }
+                    }
+                }
+                cols
+            } else {
+                Vec::new()
+            };
             let mut buckets: HashMap<Vec<u8>, Vec<RowMap>> = HashMap::new();
             for row in right_rows {
                 if let Some(key) = join_key_value(&row, &right_key) {
@@ -377,14 +394,23 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
             }
             let mut out = Vec::new();
             for lrow in left_rows {
-                let Some(key) = join_key_value(&lrow, &left_key) else {
-                    continue;
-                };
-                let Some(matches) = buckets.get(&key) else {
-                    continue;
-                };
-                for rrow in matches {
-                    out.push(merge_rows(&lrow, rrow));
+                let matches = join_key_value(&lrow, &left_key).and_then(|key| buckets.get(&key));
+                match matches {
+                    Some(matches) if !matches.is_empty() => {
+                        for rrow in matches {
+                            out.push(merge_rows(&lrow, rrow));
+                        }
+                    }
+                    _ if left_outer => {
+                        let mut row = lrow;
+                        for col in &right_cols {
+                            if !row.iter().any(|(n, _)| n == col) {
+                                row.push((col.clone(), Value::Null));
+                            }
+                        }
+                        out.push(row);
+                    }
+                    _ => {}
                 }
             }
             Ok(ExecState::HashJoin {
@@ -872,6 +898,7 @@ mod join_tests {
             on: on_expr,
             left_key: keys.left,
             right_key: keys.right,
+            left_outer: false,
         };
         let rows = execute(plan, &ctx).unwrap();
         assert_eq!(rows.len(), 1);

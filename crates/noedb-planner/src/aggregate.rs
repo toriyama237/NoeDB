@@ -73,6 +73,13 @@ fn column_arg(args: &[Expr]) -> Result<String, PlanError> {
 
 fn expr_column_key(expr: &Expr) -> Result<String, PlanError> {
     match expr {
+        // Preserve the table qualifier so an aggregate over `a.id` resolves the
+        // right side of a join rather than colliding with `c.id` (matters for
+        // `COUNT(a.id)` over a LEFT JOIN where unmatched rows are NULL).
+        Expr::Column(ColumnRef::Named {
+            table: Some(t),
+            column,
+        }) => Ok(format!("{}.{}", t.value, column.value)),
         Expr::Column(ColumnRef::Named { column, .. }) => Ok(column.value.clone()),
         Expr::Cast { expr, .. } => expr_column_key(expr),
         _ => Err(PlanError::UnsupportedStatement),
@@ -85,6 +92,10 @@ fn parse_count_args(args: &[Expr]) -> Result<AggFunc, PlanError> {
         1 => match &args[0] {
             Expr::Column(ColumnRef::Star { .. })
             | Expr::Column(ColumnRef::QualifiedStar { .. }) => Ok(AggFunc::CountStar),
+            Expr::Column(ColumnRef::Named {
+                table: Some(t),
+                column,
+            }) => Ok(AggFunc::CountCol(format!("{}.{}", t.value, column.value))),
             Expr::Column(ColumnRef::Named { column, .. }) => {
                 Ok(AggFunc::CountCol(column.value.clone()))
             }
@@ -229,7 +240,7 @@ fn having_expr_matches(a: &Expr, b: &Expr) -> bool {
                 ..
             },
         ) => {
-            n1 == n2
+            n1.value.eq_ignore_ascii_case(&n2.value)
                 && o1.is_none()
                 && o2.is_none()
                 && a1.len() == a2.len()
@@ -261,8 +272,13 @@ fn having_expr_matches(a: &Expr, b: &Expr) -> bool {
                 column: c2,
                 ..
             }),
-        ) => t1 == t2 && c1 == c2,
-        (Expr::Literal(l1), Expr::Literal(l2)) => l1 == l2,
+        ) => opt_ident_value_eq(t1, t2) && c1.value == c2.value,
+        (Expr::Column(ColumnRef::Star { .. }), Expr::Column(ColumnRef::Star { .. })) => true,
+        (
+            Expr::Column(ColumnRef::QualifiedStar { table: t1, .. }),
+            Expr::Column(ColumnRef::QualifiedStar { table: t2, .. }),
+        ) => t1.value == t2.value,
+        (Expr::Literal(l1), Expr::Literal(l2)) => literal_value_eq(l1, l2),
         (
             Expr::Binary {
                 op: o1,
@@ -286,6 +302,29 @@ fn having_expr_matches(a: &Expr, b: &Expr) -> bool {
             },
         ) => o1 == o2 && having_expr_matches(e1, e2),
         (Expr::Paren(e1, _), Expr::Paren(e2, _)) => having_expr_matches(e1, e2),
+        _ => false,
+    }
+}
+
+/// Compare optional table qualifiers by name only (ignoring source spans), so
+/// the same aggregate written in `SELECT` and `HAVING` is treated as a match.
+fn opt_ident_value_eq(a: &Option<noedb_ast::Ident>, b: &Option<noedb_ast::Ident>) -> bool {
+    match (a, b) {
+        (Some(x), Some(y)) => x.value == y.value,
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+/// Compare literals by value, ignoring the source span carried on each variant.
+fn literal_value_eq(a: &noedb_ast::Literal, b: &noedb_ast::Literal) -> bool {
+    use noedb_ast::Literal::{Boolean, Float, Integer, Null, String as Str};
+    match (a, b) {
+        (Null { .. }, Null { .. }) => true,
+        (Integer(x, _), Integer(y, _)) => x == y,
+        (Float(x, _), Float(y, _)) => x == y,
+        (Str(x, _), Str(y, _)) => x == y,
+        (Boolean(x, _), Boolean(y, _)) => x == y,
         _ => false,
     }
 }

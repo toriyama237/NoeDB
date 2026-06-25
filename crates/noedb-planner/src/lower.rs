@@ -20,7 +20,12 @@ pub fn lower(logical: LogicalPlan) -> PhysicalPlan {
             input: Box::new(lower(*input)),
             items,
         },
-        LogicalPlan::Join { left, right, on } => {
+        LogicalPlan::Join {
+            left,
+            right,
+            on,
+            left_outer,
+        } => {
             use crate::join::extract_equi_join;
             let keys = extract_equi_join(&on);
             PhysicalPlan::HashJoin {
@@ -29,6 +34,7 @@ pub fn lower(logical: LogicalPlan) -> PhysicalPlan {
                 on,
                 left_key: keys.as_ref().map_or_else(String::new, |k| k.left.clone()),
                 right_key: keys.as_ref().map_or_else(String::new, |k| k.right.clone()),
+                left_outer,
             }
         }
         LogicalPlan::Aggregate {

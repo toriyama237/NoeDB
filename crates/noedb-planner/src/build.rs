@@ -73,6 +73,7 @@ pub fn build_select_scoped(
             left: Box::new(plan),
             right: Box::new(table_scan(&join.table, cte_scope, true)),
             on: join.on.clone(),
+            left_outer: matches!(join.kind, noedb_ast::JoinKind::Left),
         };
     }
 

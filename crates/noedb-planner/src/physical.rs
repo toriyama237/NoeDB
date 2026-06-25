@@ -53,6 +53,9 @@ pub enum PhysicalPlan {
         left_key: String,
         /// Right join key column.
         right_key: String,
+        /// `true` for `LEFT [OUTER] JOIN`: unmatched left rows are emitted with
+        /// `NULL`-padded right columns.
+        left_outer: bool,
     },
     /// Nested-loop join (Week 22).
     NestedLoopJoin {

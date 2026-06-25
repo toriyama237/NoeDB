@@ -1,6 +1,8 @@
 //! Row Level Security policies (Phase 1 Week 5).
 
-use noedb_ast::{BinaryOp, CreatePolicyStmt, Expr, FromItem, SelectStmt, Statement};
+use noedb_ast::{
+    BinaryOp, CreatePolicyStmt, DeleteStmt, Expr, FromItem, SelectStmt, Statement, UpdateStmt,
+};
 
 /// One RLS policy on a table.
 #[derive(Debug, Clone)]
@@ -39,29 +41,62 @@ impl RlsCatalog {
         self.enabled.contains(&table.to_ascii_lowercase())
     }
 
+    /// Build the AND-combined, session-materialized policy predicate for a
+    /// table, or `None` when RLS is not enforced for it.
+    fn policy_predicate(&self, table: &str, role: &str) -> Option<Expr> {
+        if !self.is_enabled(table) {
+            return None;
+        }
+        let policies = self.policies.get(&table.to_ascii_lowercase())?;
+        let mut combined: Option<Expr> = None;
+        for policy in policies {
+            let pred = materialize_session(&policy.using_expr, role);
+            combined = Some(match combined {
+                None => pred,
+                Some(existing) => and_expr(existing, pred),
+            });
+        }
+        combined
+    }
+
     /// Inject policy predicates into a `SELECT` (AND-combined with existing `WHERE`).
     pub fn apply_select(&self, mut select: SelectStmt, role: &str) -> SelectStmt {
         let Some(from) = select.from.as_ref() else {
             return select;
         };
         let table_name = match from {
-            FromItem::Table(t) => &t.name.value,
+            FromItem::Table(t) => t.name.value.clone(),
             FromItem::Subquery { .. } => return select,
         };
-        if !self.is_enabled(table_name) {
-            return select;
-        }
-        let Some(policies) = self.policies.get(&table_name.to_ascii_lowercase()) else {
-            return select;
-        };
-        for policy in policies {
-            let pred = materialize_session(&policy.using_expr, role);
-            select.where_clause = Some(match select.where_clause.take() {
-                None => pred,
-                Some(existing) => and_expr(existing, pred),
-            });
+        if let Some(pred) = self.policy_predicate(&table_name, role) {
+            select.where_clause = Some(merge_where(select.where_clause.take(), pred));
         }
         select
+    }
+
+    /// Inject policy predicates into an `UPDATE` so a session can only modify
+    /// rows it is allowed to see.
+    pub fn apply_update(&self, mut upd: UpdateStmt, role: &str) -> UpdateStmt {
+        if let Some(pred) = self.policy_predicate(&upd.table.value, role) {
+            upd.where_clause = Some(merge_where(upd.where_clause.take(), pred));
+        }
+        upd
+    }
+
+    /// Inject policy predicates into a `DELETE` so a session can only delete
+    /// rows it is allowed to see.
+    pub fn apply_delete(&self, mut del: DeleteStmt, role: &str) -> DeleteStmt {
+        if let Some(pred) = self.policy_predicate(&del.table.value, role) {
+            del.where_clause = Some(merge_where(del.where_clause.take(), pred));
+        }
+        del
+    }
+}
+
+fn merge_where(existing: Option<Expr>, pred: Expr) -> Expr {
+    match existing {
+        None => pred,
+        Some(e) => and_expr(e, pred),
     }
 }
 
@@ -144,6 +179,8 @@ fn and_expr(left: Expr, right: Expr) -> Expr {
 pub fn apply_rls(stmt: Statement, catalog: &RlsCatalog, role: &str) -> Statement {
     match stmt {
         Statement::Select(s) => Statement::Select(catalog.apply_select(s, role)),
+        Statement::Update(u) => Statement::Update(catalog.apply_update(u, role)),
+        Statement::Delete(d) => Statement::Delete(catalog.apply_delete(d, role)),
         other => other,
     }
 }

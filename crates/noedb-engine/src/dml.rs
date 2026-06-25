@@ -76,6 +76,12 @@ pub(crate) fn execute_insert(
         }
         let row_id = value_to_row_id(&values[0]);
         enforce_primary_key(table, &col_names, &values, schema, tree, txn)?;
+
+        // Pre-flight: validate constraints and encode every cell BEFORE writing
+        // any of them, so a rejected row never leaves a partial/corrupt row
+        // behind (e.g. a NOT NULL failure on a later column after the earlier
+        // cells were already persisted).
+        let mut pending: Vec<(&str, Vec<u8>, Option<Value>)> = Vec::with_capacity(col_names.len());
         for (col, val) in col_names.iter().zip(values) {
             if let Some(meta) = schema.column(table, col) {
                 if meta.not_null && matches!(val, Value::Null) {
@@ -84,15 +90,16 @@ pub(crate) fn execute_insert(
                     }));
                 }
                 let bytes = encode_for_type(&val, &meta.data_type)?;
-                write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
-                if let Some(ref mut catalog) = vectors {
-                    if matches!(meta.data_type, SqlType::Vector { .. }) {
-                        catalog.upsert(table, col, &row_id, &val);
-                    }
-                }
+                let vector = matches!(meta.data_type, SqlType::Vector { .. }).then_some(val);
+                pending.push((col.as_str(), bytes, vector));
             } else {
-                let bytes = value_to_bytes(&val);
-                write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
+                pending.push((col.as_str(), value_to_bytes(&val), None));
+            }
+        }
+        for (col, bytes, vector) in pending {
+            write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
+            if let (Some(val), Some(catalog)) = (vector, vectors.as_deref_mut()) {
+                catalog.upsert(table, col, &row_id, &val);
             }
         }
         if txn.is_none() {
@@ -138,6 +145,10 @@ pub(crate) fn execute_update(
     };
     let mut updated = 0u64;
     for (row_id, row) in rows {
+        // Validate and encode every assignment before writing any cell so a
+        // rejected update cannot leave the row half-modified.
+        let mut pending: Vec<(&str, Vec<u8>, Option<Value>)> =
+            Vec::with_capacity(upd.assignments.len());
         for (col_ident, expr) in &upd.assignments {
             let col = &col_ident.value;
             let val = eval_expr(expr, &row).map_err(EngineError::Exec)?;
@@ -148,15 +159,16 @@ pub(crate) fn execute_update(
                     }));
                 }
                 let bytes = encode_for_type(&val, &meta.data_type)?;
-                write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
-                if let Some(ref mut catalog) = vectors {
-                    if matches!(meta.data_type, SqlType::Vector { .. }) {
-                        catalog.upsert(table, col, &row_id, &val);
-                    }
-                }
+                let vector = matches!(meta.data_type, SqlType::Vector { .. }).then_some(val);
+                pending.push((col.as_str(), bytes, vector));
             } else {
-                let bytes = value_to_bytes(&val);
-                write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
+                pending.push((col.as_str(), value_to_bytes(&val), None));
+            }
+        }
+        for (col, bytes, vector) in pending {
+            write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
+            if let (Some(val), Some(catalog)) = (vector, vectors.as_deref_mut()) {
+                catalog.upsert(table, col, &row_id, &val);
             }
         }
         updated += 1;

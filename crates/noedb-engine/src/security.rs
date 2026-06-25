@@ -56,6 +56,7 @@ fn requires_admin(stmt: &Statement) -> bool {
             | Statement::EnableRls(_)
             | Statement::CreatePolicy(_)
             | Statement::AnalyzeTable(_)
+            | Statement::AlterTable(_)
     )
 }
 

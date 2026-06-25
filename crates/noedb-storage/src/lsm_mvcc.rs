@@ -54,17 +54,34 @@ impl LsmTree {
 
     /// Prune internal keys with `commit_ts < min_retain_ts` from the active memtable.
     pub fn gc_mvcc_active(&mut self, min_retain_ts: CommitTs) -> usize {
+        use std::collections::HashMap;
+        // Determine the newest commit_ts per user key first. We must NEVER
+        // collect a key's latest version (it is the live value); only
+        // superseded older versions below the retain watermark are eligible.
+        // Dropping the latest version unconditionally would silently delete
+        // rows that simply have not been updated recently.
+        let mut latest: HashMap<Vec<u8>, CommitTs> = HashMap::new();
+        for (ik, raw) in self.active.iter() {
+            if let Ok(v) = decode_or_legacy(&raw) {
+                let uk = decode_user_key(&ik).to_vec();
+                let slot = latest.entry(uk).or_insert(0);
+                if v.commit_ts > *slot {
+                    *slot = v.commit_ts;
+                }
+            }
+        }
         let keys: Vec<Vec<u8>> = self
             .active
             .iter()
             .filter_map(|(ik, raw)| {
-                decode_or_legacy(&raw).ok().and_then(|v| {
-                    if v.commit_ts > 0 && v.commit_ts < min_retain_ts {
-                        Some(ik.clone())
-                    } else {
-                        None
-                    }
-                })
+                let v = decode_or_legacy(&raw).ok()?;
+                let uk = decode_user_key(&ik);
+                let is_latest = latest.get(uk).is_some_and(|newest| *newest == v.commit_ts);
+                if v.commit_ts > 0 && v.commit_ts < min_retain_ts && !is_latest {
+                    Some(ik.clone())
+                } else {
+                    None
+                }
             })
             .collect();
         let n = keys.len();

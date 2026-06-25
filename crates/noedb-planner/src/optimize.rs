@@ -44,20 +44,35 @@ pub fn optimize(logical: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
 fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
     match plan {
         LogicalPlan::Filter { input, predicate } => match *input {
-            LogicalPlan::Join { left, right, on: _ } if extract_equi_join(&predicate).is_some() => {
+            // Only fuse the `WHERE` equi-predicate into an INNER join's `ON`;
+            // doing so on a LEFT join would drop NULL-extended rows and change
+            // its semantics.
+            LogicalPlan::Join {
+                left,
+                right,
+                on: _,
+                left_outer,
+            } if !left_outer && extract_equi_join(&predicate).is_some() => {
                 pushdown_predicates(LogicalPlan::Join {
                     left: Box::new(pushdown_predicates(*left)),
                     right: Box::new(pushdown_predicates(*right)),
                     on: predicate,
+                    left_outer,
                 })
             }
-            LogicalPlan::Join { left, right, on } => {
+            LogicalPlan::Join {
+                left,
+                right,
+                on,
+                left_outer,
+            } => {
                 let left = pushdown_predicates(*left);
                 let right = pushdown_predicates(*right);
                 let join = LogicalPlan::Join {
                     left: Box::new(left),
                     right: Box::new(right),
                     on,
+                    left_outer,
                 };
                 LogicalPlan::Filter {
                     input: Box::new(join),
@@ -73,10 +88,16 @@ fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
             input: Box::new(pushdown_predicates(*input)),
             items,
         },
-        LogicalPlan::Join { left, right, on } => LogicalPlan::Join {
+        LogicalPlan::Join {
+            left,
+            right,
+            on,
+            left_outer,
+        } => LogicalPlan::Join {
             left: Box::new(pushdown_predicates(*left)),
             right: Box::new(pushdown_predicates(*right)),
             on,
+            left_outer,
         },
         LogicalPlan::Aggregate {
             input,
@@ -171,7 +192,12 @@ fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
             input: Box::new(to_physical(*input, ctx)),
             items,
         },
-        LogicalPlan::Join { left, right, on } => {
+        LogicalPlan::Join {
+            left,
+            right,
+            on,
+            left_outer,
+        } => {
             let left_p = to_physical(*left, ctx);
             let right_p = to_physical(*right, ctx);
             let keys = extract_equi_join(&on);
@@ -181,7 +207,13 @@ fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
                 on: on.clone(),
                 left_key: keys.as_ref().map_or_else(String::new, |k| k.left.clone()),
                 right_key: keys.as_ref().map_or_else(String::new, |k| k.right.clone()),
+                left_outer,
             };
+            // LEFT OUTER semantics are only implemented in the hash-join
+            // operator, so keep it rather than the cost-based alternatives.
+            if left_outer {
+                return hash;
+            }
             let nested = PhysicalPlan::NestedLoopJoin {
                 left: Box::new(left_p.clone()),
                 right: Box::new(right_p.clone()),
@@ -391,9 +423,10 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
             ..
         } => {
             let mut cols = collect_columns(left).unwrap_or_default();
-            if collect_columns(right).is_some() {
-                // Inner columns are not projected; only keys + correlation expr.
-            }
+            // The inner subquery still needs the columns referenced in its own
+            // WHERE/projection (e.g. a `WHERE balance > …` filter); the shared
+            // column set is pushed to every scan, so include them here.
+            cols.extend(collect_columns(right).unwrap_or_default());
             cols.push(left_key.clone());
             if let Some(pred) = corr_on {
                 cols.extend(columns_in_expr(pred));
@@ -444,12 +477,14 @@ fn apply_columns(plan: PhysicalPlan, columns: Option<Vec<String>>) -> PhysicalPl
             on,
             left_key,
             right_key,
+            left_outer,
         } => PhysicalPlan::HashJoin {
             left: Box::new(apply_columns(*left, columns.clone())),
             right: Box::new(apply_columns(*right, columns)),
             on,
             left_key,
             right_key,
+            left_outer,
         },
         PhysicalPlan::NestedLoopJoin { left, right, on } => PhysicalPlan::NestedLoopJoin {
             left: Box::new(apply_columns(*left, columns.clone())),

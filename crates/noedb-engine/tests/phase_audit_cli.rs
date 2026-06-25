@@ -268,6 +268,113 @@ fn explain_hides_internal_sort_column() {
 }
 
 #[test]
+fn not_null_rejected_insert_leaves_no_ghost_row() {
+    let (eng, dir) = temp_engine();
+    eng.execute("CREATE TABLE t (id INT PRIMARY KEY, name TEXT NOT NULL)")
+        .unwrap();
+    eng.execute("INSERT INTO t VALUES (1, 'Alice')").unwrap();
+    let err = eng.execute("INSERT INTO t VALUES (6, NULL)").unwrap_err();
+    assert!(err.to_string().contains("NOT NULL"));
+    let out = eng.execute("SELECT id, name FROM t ORDER BY id").unwrap();
+    assert_eq!(out.rows, vec![vec!["1".to_string(), "Alice".to_string()]]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn left_join_preserves_unmatched_outer_rows() {
+    let (eng, dir) = temp_engine();
+    eng.execute("CREATE TABLE customers (id INT PRIMARY KEY, name TEXT)")
+        .unwrap();
+    eng.execute("CREATE TABLE accounts (id INT PRIMARY KEY, customer_id INT, balance INT)")
+        .unwrap();
+    eng.execute("INSERT INTO customers VALUES (1, 'Alice')")
+        .unwrap();
+    eng.execute("INSERT INTO customers VALUES (4, 'Dave')")
+        .unwrap();
+    eng.execute("INSERT INTO accounts VALUES (10, 1, 5000)")
+        .unwrap();
+    let out = eng
+        .execute(
+            "SELECT c.name, a.balance FROM customers c \
+             LEFT JOIN accounts a ON c.id = a.customer_id ORDER BY c.name",
+        )
+        .unwrap();
+    assert_eq!(out.rows.len(), 2);
+    assert_eq!(out.rows[0], vec!["Alice".to_string(), "5000".to_string()]);
+    assert_eq!(out.rows[1], vec!["Dave".to_string(), "[NULL]".to_string()]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn having_count_star_filters_groups() {
+    let (eng, dir) = temp_engine();
+    eng.execute("CREATE TABLE customers (id INT PRIMARY KEY, tier TEXT)")
+        .unwrap();
+    eng.execute("INSERT INTO customers VALUES (1, 'gold')")
+        .unwrap();
+    eng.execute("INSERT INTO customers VALUES (2, 'gold')")
+        .unwrap();
+    eng.execute("INSERT INTO customers VALUES (3, 'silver')")
+        .unwrap();
+    let out = eng
+        .execute(
+            "SELECT tier, COUNT(*) AS n FROM customers GROUP BY tier HAVING COUNT(*) > 1 ORDER BY tier",
+        )
+        .unwrap();
+    assert_eq!(out.rows, vec![vec!["gold".to_string(), "2".to_string()]]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn exists_select_one_correlated() {
+    let (eng, dir) = temp_engine();
+    eng.execute("CREATE TABLE customers (id INT PRIMARY KEY, name TEXT)")
+        .unwrap();
+    eng.execute("CREATE TABLE accounts (id INT PRIMARY KEY, customer_id INT)")
+        .unwrap();
+    eng.execute("INSERT INTO customers VALUES (1, 'Alice')")
+        .unwrap();
+    eng.execute("INSERT INTO customers VALUES (4, 'Dave')")
+        .unwrap();
+    eng.execute("INSERT INTO accounts VALUES (10, 1)").unwrap();
+    let out = eng
+        .execute(
+            "SELECT name FROM customers c \
+             WHERE NOT EXISTS (SELECT 1 FROM accounts a WHERE a.customer_id = c.id) \
+             ORDER BY name",
+        )
+        .unwrap();
+    assert_eq!(out.rows, vec![vec!["Dave".to_string()]]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn in_subquery_with_inner_where() {
+    let (eng, dir) = temp_engine();
+    eng.execute("CREATE TABLE customers (id INT PRIMARY KEY, name TEXT)")
+        .unwrap();
+    eng.execute("CREATE TABLE accounts (id INT PRIMARY KEY, customer_id INT, balance INT)")
+        .unwrap();
+    eng.execute("INSERT INTO customers VALUES (1, 'Alice')")
+        .unwrap();
+    eng.execute("INSERT INTO customers VALUES (2, 'Bob')")
+        .unwrap();
+    eng.execute("INSERT INTO accounts VALUES (10, 1, 5000)")
+        .unwrap();
+    eng.execute("INSERT INTO accounts VALUES (11, 2, 100)")
+        .unwrap();
+    let out = eng
+        .execute(
+            "SELECT name FROM customers \
+             WHERE id IN (SELECT customer_id FROM accounts WHERE balance > 1000) \
+             ORDER BY name",
+        )
+        .unwrap();
+    assert_eq!(out.rows, vec![vec!["Alice".to_string()]]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn select_in_open_transaction_uses_schema() {
     let (eng, dir) = temp_engine();
     eng.execute("CREATE TABLE accounts (id TEXT, balance INT)")
