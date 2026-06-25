@@ -52,6 +52,7 @@ pub fn materialize_with_clause<S: StorageEngine<Error = StorageError>>(
     Ok(tables)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn materialize_recursive<S: StorageEngine<Error = StorageError>>(
     name: &str,
     anchor: &SelectStmt,
