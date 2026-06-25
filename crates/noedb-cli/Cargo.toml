@@ -13,6 +13,9 @@ publish = false
 [[bin]]
 name = "noedb"
 path = "src/main.rs"
+# The bin shares the `noedb` name with the meta-crate lib; documenting both
+# collides at target/doc/noedb/ (cargo#6313). The CLI needs no rustdoc HTML.
+doc = false
 
 [dependencies]
 noedb-engine = { workspace = true }
