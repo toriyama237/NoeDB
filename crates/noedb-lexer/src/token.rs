@@ -14,6 +14,7 @@ use crate::span::Span;
 #[non_exhaustive]
 #[allow(missing_docs)] // per-variant docs land in Week 04 with the full token set
 pub enum Keyword {
+    Add,
     All,
     Alter,
     Analyze,

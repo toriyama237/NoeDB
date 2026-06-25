@@ -451,6 +451,22 @@ impl LocalEngine {
                 self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())
             }
+            Statement::AlterTable(a) => {
+                let noedb_ast::AlterTableAction::AddColumn(col) = &a.action;
+                let ts = self.txn.oracle().next();
+                let meta = crate::schema::ColumnMeta {
+                    name: col.name.value.clone(),
+                    data_type: col.data_type.clone(),
+                    not_null: col.not_null || col.primary_key,
+                    primary_key: col.primary_key,
+                    unique: col.unique,
+                };
+                self.schema.lock().add_column(&a.table.value, meta, ts)?;
+                self.cache.lock().invalidate_table(&a.table.value);
+                self.persist_schema()?;
+                self.audit_record(session_id, sql, 0)?;
+                Ok(empty_ok())
+            }
             Statement::CreatePolicy(p) => {
                 self.rls.lock().add_policy(&p);
                 self.audit_record(session_id, sql, 0)?;
@@ -472,6 +488,7 @@ impl LocalEngine {
                         data_type: c.data_type.clone(),
                         not_null: c.not_null || c.primary_key,
                         primary_key: c.primary_key,
+                        unique: c.unique,
                     })
                     .collect();
                 let pk = if pk_from_table.is_empty() {

@@ -290,6 +290,14 @@ fn parse_prefix(p: &mut Parser<'_>) -> Result<Expr, ParseError> {
 
     if matches!(p.peek_kind(), Token::Punct(Punctuation::LParen)) {
         let start = p.bump().span;
+        if matches!(p.peek_kind(), Token::Keyword(Keyword::Select | Keyword::With)) {
+            let query = parse_select_subquery(p)?;
+            let end = p.expect_punct(Punctuation::RParen)?;
+            return Ok(Expr::ScalarSubquery {
+                query: Box::new(query),
+                span: Parser::merge_span(start, end),
+            });
+        }
         let inner = parse_expr(p)?;
         let end = p.expect_punct(Punctuation::RParen)?;
         return Ok(Expr::Paren(Box::new(inner), Parser::merge_span(start, end)));

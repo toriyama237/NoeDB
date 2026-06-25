@@ -11,6 +11,7 @@ use crate::token::Keyword;
 /// Sorted `(UPPERCASE_NAME, Keyword)` pairs. Must stay lexicographically
 /// sorted by name — see [`KEYWORD_TABLE_IS_SORTED`].
 static KEYWORD_TABLE: &[(&str, Keyword)] = &[
+    ("ADD", Keyword::Add),
     ("ALL", Keyword::All),
     ("ALTER", Keyword::Alter),
     ("ANALYZE", Keyword::Analyze),

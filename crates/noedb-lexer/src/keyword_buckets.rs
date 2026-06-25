@@ -15,6 +15,7 @@ static KW_LEN_02: &[(&str, Keyword)] = &[
 ];
 
 static KW_LEN_03: &[(&str, Keyword)] = &[
+    ("ADD", Keyword::Add),
     ("ALL", Keyword::All),
     ("AND", Keyword::And),
     ("ANY", Keyword::Any),

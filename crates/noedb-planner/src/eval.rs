@@ -63,6 +63,7 @@ pub fn eval_expr(expr: &Expr, row: &[(String, Value)]) -> Result<Value, ExecErro
         }
         Expr::InSubquery { .. }
         | Expr::Exists { .. }
+        | Expr::ScalarSubquery { .. }
         | Expr::Parameter { .. }
         | Expr::CurrentUser { .. } => Err(ExecError::UnsupportedExpr),
         Expr::Function {

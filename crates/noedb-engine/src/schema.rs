@@ -19,6 +19,8 @@ pub struct ColumnMeta {
     pub not_null: bool,
     /// Column-level `PRIMARY KEY`.
     pub primary_key: bool,
+    /// Column-level `UNIQUE` constraint.
+    pub unique: bool,
 }
 
 /// Catalog entry for a table.
@@ -56,6 +58,8 @@ struct PersistedColumn {
     vector_dim: Option<u32>,
     not_null: bool,
     primary_key: bool,
+    #[serde(default)]
+    unique: bool,
 }
 
 const SCHEMA_FILE: &str = "schema.catalog.json";
@@ -141,6 +145,34 @@ impl SchemaCatalog {
         Ok(())
     }
 
+    /// Append a column to an existing table (`ALTER TABLE … ADD COLUMN`).
+    ///
+    /// # Errors
+    ///
+    /// [`SchemaError::UnknownTable`] when the table is missing, or
+    /// [`SchemaError::ColumnExists`] when the column name is already present.
+    pub fn add_column(
+        &mut self,
+        table: &str,
+        column: ColumnMeta,
+        version_ts: CommitTs,
+    ) -> Result<(), SchemaError> {
+        let entry = self
+            .tables
+            .get_mut(table)
+            .ok_or_else(|| SchemaError::UnknownTable(table.to_string()))?;
+        if entry.columns.iter().any(|c| c.name == column.name) {
+            return Err(SchemaError::ColumnExists(column.name));
+        }
+        if column.primary_key && !entry.primary_key.contains(&column.name) {
+            entry.primary_key.push(column.name.clone());
+        }
+        entry.columns.push(column);
+        entry.version_ts = version_ts;
+        self.epoch = self.epoch.max(version_ts);
+        Ok(())
+    }
+
     /// Column names for a registered table.
     #[must_use]
     pub fn column_names(&self, table: &str) -> Option<Vec<String>> {
@@ -195,6 +227,9 @@ pub enum SchemaError {
     /// Unknown table.
     #[error("unknown table: {0}")]
     UnknownTable(String),
+    /// Column already exists on the table.
+    #[error("column already exists: {0}")]
+    ColumnExists(String),
 }
 
 impl From<&SchemaCatalog> for SchemaSnapshot {
@@ -218,6 +253,7 @@ impl From<&SchemaCatalog> for SchemaSnapshot {
                             },
                             not_null: c.not_null,
                             primary_key: c.primary_key,
+                            unique: c.unique,
                         })
                         .collect(),
                     primary_key: t.primary_key.clone(),
@@ -240,6 +276,7 @@ impl From<SchemaSnapshot> for SchemaCatalog {
                     data_type: decode_sql_type(&c.data_type, c.vector_dim),
                     not_null: c.not_null,
                     primary_key: c.primary_key,
+                    unique: c.unique,
                 })
                 .collect();
             tables.insert(
