@@ -272,7 +272,7 @@ fn having_expr_matches(a: &Expr, b: &Expr) -> bool {
                 column: c2,
                 ..
             }),
-        ) => opt_ident_value_eq(t1, t2) && c1.value == c2.value,
+        ) => opt_ident_value_eq(t1.as_ref(), t2.as_ref()) && c1.value == c2.value,
         (Expr::Column(ColumnRef::Star { .. }), Expr::Column(ColumnRef::Star { .. })) => true,
         (
             Expr::Column(ColumnRef::QualifiedStar { table: t1, .. }),
@@ -308,7 +308,7 @@ fn having_expr_matches(a: &Expr, b: &Expr) -> bool {
 
 /// Compare optional table qualifiers by name only (ignoring source spans), so
 /// the same aggregate written in `SELECT` and `HAVING` is treated as a match.
-fn opt_ident_value_eq(a: &Option<noedb_ast::Ident>, b: &Option<noedb_ast::Ident>) -> bool {
+fn opt_ident_value_eq(a: Option<&noedb_ast::Ident>, b: Option<&noedb_ast::Ident>) -> bool {
     match (a, b) {
         (Some(x), Some(y)) => x.value == y.value,
         (None, None) => true,
