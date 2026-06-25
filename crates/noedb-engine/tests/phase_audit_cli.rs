@@ -176,6 +176,98 @@ fn union_dedupes_across_branches() {
 }
 
 #[test]
+fn scalar_subquery_in_where() {
+    let (eng, dir) = temp_engine();
+    eng.execute("CREATE TABLE users (id TEXT, age INT)").unwrap();
+    eng.execute("INSERT INTO users VALUES ('u1', 30)").unwrap();
+    eng.execute("INSERT INTO users VALUES ('u2', 20)").unwrap();
+    eng.execute("INSERT INTO users VALUES ('u3', 40)").unwrap();
+
+    let out = eng
+        .execute("SELECT id FROM users WHERE age > (SELECT AVG(age) FROM users)")
+        .unwrap();
+    assert_eq!(out.rows, vec![vec!["u3".to_string()]]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn alter_table_add_column() {
+    let (eng, dir) = temp_engine();
+    eng.execute("CREATE TABLE users (id TEXT, name TEXT)")
+        .unwrap();
+    eng.execute("INSERT INTO users VALUES ('u1', 'Alice')")
+        .unwrap();
+    eng.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        .unwrap();
+    eng.execute("INSERT INTO users VALUES ('u2', 'Bob', 'bob@x.com')")
+        .unwrap();
+    let out = eng
+        .execute("SELECT id, email FROM users WHERE id = 'u2'")
+        .unwrap();
+    assert_eq!(
+        out.rows,
+        vec![vec!["u2".to_string(), "bob@x.com".to_string()]]
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn alter_table_rejects_duplicate_column() {
+    let (eng, dir) = temp_engine();
+    eng.execute("CREATE TABLE users (id TEXT, name TEXT)")
+        .unwrap();
+    let err = eng
+        .execute("ALTER TABLE users ADD COLUMN name TEXT")
+        .unwrap_err();
+    assert!(err.to_string().contains("column already exists"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn primary_key_rejects_duplicate_insert() {
+    let (eng, dir) = temp_engine();
+    eng.execute("CREATE TABLE docs (id TEXT PRIMARY KEY, content TEXT)")
+        .unwrap();
+    eng.execute("INSERT INTO docs VALUES ('d1', 'first')")
+        .unwrap();
+    let err = eng
+        .execute("INSERT INTO docs VALUES ('d1', 'dup')")
+        .unwrap_err();
+    assert!(err.to_string().contains("PRIMARY KEY"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn unique_constraint_rejects_duplicate() {
+    let (eng, dir) = temp_engine();
+    eng.execute("CREATE TABLE docs (id TEXT PRIMARY KEY, email TEXT UNIQUE)")
+        .unwrap();
+    eng.execute("INSERT INTO docs VALUES ('d1', 'a@x.com')")
+        .unwrap();
+    let err = eng
+        .execute("INSERT INTO docs VALUES ('d2', 'a@x.com')")
+        .unwrap_err();
+    assert!(err.to_string().contains("UNIQUE"));
+    eng.execute("INSERT INTO docs VALUES ('d2', 'b@x.com')")
+        .unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn explain_hides_internal_sort_column() {
+    let (eng, dir) = temp_engine();
+    eng.execute("CREATE TABLE docs (id TEXT, embedding VECTOR(3))")
+        .unwrap();
+    eng.execute("INSERT INTO docs VALUES ('d1', '[1.0, 2.0, 3.0]')")
+        .unwrap();
+    let plan = eng
+        .explain("SELECT id FROM docs ORDER BY embedding <-> '[1.0,1.0,1.0]' LIMIT 1")
+        .unwrap();
+    assert!(!plan.contains("__sort"), "internal column leaked: {plan}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn select_in_open_transaction_uses_schema() {
     let (eng, dir) = temp_engine();
     eng.execute("CREATE TABLE accounts (id TEXT, balance INT)")
