@@ -132,8 +132,12 @@ impl<S: StorageEngine<Error = StorageError>> FoldCtx<'_, S> {
 
     fn eval_scalar(&self, query: &SelectStmt) -> Result<Value, ExecError> {
         let stmt = Statement::Select(query.clone());
-        let rows =
-            crate::execute_sql_on_with_schema(&stmt, self.exec_store, self.index_store, self.schema)?;
+        let rows = crate::execute_sql_on_with_schema(
+            &stmt,
+            self.exec_store,
+            self.index_store,
+            self.schema,
+        )?;
         Ok(rows
             .first()
             .and_then(|r| r.fields.first())
@@ -159,7 +163,10 @@ fn value_to_literal(value: &Value, span: noedb_lexer::Span) -> Literal {
         Value::Vector(v) => Literal::String(
             format!(
                 "[{}]",
-                v.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")
+                v.iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
             ),
             span,
         ),

@@ -162,7 +162,9 @@ pub fn explain_sql_with_schema(
     store: &LsmTree,
     schema: Option<&QuerySchema>,
 ) -> Result<String, PlanError> {
-    let folded = fold::fold_scalar_subqueries(stmt, store, store, schema).ok().flatten();
+    let folded = fold::fold_scalar_subqueries(stmt, store, store, schema)
+        .ok()
+        .flatten();
     let stmt = folded.as_ref().unwrap_or(stmt);
     let logical = build_with_schema(stmt, schema)?;
     let stats = load_plan_stats(store);

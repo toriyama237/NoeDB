@@ -69,8 +69,7 @@ fn is_null_predicates() {
         .unwrap();
     eng.execute("INSERT INTO docs VALUES ('d1', 'hello')")
         .unwrap();
-    eng.execute("INSERT INTO docs VALUES ('d4', NULL)")
-        .unwrap();
+    eng.execute("INSERT INTO docs VALUES ('d4', NULL)").unwrap();
 
     let nulls = eng
         .execute("SELECT id FROM docs WHERE content IS NULL")
@@ -178,7 +177,8 @@ fn union_dedupes_across_branches() {
 #[test]
 fn scalar_subquery_in_where() {
     let (eng, dir) = temp_engine();
-    eng.execute("CREATE TABLE users (id TEXT, age INT)").unwrap();
+    eng.execute("CREATE TABLE users (id TEXT, age INT)")
+        .unwrap();
     eng.execute("INSERT INTO users VALUES ('u1', 30)").unwrap();
     eng.execute("INSERT INTO users VALUES ('u2', 20)").unwrap();
     eng.execute("INSERT INTO users VALUES ('u3', 40)").unwrap();
@@ -275,9 +275,7 @@ fn select_in_open_transaction_uses_schema() {
     eng.execute("INSERT INTO accounts VALUES ('a1', 100)")
         .unwrap();
     eng.execute_session(1, "BEGIN").unwrap();
-    let out = eng
-        .execute_session(1, "SELECT * FROM accounts")
-        .unwrap();
+    let out = eng.execute_session(1, "SELECT * FROM accounts").unwrap();
     assert_eq!(out.rows.len(), 1);
     eng.execute_session(1, "ROLLBACK").unwrap();
     let _ = std::fs::remove_dir_all(dir);

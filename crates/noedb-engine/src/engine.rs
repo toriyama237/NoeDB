@@ -560,13 +560,7 @@ impl LocalEngine {
         let txn = in_txn.then_some((self.txn.as_ref(), session_id));
         let result = if in_txn && matches!(stmt, Statement::Select(_)) {
             let qschema = self.schema.lock().query_schema();
-            execute_select_in_txn(
-                self.txn.clone(),
-                session_id,
-                &stmt,
-                &self.storage,
-                &qschema,
-            )?
+            execute_select_in_txn(self.txn.clone(), session_id, &stmt, &self.storage, &qschema)?
         } else if matches!(stmt, Statement::Select(_)) {
             if let Some(hit) = crate::knn::try_hnsw_select(self, &stmt)? {
                 hit
