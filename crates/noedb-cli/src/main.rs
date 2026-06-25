@@ -169,14 +169,16 @@ fn run_repl(args: &[String]) -> Result<(), String> {
 
 fn run_plain_repl(backend: &Backend) -> Result<(), String> {
     let stdin = io::stdin();
+    let mut buffer = StmtBuffer::default();
     let mut line = String::new();
     loop {
         ui::print_prompt_plain();
         line.clear();
         if stdin.read_line(&mut line).map_err(|e| e.to_string())? == 0 {
+            buffer.flush_remaining(backend, false);
             break;
         }
-        if !dispatch_line(backend, &line, false)? {
+        if !buffer.feed_line(backend, &line, false)? {
             break;
         }
     }
@@ -189,16 +191,24 @@ fn run_studio_repl(backend: &Backend, distributed: bool, data_dir: &str) -> Resu
 
     let mut rl = DefaultEditor::new().map_err(|e| e.to_string())?;
     let prompt = ui::studio_prompt();
+    let mut buffer = StmtBuffer::default();
     loop {
         let line = match rl.readline(&prompt) {
             Ok(l) => l,
-            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => break,
+            Err(ReadlineError::Eof) => {
+                buffer.flush_remaining(backend, true);
+                break;
+            }
+            Err(ReadlineError::Interrupted) => {
+                buffer.discard();
+                break;
+            }
             Err(e) => return Err(e.to_string()),
         };
         if !line.trim().is_empty() {
             let _ = rl.add_history_entry(line.as_str());
         }
-        if !dispatch_line(backend, &line, true)? {
+        if !buffer.feed_line(backend, &line, true)? {
             break;
         }
         if line.trim() == "\\clear" {
@@ -209,27 +219,80 @@ fn run_studio_repl(backend: &Backend, distributed: bool, data_dir: &str) -> Resu
     Ok(())
 }
 
-fn dispatch_line(backend: &Backend, line: &str, studio: bool) -> Result<bool, String> {
-    let trimmed = line.trim();
-    if trimmed.is_empty() {
-        return Ok(true);
+/// Accumulates physical input lines into `;`-terminated SQL statements so that
+/// multi-line statements paste reliably and meta-commands (`\help`, `\explain`,
+/// …) are only interpreted at a statement boundary.
+#[derive(Default)]
+struct StmtBuffer {
+    pending: String,
+}
+
+impl StmtBuffer {
+    /// Feed one raw input line. Returns `Ok(false)` to end the session.
+    fn feed_line(&mut self, backend: &Backend, line: &str, studio: bool) -> Result<bool, String> {
+        // Meta-commands are only honored when no partial statement is buffered.
+        if self.pending.trim().is_empty() {
+            self.pending.clear();
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return Ok(true);
+            }
+            if let Some(outcome) = handle_meta(backend, trimmed, studio) {
+                return outcome;
+            }
+        }
+        self.pending.push_str(line);
+        if !self.pending.ends_with('\n') {
+            self.pending.push('\n');
+        }
+        self.flush_complete(backend, studio);
+        Ok(true)
     }
+
+    /// Run every `;`-terminated statement, keeping any trailing partial input.
+    fn flush_complete(&mut self, backend: &Backend, studio: bool) {
+        while let Some(idx) = self.pending.find(';') {
+            let stmt = self.pending[..idx].trim().to_string();
+            self.pending.drain(..=idx);
+            if !stmt.is_empty() {
+                run_sql(backend, &stmt, studio);
+            }
+        }
+    }
+
+    /// Execute any leftover unterminated statement (used at end of input).
+    fn flush_remaining(&mut self, backend: &Backend, studio: bool) {
+        let stmt = self.pending.trim().to_string();
+        self.pending.clear();
+        if !stmt.is_empty() {
+            run_sql(backend, &stmt, studio);
+        }
+    }
+
+    /// Drop any buffered partial statement (e.g. on Ctrl-C).
+    fn discard(&mut self) {
+        self.pending.clear();
+    }
+}
+
+/// Handle a meta-command line. Returns `None` when the line is ordinary SQL.
+fn handle_meta(backend: &Backend, trimmed: &str, studio: bool) -> Option<Result<bool, String>> {
     if trimmed.starts_with('#') || trimmed.starts_with("cargo ") || trimmed.starts_with("git ") {
         ui::print_error(
             "this is the SQL REPL — run shell commands in another terminal",
             studio,
         );
-        return Ok(true);
+        return Some(Ok(true));
     }
     if trimmed == "\\q" || trimmed.eq_ignore_ascii_case("quit") {
-        return Ok(false);
+        return Some(Ok(false));
     }
     if trimmed == "\\help" {
         ui::print_help(studio);
-        return Ok(true);
+        return Some(Ok(true));
     }
     if trimmed == "\\clear" {
-        return Ok(true);
+        return Some(Ok(true));
     }
     if let Some(sql) = trimmed.strip_prefix("\\explain ") {
         let sql = sql.trim().trim_end_matches(';').trim();
@@ -237,24 +300,20 @@ fn dispatch_line(backend: &Backend, line: &str, studio: bool) -> Result<bool, St
             Ok(text) => ui::print_explain(&text, studio),
             Err(e) => ui::print_error(&e.to_string(), studio),
         }
-        return Ok(true);
+        return Some(Ok(true));
     }
-    for sql in split_statements(trimmed) {
-        match backend.execute(&sql) {
-            Ok(result) => ui::print_result(&result, studio),
-            Err(e) => ui::print_error(&e.to_string(), studio),
-        }
+    if trimmed.starts_with('\\') {
+        ui::print_error(&format!("unknown command: {trimmed}"), studio);
+        return Some(Ok(true));
     }
-    Ok(true)
+    None
 }
 
-/// Split on `;` into non-empty statements (REPL convenience; not string-aware).
-fn split_statements(line: &str) -> Vec<String> {
-    line.split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect()
+fn run_sql(backend: &Backend, sql: &str, studio: bool) {
+    match backend.execute(sql) {
+        Ok(result) => ui::print_result(&result, studio),
+        Err(e) => ui::print_error(&e.to_string(), studio),
+    }
 }
 
 fn use_tls(args: &[String]) -> bool {
