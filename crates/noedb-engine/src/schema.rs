@@ -112,7 +112,7 @@ impl SchemaCatalog {
     ///
     /// # Errors
     ///
-    /// [`SchemaError::TableExists`] when the table name is already taken.
+    /// `SchemaError::TableExists` when the table name is already taken.
     pub fn create_table(
         &mut self,
         name: impl Into<String>,
@@ -149,8 +149,8 @@ impl SchemaCatalog {
     ///
     /// # Errors
     ///
-    /// [`SchemaError::UnknownTable`] when the table is missing, or
-    /// [`SchemaError::ColumnExists`] when the column name is already present.
+    /// `SchemaError::UnknownTable` when the table is missing, or
+    /// `SchemaError::ColumnExists` when the column name is already present.
     pub fn add_column(
         &mut self,
         table: &str,
