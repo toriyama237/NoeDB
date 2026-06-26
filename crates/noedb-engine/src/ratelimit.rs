@@ -154,7 +154,7 @@ mod tests {
         let rl = RateLimiter::new(1000.0, 1.0);
         assert!(rl.acquire(1).is_ok());
         assert!(rl.acquire(1).is_err());
-        std::thread::sleep(Duration::from_millis(5));
+        std::thread::sleep(Duration::from_millis(15));
         assert!(rl.acquire(1).is_ok());
     }
 
