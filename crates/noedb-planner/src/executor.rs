@@ -14,7 +14,7 @@ use noedb_storage::{LsmTree, StorageEngine, StorageError};
 
 use crate::eval::{eval_expr, eval_predicate};
 use crate::index::SecondaryIndex;
-use crate::join::join_key_value;
+use crate::join::{column_name_matches, join_key_value};
 use crate::logical::AggFunc;
 use crate::physical::PhysicalPlan;
 use crate::value::{Record, Value};
@@ -608,31 +608,90 @@ fn semi_join_rows(
     corr_on: Option<&Expr>,
     negated: bool,
 ) -> Result<Vec<RowMap>, ExecError> {
+    if let Some(corr_on) = corr_on {
+        semi_join_rows_hash_correlated(
+            left_rows,
+            right_rows,
+            left_key,
+            right_key,
+            corr_on,
+            negated,
+        )
+    } else {
+        semi_join_rows_hash(left_rows, right_rows, left_key, right_key, negated)
+    }
+}
+
+fn semi_join_rows_hash(
+    left_rows: Vec<RowMap>,
+    right_rows: &[RowMap],
+    left_key: &str,
+    right_key: &str,
+    negated: bool,
+) -> Result<Vec<RowMap>, ExecError> {
+    use std::collections::HashSet;
+
+    let mut right_keys = HashSet::new();
+    for rrow in right_rows {
+        if let Some(rkey) = join_key_value(rrow, right_key) {
+            right_keys.insert(rkey);
+        }
+    }
+
     let mut out = Vec::new();
-    'left: for lrow in left_rows {
+    for lrow in left_rows {
         let Some(lkey) = join_key_value(&lrow, left_key) else {
             continue;
         };
-        for rrow in right_rows {
-            let Some(rkey) = join_key_value(rrow, right_key) else {
-                continue;
-            };
-            if lkey != rkey {
-                continue;
+        let member = right_keys.contains(&lkey);
+        if negated {
+            if !member {
+                out.push(lrow);
             }
-            let merged = merge_rows(&lrow, rrow);
-            if let Some(pred) = corr_on {
-                if !eval_predicate(pred, &merged)? {
-                    continue;
+        } else if member {
+            out.push(lrow);
+        }
+    }
+    Ok(out)
+}
+
+fn semi_join_rows_hash_correlated(
+    left_rows: Vec<RowMap>,
+    right_rows: &[RowMap],
+    left_key: &str,
+    right_key: &str,
+    corr_on: &Expr,
+    negated: bool,
+) -> Result<Vec<RowMap>, ExecError> {
+    use std::collections::HashMap;
+
+    let mut buckets: HashMap<Vec<u8>, Vec<&RowMap>> = HashMap::new();
+    for rrow in right_rows {
+        if let Some(rkey) = join_key_value(rrow, right_key) {
+            buckets.entry(rkey).or_default().push(rrow);
+        }
+    }
+
+    let mut out = Vec::new();
+    for lrow in left_rows {
+        let Some(lkey) = join_key_value(&lrow, left_key) else {
+            continue;
+        };
+        let mut matched = false;
+        if let Some(candidates) = buckets.get(&lkey) {
+            for rrow in candidates {
+                let merged = merge_rows(&lrow, *rrow);
+                if eval_predicate(corr_on, &merged)? {
+                    matched = true;
+                    break;
                 }
             }
-            if negated {
-                continue 'left;
-            }
-            out.push(lrow);
-            continue 'left;
         }
         if negated {
+            if !matched {
+                out.push(lrow);
+            }
+        } else if matched {
             out.push(lrow);
         }
     }
@@ -702,7 +761,7 @@ impl AggSlot {
 
 fn row_value(row: &RowMap, col: &str) -> Value {
     row.iter()
-        .find(|(n, _)| n == col || n.rsplit_once('.').is_some_and(|(_, bare)| bare == col))
+        .find(|(n, _)| column_name_matches(n, col))
         .map_or(Value::Null, |(_, v)| v.clone())
 }
 
@@ -724,8 +783,14 @@ fn merge_rows(left: &RowMap, right: &RowMap) -> RowMap {
 
 pub(crate) fn compare_rows(a: &RowMap, b: &RowMap, keys: &[(String, bool)]) -> std::cmp::Ordering {
     for (col, asc) in keys {
-        let va = a.iter().find(|(n, _)| n == col).map(|(_, v)| v);
-        let vb = b.iter().find(|(n, _)| n == col).map(|(_, v)| v);
+        let va = a
+            .iter()
+            .find(|(n, _)| column_name_matches(n, col))
+            .map(|(_, v)| v);
+        let vb = b
+            .iter()
+            .find(|(n, _)| column_name_matches(n, col))
+            .map(|(_, v)| v);
         let ord = compare_sort_values(va, vb);
         if ord != std::cmp::Ordering::Equal {
             return if *asc { ord } else { ord.reverse() };
@@ -816,7 +881,7 @@ fn prune_cte_rows(rows: &[RowMap], columns: Option<&[String]>) -> Vec<RowMap> {
             cols.iter()
                 .filter_map(|c| {
                     row.iter()
-                        .find(|(n, _)| n == c)
+                        .find(|(n, _)| column_name_matches(n, c))
                         .map(|(n, v)| (n.clone(), v.clone()))
                 })
                 .collect()
@@ -865,6 +930,27 @@ mod join_tests {
         key.push(0);
         key.extend_from_slice(col.as_bytes());
         tree.put(&key, val).unwrap();
+    }
+
+    #[test]
+    fn column_name_matches_bare_and_qualified() {
+        assert!(column_name_matches("hc.ag.country", "country"));
+        assert!(column_name_matches("hc.n", "n"));
+        assert!(column_name_matches("hc.ag.country", "hc.country"));
+        assert!(!column_name_matches("hc.ag.country", "region"));
+    }
+
+    #[test]
+    fn prune_cte_rows_resolves_bare_names() {
+        let rows = vec![vec![
+            ("hc.ag.country".into(), Value::Bytes(b"FR".to_vec())),
+            ("hc.n".into(), Value::Integer(2)),
+        ]];
+        let pruned = prune_cte_rows(&rows, Some(&["country".into(), "n".into()]));
+        assert_eq!(pruned.len(), 1);
+        assert_eq!(pruned[0].len(), 2);
+        assert_eq!(pruned[0][0].0, "hc.ag.country");
+        assert_eq!(pruned[0][1].0, "hc.n");
     }
 
     #[test]
