@@ -109,11 +109,37 @@ fn column_name(expr: &Expr) -> Option<String> {
     }
 }
 
+/// Match a stored row field name against a referenced column (exact, bare, or qualified).
+#[must_use]
+pub fn column_name_matches(stored: &str, wanted: &str) -> bool {
+    if stored == wanted {
+        return true;
+    }
+    if stored
+        .rsplit_once('.')
+        .is_some_and(|(_, bare)| bare == wanted)
+    {
+        return true;
+    }
+    if let Some((_, bare)) = wanted.rsplit_once('.') {
+        if stored == bare {
+            return true;
+        }
+        if stored
+            .rsplit_once('.')
+            .is_some_and(|(_, sb)| sb == bare)
+        {
+            return true;
+        }
+    }
+    false
+}
+
 /// Join key value from a row.
 #[must_use]
 pub fn join_key_value(row: &[(String, crate::value::Value)], column: &str) -> Option<Vec<u8>> {
     row.iter()
-        .find(|(n, _)| n == column)
+        .find(|(n, _)| column_name_matches(n, column))
         .map(|(_, v)| v.as_bytes())
 }
 
@@ -158,5 +184,12 @@ mod tests {
         let oriented = orient_join_keys(&left, &right, &keys);
         assert_eq!(oriented.left, "u.id");
         assert_eq!(oriented.right, "o.user_id");
+    }
+
+    #[test]
+    fn join_key_value_matches_qualified_column() {
+        use crate::value::Value;
+        let row = vec![("e.id".into(), Value::Bytes(b"1".to_vec()))];
+        assert_eq!(join_key_value(&row, "id"), Some(b"1".to_vec()));
     }
 }
