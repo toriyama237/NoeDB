@@ -193,6 +193,23 @@ mod tests {
     }
 
     #[test]
+    fn tokenize_utf8_string_literal() {
+        assert_eq!(
+            kinds("SELECT 'Generale'"),
+            vec![
+                Token::Keyword(Keyword::Select),
+                Token::String("Generale".into()),
+                Token::Eof
+            ]
+        );
+        let accented = tokenize("SELECT 'Direction G\u{00e9}n\u{00e9}rale'").unwrap();
+        assert_eq!(
+            accented[1].kind,
+            Token::String("Direction G\u{00e9}n\u{00e9}rale".into())
+        );
+    }
+
+    #[test]
     fn lexer_iterator_matches_tokenize() {
         let src = "INSERT INTO t VALUES 1";
         let from_fn: Vec<_> = tokenize(src).unwrap();

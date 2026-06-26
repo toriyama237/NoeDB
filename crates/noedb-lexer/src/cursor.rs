@@ -386,25 +386,22 @@ impl<'src> Cursor<'src> {
 
         let mut value = String::new();
         while !self.is_eof() {
-            match self.bump() {
-                Some(b'\'') => {
-                    if self.peek_byte() == Some(b'\'') {
-                        self.bump();
-                        value.push('\'');
-                    } else {
-                        let span = Self::mk_span(start, self.pos);
-                        return Ok(SpannedToken::new(Token::String(value), span));
-                    }
+            if self.peek_byte() == Some(b'\'') {
+                self.bump();
+                if self.peek_byte() == Some(b'\'') {
+                    self.bump();
+                    value.push('\'');
+                    continue;
                 }
-                Some(ch) if ch.is_ascii() => value.push(char::from(ch)),
-                Some(byte) => {
-                    return Err(LexError::new(
-                        LexErrorKind::UnexpectedChar(char::from(byte)),
-                        Self::mk_span(self.pos - 1, self.pos),
-                    ));
-                }
-                None => break,
+                let span = Self::mk_span(start, self.pos);
+                return Ok(SpannedToken::new(Token::String(value), span));
             }
+            let ch_start = self.pos;
+            let Some(ch) = self.src[ch_start..].chars().next() else {
+                break;
+            };
+            self.pos += ch.len_utf8();
+            value.push(ch);
         }
 
         Err(LexError::new(
@@ -419,25 +416,22 @@ impl<'src> Cursor<'src> {
 
         let mut value = String::new();
         while !self.is_eof() {
-            match self.bump() {
-                Some(b'"') => {
-                    if self.peek_byte() == Some(b'"') {
-                        self.bump();
-                        value.push('"');
-                    } else {
-                        let span = Self::mk_span(start, self.pos);
-                        return Ok(SpannedToken::new(Token::QuotedIdent(value), span));
-                    }
+            if self.peek_byte() == Some(b'"') {
+                self.bump();
+                if self.peek_byte() == Some(b'"') {
+                    self.bump();
+                    value.push('"');
+                    continue;
                 }
-                Some(ch) if ch.is_ascii() => value.push(char::from(ch)),
-                Some(byte) => {
-                    return Err(LexError::new(
-                        LexErrorKind::UnexpectedChar(char::from(byte)),
-                        Self::mk_span(self.pos - 1, self.pos),
-                    ));
-                }
-                None => break,
+                let span = Self::mk_span(start, self.pos);
+                return Ok(SpannedToken::new(Token::QuotedIdent(value), span));
             }
+            let ch_start = self.pos;
+            let Some(ch) = self.src[ch_start..].chars().next() else {
+                break;
+            };
+            self.pos += ch.len_utf8();
+            value.push(ch);
         }
 
         Err(LexError::new(
