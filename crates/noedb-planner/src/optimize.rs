@@ -38,7 +38,138 @@ impl<'a> PlanContext<'a> {
 pub fn optimize(logical: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
     let logical = pushdown_predicates(logical);
     let physical = to_physical(logical, ctx);
-    pushdown_columns(physical)
+    fuse_top_k_sort(pushdown_columns(physical))
+}
+
+/// Fuse `Limit(Sort, k)` into `Sort { top_k: Some(k) }` for partial top-k selection.
+fn fuse_top_k_sort(plan: PhysicalPlan) -> PhysicalPlan {
+    const MAX_TOP_K: u64 = 256;
+
+    match plan {
+        PhysicalPlan::Limit {
+            input,
+            limit,
+            offset: 0,
+        } if limit <= MAX_TOP_K => match *input {
+            PhysicalPlan::Sort {
+                input,
+                keys,
+                top_k: None,
+            } if keys.len() == 1 => PhysicalPlan::Sort {
+                input,
+                keys,
+                top_k: Some(limit),
+            },
+            other => PhysicalPlan::Limit {
+                input: Box::new(fuse_top_k_sort(other)),
+                limit,
+                offset: 0,
+            },
+        },
+        PhysicalPlan::Limit {
+            input,
+            limit,
+            offset,
+        } => PhysicalPlan::Limit {
+            input: Box::new(fuse_top_k_sort(*input)),
+            limit,
+            offset,
+        },
+        PhysicalPlan::Filter { input, predicate } => PhysicalPlan::Filter {
+            input: Box::new(fuse_top_k_sort(*input)),
+            predicate,
+        },
+        PhysicalPlan::Project { input, items } => PhysicalPlan::Project {
+            input: Box::new(fuse_top_k_sort(*input)),
+            items,
+        },
+        PhysicalPlan::HashJoin {
+            left,
+            right,
+            on,
+            left_key,
+            right_key,
+            left_outer,
+        } => PhysicalPlan::HashJoin {
+            left: Box::new(fuse_top_k_sort(*left)),
+            right: Box::new(fuse_top_k_sort(*right)),
+            on,
+            left_key,
+            right_key,
+            left_outer,
+        },
+        PhysicalPlan::NestedLoopJoin { left, right, on } => PhysicalPlan::NestedLoopJoin {
+            left: Box::new(fuse_top_k_sort(*left)),
+            right: Box::new(fuse_top_k_sort(*right)),
+            on,
+        },
+        PhysicalPlan::MergeJoin {
+            left,
+            right,
+            on,
+            left_key,
+            right_key,
+        } => PhysicalPlan::MergeJoin {
+            left: Box::new(fuse_top_k_sort(*left)),
+            right: Box::new(fuse_top_k_sort(*right)),
+            on,
+            left_key,
+            right_key,
+        },
+        PhysicalPlan::Aggregate {
+            input,
+            group_by,
+            aggs,
+        } => PhysicalPlan::Aggregate {
+            input: Box::new(fuse_top_k_sort(*input)),
+            group_by,
+            aggs,
+        },
+        PhysicalPlan::Sort { input, keys, top_k } => PhysicalPlan::Sort {
+            input: Box::new(fuse_top_k_sort(*input)),
+            keys,
+            top_k,
+        },
+        PhysicalPlan::Window { input, windows } => PhysicalPlan::Window {
+            input: Box::new(fuse_top_k_sort(*input)),
+            windows,
+        },
+        PhysicalPlan::SemiJoin {
+            left,
+            right,
+            left_key,
+            right_key,
+            corr_on,
+            negated,
+        } => PhysicalPlan::SemiJoin {
+            left: Box::new(fuse_top_k_sort(*left)),
+            right: Box::new(fuse_top_k_sort(*right)),
+            left_key,
+            right_key,
+            corr_on,
+            negated,
+        },
+        PhysicalPlan::SetOp {
+            left,
+            right,
+            op,
+            all,
+        } => PhysicalPlan::SetOp {
+            left: Box::new(fuse_top_k_sort(*left)),
+            right: Box::new(fuse_top_k_sort(*right)),
+            op,
+            all,
+        },
+        PhysicalPlan::Dedup { input } => PhysicalPlan::Dedup {
+            input: Box::new(fuse_top_k_sort(*input)),
+        },
+        PhysicalPlan::SubqueryScan { input, prefix, columns } => PhysicalPlan::SubqueryScan {
+            input: Box::new(fuse_top_k_sort(*input)),
+            prefix,
+            columns,
+        },
+        other => other,
+    }
 }
 
 fn pushdown_predicates(plan: LogicalPlan) -> LogicalPlan {
@@ -240,6 +371,7 @@ fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
         LogicalPlan::Sort { input, keys } => PhysicalPlan::Sort {
             input: Box::new(to_physical(*input, ctx)),
             keys,
+            top_k: None,
         },
         LogicalPlan::Limit {
             input,
@@ -393,7 +525,7 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
                 Some(cols)
             }
         }
-        PhysicalPlan::Sort { input, keys } => {
+        PhysicalPlan::Sort { input, keys, top_k: _ } => {
             let mut cols = collect_columns(input).unwrap_or_default();
             cols.extend(keys.iter().map(|(k, _)| k.clone()));
             Some(dedup(cols))
@@ -513,9 +645,10 @@ fn apply_columns(plan: PhysicalPlan, columns: Option<Vec<String>>) -> PhysicalPl
             group_by,
             aggs,
         },
-        PhysicalPlan::Sort { input, keys } => PhysicalPlan::Sort {
+        PhysicalPlan::Sort { input, keys, top_k } => PhysicalPlan::Sort {
             input: Box::new(apply_columns(*input, columns)),
             keys,
+            top_k,
         },
         PhysicalPlan::Limit {
             input,

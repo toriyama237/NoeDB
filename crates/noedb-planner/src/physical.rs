@@ -94,6 +94,8 @@ pub enum PhysicalPlan {
         input: Box<Self>,
         /// `(column, ascending)`.
         keys: Vec<(String, bool)>,
+        /// When set, retain only the top `k` rows after sorting (fused from `LIMIT`).
+        top_k: Option<u64>,
     },
     /// Row cap.
     Limit {

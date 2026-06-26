@@ -526,8 +526,15 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
                 groups: out.into_iter(),
             })
         }
-        PhysicalPlan::Sort { input, keys } => {
+        PhysicalPlan::Sort { input, keys, top_k } => {
             let mut rows = execute_to_rows(*input, ctx)?;
+            if let Some(k) = top_k {
+                let k = k as usize;
+                if k > 0 && rows.len() > k {
+                    rows.select_nth_unstable_by(k - 1, |a, b| compare_rows(a, b, &keys));
+                    rows.truncate(k);
+                }
+            }
             rows.sort_by(|a, b| compare_rows(a, b, &keys));
             Ok(ExecState::Sort {
                 rows: rows.into_iter(),
