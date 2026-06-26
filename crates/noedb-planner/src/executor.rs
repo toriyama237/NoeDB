@@ -702,8 +702,33 @@ impl AggSlot {
 
 fn row_value(row: &RowMap, col: &str) -> Value {
     row.iter()
-        .find(|(n, _)| n == col || n.rsplit_once('.').is_some_and(|(_, bare)| bare == col))
+        .find(|(n, _)| column_name_matches(n, col))
         .map_or(Value::Null, |(_, v)| v.clone())
+}
+
+/// Match a stored row field name against a referenced column (exact, bare, or qualified).
+pub(crate) fn column_name_matches(stored: &str, wanted: &str) -> bool {
+    if stored == wanted {
+        return true;
+    }
+    if stored
+        .rsplit_once('.')
+        .is_some_and(|(_, bare)| bare == wanted)
+    {
+        return true;
+    }
+    if let Some((_, bare)) = wanted.rsplit_once('.') {
+        if stored == bare {
+            return true;
+        }
+        if stored
+            .rsplit_once('.')
+            .is_some_and(|(_, sb)| sb == bare)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 fn numeric_value(v: &Value) -> Option<f64> {
@@ -724,8 +749,14 @@ fn merge_rows(left: &RowMap, right: &RowMap) -> RowMap {
 
 pub(crate) fn compare_rows(a: &RowMap, b: &RowMap, keys: &[(String, bool)]) -> std::cmp::Ordering {
     for (col, asc) in keys {
-        let va = a.iter().find(|(n, _)| n == col).map(|(_, v)| v);
-        let vb = b.iter().find(|(n, _)| n == col).map(|(_, v)| v);
+        let va = a
+            .iter()
+            .find(|(n, _)| column_name_matches(n, col))
+            .map(|(_, v)| v);
+        let vb = b
+            .iter()
+            .find(|(n, _)| column_name_matches(n, col))
+            .map(|(_, v)| v);
         let ord = compare_sort_values(va, vb);
         if ord != std::cmp::Ordering::Equal {
             return if *asc { ord } else { ord.reverse() };
@@ -816,7 +847,7 @@ fn prune_cte_rows(rows: &[RowMap], columns: Option<&[String]>) -> Vec<RowMap> {
             cols.iter()
                 .filter_map(|c| {
                     row.iter()
-                        .find(|(n, _)| n == c)
+                        .find(|(n, _)| column_name_matches(n, c))
                         .map(|(n, v)| (n.clone(), v.clone()))
                 })
                 .collect()
@@ -865,6 +896,27 @@ mod join_tests {
         key.push(0);
         key.extend_from_slice(col.as_bytes());
         tree.put(&key, val).unwrap();
+    }
+
+    #[test]
+    fn column_name_matches_bare_and_qualified() {
+        assert!(column_name_matches("hc.ag.country", "country"));
+        assert!(column_name_matches("hc.n", "n"));
+        assert!(column_name_matches("hc.ag.country", "hc.country"));
+        assert!(!column_name_matches("hc.ag.country", "region"));
+    }
+
+    #[test]
+    fn prune_cte_rows_resolves_bare_names() {
+        let rows = vec![vec![
+            ("hc.ag.country".into(), Value::Bytes(b"FR".to_vec())),
+            ("hc.n".into(), Value::Integer(2)),
+        ]];
+        let pruned = prune_cte_rows(&rows, Some(&["country".into(), "n".into()]));
+        assert_eq!(pruned.len(), 1);
+        assert_eq!(pruned[0].len(), 2);
+        assert_eq!(pruned[0][0].0, "hc.ag.country");
+        assert_eq!(pruned[0][1].0, "hc.n");
     }
 
     #[test]
