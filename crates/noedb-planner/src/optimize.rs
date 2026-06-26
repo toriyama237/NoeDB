@@ -5,7 +5,7 @@ use noedb_storage::LsmTree;
 
 use crate::cost::{estimate, index_beats_seq_scan, PlanStats};
 use crate::index::SecondaryIndex;
-use crate::join::extract_equi_join;
+use crate::join::{extract_equi_join, orient_join_keys};
 use crate::logical::AggFunc;
 use crate::logical::LogicalPlan;
 use crate::physical::PhysicalPlan;
@@ -198,9 +198,9 @@ fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
             on,
             left_outer,
         } => {
+            let keys = extract_equi_join(&on).map(|k| orient_join_keys(&left, &right, &k));
             let left_p = to_physical(*left, ctx);
             let right_p = to_physical(*right, ctx);
-            let keys = extract_equi_join(&on);
             let hash = PhysicalPlan::HashJoin {
                 left: Box::new(left_p.clone()),
                 right: Box::new(right_p.clone()),

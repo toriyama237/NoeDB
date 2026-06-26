@@ -26,8 +26,8 @@ pub fn lower(logical: LogicalPlan) -> PhysicalPlan {
             on,
             left_outer,
         } => {
-            use crate::join::extract_equi_join;
-            let keys = extract_equi_join(&on);
+            use crate::join::{extract_equi_join, orient_join_keys};
+            let keys = extract_equi_join(&on).map(|k| orient_join_keys(&left, &right, &k));
             PhysicalPlan::HashJoin {
                 left: Box::new(lower(*left)),
                 right: Box::new(lower(*right)),
