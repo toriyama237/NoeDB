@@ -14,7 +14,7 @@ use noedb_storage::{LsmTree, StorageEngine, StorageError};
 
 use crate::eval::{eval_expr, eval_predicate};
 use crate::index::SecondaryIndex;
-use crate::join::join_key_value;
+use crate::join::{column_name_matches, join_key_value};
 use crate::logical::AggFunc;
 use crate::physical::PhysicalPlan;
 use crate::value::{Record, Value};
@@ -608,31 +608,90 @@ fn semi_join_rows(
     corr_on: Option<&Expr>,
     negated: bool,
 ) -> Result<Vec<RowMap>, ExecError> {
+    if let Some(corr_on) = corr_on {
+        semi_join_rows_hash_correlated(
+            left_rows,
+            right_rows,
+            left_key,
+            right_key,
+            corr_on,
+            negated,
+        )
+    } else {
+        semi_join_rows_hash(left_rows, right_rows, left_key, right_key, negated)
+    }
+}
+
+fn semi_join_rows_hash(
+    left_rows: Vec<RowMap>,
+    right_rows: &[RowMap],
+    left_key: &str,
+    right_key: &str,
+    negated: bool,
+) -> Result<Vec<RowMap>, ExecError> {
+    use std::collections::HashSet;
+
+    let mut right_keys = HashSet::new();
+    for rrow in right_rows {
+        if let Some(rkey) = join_key_value(rrow, right_key) {
+            right_keys.insert(rkey);
+        }
+    }
+
     let mut out = Vec::new();
-    'left: for lrow in left_rows {
+    for lrow in left_rows {
         let Some(lkey) = join_key_value(&lrow, left_key) else {
             continue;
         };
-        for rrow in right_rows {
-            let Some(rkey) = join_key_value(rrow, right_key) else {
-                continue;
-            };
-            if lkey != rkey {
-                continue;
+        let member = right_keys.contains(&lkey);
+        if negated {
+            if !member {
+                out.push(lrow);
             }
-            let merged = merge_rows(&lrow, rrow);
-            if let Some(pred) = corr_on {
-                if !eval_predicate(pred, &merged)? {
-                    continue;
+        } else if member {
+            out.push(lrow);
+        }
+    }
+    Ok(out)
+}
+
+fn semi_join_rows_hash_correlated(
+    left_rows: Vec<RowMap>,
+    right_rows: &[RowMap],
+    left_key: &str,
+    right_key: &str,
+    corr_on: &Expr,
+    negated: bool,
+) -> Result<Vec<RowMap>, ExecError> {
+    use std::collections::HashMap;
+
+    let mut buckets: HashMap<Vec<u8>, Vec<&RowMap>> = HashMap::new();
+    for rrow in right_rows {
+        if let Some(rkey) = join_key_value(rrow, right_key) {
+            buckets.entry(rkey).or_default().push(rrow);
+        }
+    }
+
+    let mut out = Vec::new();
+    for lrow in left_rows {
+        let Some(lkey) = join_key_value(&lrow, left_key) else {
+            continue;
+        };
+        let mut matched = false;
+        if let Some(candidates) = buckets.get(&lkey) {
+            for rrow in candidates {
+                let merged = merge_rows(&lrow, *rrow);
+                if eval_predicate(corr_on, &merged)? {
+                    matched = true;
+                    break;
                 }
             }
-            if negated {
-                continue 'left;
-            }
-            out.push(lrow);
-            continue 'left;
         }
         if negated {
+            if !matched {
+                out.push(lrow);
+            }
+        } else if matched {
             out.push(lrow);
         }
     }
@@ -704,31 +763,6 @@ fn row_value(row: &RowMap, col: &str) -> Value {
     row.iter()
         .find(|(n, _)| column_name_matches(n, col))
         .map_or(Value::Null, |(_, v)| v.clone())
-}
-
-/// Match a stored row field name against a referenced column (exact, bare, or qualified).
-pub(crate) fn column_name_matches(stored: &str, wanted: &str) -> bool {
-    if stored == wanted {
-        return true;
-    }
-    if stored
-        .rsplit_once('.')
-        .is_some_and(|(_, bare)| bare == wanted)
-    {
-        return true;
-    }
-    if let Some((_, bare)) = wanted.rsplit_once('.') {
-        if stored == bare {
-            return true;
-        }
-        if stored
-            .rsplit_once('.')
-            .is_some_and(|(_, sb)| sb == bare)
-        {
-            return true;
-        }
-    }
-    false
 }
 
 fn numeric_value(v: &Value) -> Option<f64> {
