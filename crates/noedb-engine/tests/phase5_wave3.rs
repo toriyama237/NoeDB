@@ -82,6 +82,27 @@ fn not_exists_correlated() {
 }
 
 #[test]
+fn not_exists_select_one_with_aliases() {
+    let (eng, dir) = temp_engine();
+    eng.put_row_default("employees", "1", "id", b"1").unwrap();
+    eng.put_row_default("employees", "1", "name", b"Ada").unwrap();
+    eng.put_row_default("employees", "2", "id", b"2").unwrap();
+    eng.put_row_default("employees", "2", "name", b"Bob").unwrap();
+    eng.put_row_default("payslips", "1", "id", b"1").unwrap();
+    eng.put_row_default("payslips", "1", "employee_id", b"1").unwrap();
+
+    let out = eng
+        .execute(
+            "SELECT e.name FROM employees e \
+             WHERE NOT EXISTS (SELECT 1 FROM payslips p WHERE p.employee_id = e.id) \
+             ORDER BY e.name",
+        )
+        .unwrap();
+    assert_eq!(out.rows, vec![vec!["Bob".to_string()]]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn derived_table_from_subquery() {
     let (eng, dir) = temp_engine();
     eng.put_row_default("items", "a", "id", b"1").unwrap();
