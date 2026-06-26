@@ -81,6 +81,37 @@ fn with_recursive_hierarchy() {
 }
 
 #[test]
+fn with_cte_group_by_qualified_column() {
+    let (eng, dir) = temp_engine();
+    eng.execute("CREATE TABLE agencies (id INT PRIMARY KEY, country TEXT NOT NULL)")
+        .unwrap();
+    eng.execute("CREATE TABLE employees (id INT PRIMARY KEY, agency_id INT NOT NULL)")
+        .unwrap();
+    eng.put_row_default("agencies", "1", "id", b"1").unwrap();
+    eng.put_row_default("agencies", "1", "country", b"FR").unwrap();
+    eng.put_row_default("agencies", "2", "id", b"2").unwrap();
+    eng.put_row_default("agencies", "2", "country", b"DE").unwrap();
+    eng.put_row_default("employees", "1", "id", b"1").unwrap();
+    eng.put_row_default("employees", "1", "agency_id", b"1").unwrap();
+    eng.put_row_default("employees", "2", "id", b"2").unwrap();
+    eng.put_row_default("employees", "2", "agency_id", b"1").unwrap();
+    eng.put_row_default("employees", "3", "id", b"3").unwrap();
+    eng.put_row_default("employees", "3", "agency_id", b"2").unwrap();
+
+    let out = eng
+        .execute(
+            "WITH hc AS (SELECT ag.country, COUNT(e.id) AS n FROM agencies ag \
+             INNER JOIN employees e ON e.agency_id = ag.id GROUP BY ag.country) \
+             SELECT country, n FROM hc ORDER BY n DESC",
+        )
+        .unwrap();
+    assert_eq!(out.rows.len(), 2);
+    assert_eq!(out.rows[0][0], "FR");
+    assert_eq!(out.rows[0][1], "2");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn explain_shows_cte_scan() {
     let (eng, dir) = temp_engine();
     let text = eng
