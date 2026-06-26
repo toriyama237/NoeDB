@@ -49,6 +49,7 @@ pub fn lower(logical: LogicalPlan) -> PhysicalPlan {
         LogicalPlan::Sort { input, keys } => PhysicalPlan::Sort {
             input: Box::new(lower(*input)),
             keys,
+            top_k: None,
         },
         LogicalPlan::Limit {
             input,

@@ -517,4 +517,16 @@ mod tests {
         assert_eq!(rows.len(), 2);
         let _ = std::fs::remove_dir_all(dir);
     }
+
+    #[test]
+    fn optimize_fuses_limit_into_sort_top_k() {
+        let (mut tree, dir) = temp_tree();
+        for i in 1..=20 {
+            put_row(&mut tree, "t", &i.to_string(), "v", i.to_string().as_bytes());
+        }
+        let stmt = noedb_parser::parse("SELECT v FROM t ORDER BY v DESC LIMIT 5").unwrap();
+        let text = explain_sql(&stmt, &tree).unwrap();
+        assert!(text.contains("top_k=5"), "expected fused top-k in plan: {text}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
