@@ -504,6 +504,15 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
                     }
                 }
             }
+            // SQL semantics: a global aggregate (no GROUP BY) over an empty
+            // input still yields one row — COUNT(*) = 0, SUM/MIN/MAX = NULL.
+            if groups.is_empty() && group_by.is_empty() {
+                let slots: HashMap<String, AggSlot> = aggs
+                    .iter()
+                    .map(|(name, _)| (name.clone(), AggSlot::default()))
+                    .collect();
+                groups.insert(Vec::new(), slots);
+            }
             #[allow(clippy::needless_collect, clippy::type_complexity)]
             let out: Vec<(Vec<(String, Vec<u8>)>, Vec<(String, Value)>)> = groups
                 .into_iter()
@@ -822,36 +831,56 @@ fn load_row_by_id<S: StorageEngine<Error = StorageError>>(
     row_id: &[u8],
     columns: Option<&[String]>,
 ) -> Option<RowMap> {
+    // Packed record first (v2.3 layout), then legacy cell overrides.
+    let mut packed_key = table.as_bytes().to_vec();
+    packed_key.push(0);
+    packed_key.extend_from_slice(row_id);
+    let mut row: RowMap = match store.get(&packed_key) {
+        Ok(Some(bytes)) if noedb_storage::is_packed_row(&bytes) => {
+            noedb_storage::decode_row(&bytes)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(name, _)| columns.is_none_or(|cols| cols.iter().any(|c| c == name)))
+                .map(|(name, val)| (name, Value::Bytes(val)))
+                .collect()
+        }
+        _ => RowMap::new(),
+    };
+
     if let Some(cols) = columns {
-        let mut row = RowMap::new();
         for col in cols {
             let key = table_cell_key(table, row_id, col.as_bytes());
             if let Ok(Some(val)) = store.get(&key) {
-                row.push((col.clone(), Value::Bytes(val)));
+                set_row_column(&mut row, col.clone(), Value::Bytes(val));
             }
         }
         return if row.is_empty() { None } else { Some(row) };
     }
 
-    let mut prefix = table.as_bytes().to_vec();
-    prefix.push(0);
-    prefix.extend_from_slice(row_id);
+    let mut prefix = packed_key.clone();
     prefix.push(0);
     let end = noedb_storage::prefix_end(&prefix);
-
-    let mut row = RowMap::new();
     for (key, val) in store.range(&prefix, &end) {
         if !key.starts_with(&prefix) {
             continue;
         }
         let col = &key[prefix.len()..];
         let col_name = String::from_utf8_lossy(col).into_owned();
-        row.push((col_name, Value::Bytes(val)));
+        set_row_column(&mut row, col_name, Value::Bytes(val));
     }
     if row.is_empty() {
         None
     } else {
         Some(row)
+    }
+}
+
+/// Overwrite `col` in `row`, or append it (cells shadow packed columns).
+fn set_row_column(row: &mut RowMap, col: String, val: Value) {
+    if let Some(slot) = row.iter_mut().find(|(name, _)| *name == col) {
+        slot.1 = val;
+    } else {
+        row.push((col, val));
     }
 }
 

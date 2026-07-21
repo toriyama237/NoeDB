@@ -17,6 +17,12 @@ pub const FILTER_ROW_COST: f64 = 0.05;
 pub const HASH_JOIN_ROW_COST: f64 = 1.2;
 /// Nested-loop join per left row (right scan).
 pub const NESTED_LOOP_ROW_COST: f64 = 2.0;
+/// Pessimistic row estimate for tables without statistics.
+///
+/// A table that was never `ANALYZE`d must not be costed as free:
+/// that made quadratic nested-loop joins look cheaper than hash joins
+/// on 50k-row tables. Unknown means "assume big enough to matter".
+pub const UNKNOWN_TABLE_ROWS: u64 = 1024;
 
 /// Table/column statistics for costing.
 #[derive(Debug, Clone, Default)]
@@ -29,11 +35,15 @@ pub struct PlanStats {
 
 impl PlanStats {
     /// Row estimate for `table`.
+    ///
+    /// Falls back to [`UNKNOWN_TABLE_ROWS`] when the table was never
+    /// analyzed and no explicit default is configured.
     #[must_use]
     pub fn rows_for(&self, table: &str) -> u64 {
-        self.tables
-            .get(table)
-            .map_or(self.default_rows, |t| t.row_count.max(1))
+        self.tables.get(table).map_or_else(
+            || self.default_rows.max(UNKNOWN_TABLE_ROWS),
+            |t| t.row_count.max(1),
+        )
     }
 
     /// Table stats if present.
@@ -130,7 +140,24 @@ fn output_rows(plan: &PhysicalPlan, stats: &PlanStats) -> u64 {
         PhysicalPlan::Project { input, .. }
         | PhysicalPlan::Sort { input, .. }
         | PhysicalPlan::Dedup { input, .. } => output_rows(input, stats),
-        PhysicalPlan::HashJoin { left, .. } => output_rows(left, stats),
+        // Equi-join cardinality: bounded by the larger input (FK pattern).
+        // Estimating joins as `default_rows` (0) made any plan sitting on
+        // top of a join look free, so nested loops won over hash joins.
+        PhysicalPlan::HashJoin { left, right, .. }
+        | PhysicalPlan::MergeJoin { left, right, .. }
+        | PhysicalPlan::NestedLoopJoin { left, right, .. } => {
+            output_rows(left, stats).max(output_rows(right, stats))
+        }
+        PhysicalPlan::SemiJoin { left, .. } => output_rows(left, stats),
+        PhysicalPlan::Aggregate {
+            input, group_by, ..
+        } => {
+            if group_by.is_empty() {
+                1
+            } else {
+                output_rows(input, stats).min(1024)
+            }
+        }
         _ => stats.default_rows,
     }
 }

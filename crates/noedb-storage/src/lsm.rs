@@ -165,20 +165,62 @@ impl LsmTree {
         Ok(())
     }
 
-    /// Delete a key.
+    /// Delete a key durably, even when copies were already flushed to SSTs.
+    ///
+    /// Removes the key from the active memtable, then — if an older copy is
+    /// still visible in SSTs or as an MVCC version — writes a tombstone
+    /// version that shadows it (WAL-logged, crash-safe). Returns `true` when
+    /// a live value existed.
     pub fn delete(&mut self, key: &[u8]) -> Result<bool, StorageError> {
         self.gate_write()?;
         self.wal.append(&LogEntry::delete(key.to_vec()))?;
-        let removed = self.active.delete(key)?;
+        self.wal_pending += 1;
+        self.maybe_sync_wal()?;
+        let removed_active = self.active.delete(key)?;
+
+        // A memtable removal cannot reach copies already flushed to disk:
+        // without a tombstone the key would resurrect on the next read.
+        if self.get(key)?.is_some() {
+            let view = crate::mvcc::ReadView::new(0, u64::MAX, std::collections::BTreeSet::new());
+            let next_ts = self
+                .find_visible_version(key, &view)?
+                .map_or(2, |v| v.commit_ts.saturating_add(1));
+            self.put_version(key, &crate::mvcc::Version::tombstone(next_ts))?;
+            self.maybe_flush_and_compact()?;
+            return Ok(true);
+        }
+
         self.maybe_flush_and_compact()?;
-        Ok(removed)
+        Ok(removed_active)
     }
 
-    /// Read path: active MemTable → L0 (newest first) → L1.
+    /// Read path: active MemTable (newest) → MVCC versions → L0 → L1.
     ///
-    /// For user keys written via [`LsmTree::put_version`](crate::LsmTree::put_version),
-    /// use [`LsmTree::get_latest`](crate::LsmTree::get_latest) instead.
+    /// Resolution order matters: the active memtable holds the freshest
+    /// writes; MVCC versions (including tombstones) shadow raw SST copies;
+    /// raw SSTs are consulted newest-first only when no version exists.
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
+        if let Some(raw) = self.active.get(key)? {
+            if raw.starts_with(b"MVCC") {
+                if let Ok(ver) = crate::mvcc::decode_or_legacy(&raw) {
+                    if ver.deleted {
+                        return Ok(None);
+                    }
+                    return Ok(Some(ver.value));
+                }
+            } else {
+                return Ok(Some(raw));
+            }
+        }
+
+        let view = crate::mvcc::ReadView::new(0, u64::MAX, std::collections::BTreeSet::new());
+        if let Some(ver) = self.find_visible_version(key, &view)? {
+            if ver.deleted {
+                return Ok(None);
+            }
+            return Ok(Some(ver.value));
+        }
+
         for path in self.level0.iter().rev() {
             if let Some(v) = self.get_from_sst(path, key)? {
                 return Ok(Some(v));
@@ -189,18 +231,7 @@ impl LsmTree {
                 return Ok(Some(v));
             }
         }
-        if let Some(raw) = self.active.get(key)? {
-            if raw.starts_with(b"MVCC") {
-                if let Ok(ver) = crate::mvcc::decode_or_legacy(&raw) {
-                    if !ver.deleted {
-                        return Ok(Some(ver.value));
-                    }
-                }
-            } else {
-                return Ok(Some(raw));
-            }
-        }
-        self.get_latest(key)
+        Ok(None)
     }
 
     /// Number of L0 SSTable files.
@@ -290,7 +321,7 @@ impl LsmTree {
         Ok(())
     }
 
-    fn cached_reader(&self, path: &Path) -> Result<SstReader, StorageError> {
+    pub(crate) fn cached_reader(&self, path: &Path) -> Result<SstReader, StorageError> {
         let mut cache = self.sst_cache.lock();
         Ok(match cache.entry(path.to_path_buf()) {
             Entry::Vacant(slot) => slot.insert(SstReader::open(path)?).clone(),
@@ -570,6 +601,53 @@ mod tests {
             let k = format!("row:{i:05}");
             assert_eq!(tree.get(k.as_bytes()).unwrap(), Some(b"data".to_vec()));
         }
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn newer_memtable_write_shadows_flushed_sst_copy() {
+        let dir = temp_dir("shadow");
+        let mut tree = LsmTree::open(
+            &dir,
+            LsmConfig {
+                max_mem_bytes: 64,
+                l0_compaction_trigger: 99,
+                wal_sync: WalSyncMode::EveryAppend,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        // First write is flushed to an L0 SST by the tiny memtable budget.
+        tree.put(b"user:1", &[b'x'; 100]).unwrap();
+        assert!(tree.l0_count() >= 1);
+        // Second write stays in the active memtable and must win the read.
+        tree.put(b"user:1", b"new").unwrap();
+        assert_eq!(tree.get(b"user:1").unwrap(), Some(b"new".to_vec()));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn delete_reaches_keys_already_flushed_to_sst() {
+        let dir = temp_dir("del-flushed");
+        let mut tree = LsmTree::open(
+            &dir,
+            LsmConfig {
+                max_mem_bytes: 64,
+                l0_compaction_trigger: 99,
+                wal_sync: WalSyncMode::EveryAppend,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tree.put(b"user:1", &[b'y'; 100]).unwrap();
+        assert!(tree.l0_count() >= 1, "value must live in an SST");
+
+        assert!(tree.delete(b"user:1").unwrap());
+        assert_eq!(tree.get(b"user:1").unwrap(), None);
+        assert!(
+            !StorageEngine::iter(&tree).any(|(k, _)| k == b"user:1"),
+            "deleted key must not resurrect in scans"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 

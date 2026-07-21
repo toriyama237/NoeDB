@@ -91,7 +91,7 @@ impl LsmTree {
         n
     }
 
-    fn find_visible_version(
+    pub(crate) fn find_visible_version(
         &self,
         user_key: &[u8],
         view: &ReadView,
@@ -100,44 +100,43 @@ impl LsmTree {
         let end = user_key_prefix_end(user_key);
         let mut best: Option<Version> = None;
 
-        let mut active_entries: Vec<_> = self.active.range(&start, &end).collect();
-        active_entries.sort_by(|a, b| b.0.cmp(&a.0));
-        for (ik, raw) in active_entries {
-            let ver = decode_or_legacy(&raw)?;
+        let mut consider = |ver: Version| {
             if !view.is_visible(&ver, None) {
-                continue;
+                return;
             }
             let better = match &best {
                 None => true,
                 Some(b) => ver.commit_ts > b.commit_ts,
             };
             if better {
-                let _ = decode_user_key(&ik);
                 best = Some(ver);
             }
+        };
+
+        // The scan window `[user_key, prefix_end)` also covers longer keys
+        // sharing the prefix (e.g. legacy cell keys `key\0col`): only exact
+        // matches on the decoded user key are versions of this key.
+        for (ik, raw) in self.active.range(&start, &end) {
+            if decode_user_key(&ik) != user_key && ik.as_slice() != user_key {
+                continue;
+            }
+            consider(decode_or_legacy(&raw)?);
         }
 
+        // Bounded block-index seek: only blocks that may hold versions of
+        // this user key are read (was a full SST scan per point read).
         for path in self.level0.iter().rev().chain(self.level1.iter().rev()) {
-            if let Ok(reader) = crate::sstable::SstReader::open(path) {
-                if let Ok(iter) = reader.scan() {
-                    for item in iter.flatten() {
-                        let (ik, raw) = item;
-                        if ik.as_slice() < start.as_slice() || ik.as_slice() >= end.as_slice() {
-                            continue;
-                        }
-                        let ver = decode_or_legacy(&raw)?;
-                        if !view.is_visible(&ver, None) {
-                            continue;
-                        }
-                        let better = match &best {
-                            None => true,
-                            Some(b) => ver.commit_ts > b.commit_ts,
-                        };
-                        if better {
-                            best = Some(ver);
-                        }
-                    }
+            let Ok(reader) = self.cached_reader(path) else {
+                continue;
+            };
+            let Ok(iter) = reader.scan_range(&start, &end) else {
+                continue;
+            };
+            for (ik, raw) in iter.flatten() {
+                if decode_user_key(&ik) != user_key && ik.as_slice() != user_key {
+                    continue;
                 }
+                consider(decode_or_legacy(&raw)?);
             }
         }
 
