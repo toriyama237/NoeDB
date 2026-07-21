@@ -616,14 +616,7 @@ fn semi_join_rows(
     negated: bool,
 ) -> Result<Vec<RowMap>, ExecError> {
     if let Some(corr_on) = corr_on {
-        semi_join_rows_hash_correlated(
-            left_rows,
-            right_rows,
-            left_key,
-            right_key,
-            corr_on,
-            negated,
-        )
+        semi_join_rows_hash_correlated(left_rows, right_rows, left_key, right_key, corr_on, negated)
     } else {
         semi_join_rows_hash(left_rows, right_rows, left_key, right_key, negated)
     }
@@ -687,7 +680,7 @@ fn semi_join_rows_hash_correlated(
         let mut matched = false;
         if let Some(candidates) = buckets.get(&lkey) {
             for rrow in candidates {
-                let merged = merge_rows(&lrow, *rrow);
+                let merged = merge_rows(&lrow, rrow);
                 if eval_predicate(corr_on, &merged)? {
                     matched = true;
                     break;

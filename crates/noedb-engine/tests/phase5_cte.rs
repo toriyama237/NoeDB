@@ -88,15 +88,20 @@ fn with_cte_group_by_qualified_column() {
     eng.execute("CREATE TABLE employees (id INT PRIMARY KEY, agency_id INT NOT NULL)")
         .unwrap();
     eng.put_row_default("agencies", "1", "id", b"1").unwrap();
-    eng.put_row_default("agencies", "1", "country", b"FR").unwrap();
+    eng.put_row_default("agencies", "1", "country", b"FR")
+        .unwrap();
     eng.put_row_default("agencies", "2", "id", b"2").unwrap();
-    eng.put_row_default("agencies", "2", "country", b"DE").unwrap();
+    eng.put_row_default("agencies", "2", "country", b"DE")
+        .unwrap();
     eng.put_row_default("employees", "1", "id", b"1").unwrap();
-    eng.put_row_default("employees", "1", "agency_id", b"1").unwrap();
+    eng.put_row_default("employees", "1", "agency_id", b"1")
+        .unwrap();
     eng.put_row_default("employees", "2", "id", b"2").unwrap();
-    eng.put_row_default("employees", "2", "agency_id", b"1").unwrap();
+    eng.put_row_default("employees", "2", "agency_id", b"1")
+        .unwrap();
     eng.put_row_default("employees", "3", "id", b"3").unwrap();
-    eng.put_row_default("employees", "3", "agency_id", b"2").unwrap();
+    eng.put_row_default("employees", "3", "agency_id", b"2")
+        .unwrap();
 
     let out = eng
         .execute(

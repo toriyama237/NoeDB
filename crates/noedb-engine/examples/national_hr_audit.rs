@@ -3,7 +3,12 @@
 //! Reference data via SQL; bulk employee/payslip load via `put_row` (avoids O(n²)
 //! PK scans on batched INSERT). Business queries and constraint checks via SQL.
 
-#![allow(clippy::print_stdout, clippy::unwrap_used, clippy::expect_used)]
+#![allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::unwrap_used,
+    clippy::expect_used
+)]
 
 use std::fs;
 use std::path::PathBuf;
@@ -75,7 +80,8 @@ fn run_bench(eng: &LocalEngine, name: &str, sql: &str) -> Bench {
 }
 
 fn put(eng: &LocalEngine, table: &str, row: &str, col: &str, val: &str) {
-    eng.put_row_default(table, row, col, val.as_bytes()).unwrap();
+    eng.put_row_default(table, row, col, val.as_bytes())
+        .unwrap();
 }
 
 fn main() {
@@ -164,14 +170,20 @@ fn main() {
         put(&eng, "employees", &row, "id", &row);
         put(&eng, "employees", &row, "agency_id", &agency.to_string());
         put(&eng, "employees", &row, "department_id", &dept.to_string());
-        put(&eng, "employees", &row, "matricule", &format!("MAT{eid:06}"));
+        put(
+            &eng,
+            "employees",
+            &row,
+            "matricule",
+            &format!("MAT{eid:06}"),
+        );
         put(&eng, "employees", &row, "name", &format!("Emp {eid}"));
         put(&eng, "employees", &row, "grade", grade);
         put(&eng, "employees", &row, "salary_base", &salary.to_string());
         if eid % 10_000 == 0 {
             eprintln!(
                 "  … {eid} employees ({:.0}/s)",
-                eid as f64 / t_emp.elapsed().as_secs_f64()
+                f64::from(eid) / t_emp.elapsed().as_secs_f64()
             );
         }
     }
@@ -313,7 +325,11 @@ fn main() {
         fail += 1;
     }
 
-    let count = run_bench(&eng, "N21_final_employee_count", "SELECT COUNT(*) AS n FROM employees");
+    let count = run_bench(
+        &eng,
+        "N21_final_employee_count",
+        "SELECT COUNT(*) AS n FROM employees",
+    );
     if count.ok {
         pass += 1;
     } else {
@@ -323,8 +339,8 @@ fn main() {
 
     let report = Report {
         title: "NoeDB — Audit Banque Multinationale (80 agences, 50 009 employes)".into(),
-        generated_at: format!("{}", humantime()),
-        noedb_version: "2.0.0".into(),
+        generated_at: humantime(),
+        noedb_version: env!("CARGO_PKG_VERSION").into(),
         data_dir: dir.display().to_string(),
         agencies: AGENCIES,
         departments: DEPARTMENTS,
