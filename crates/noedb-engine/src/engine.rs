@@ -748,9 +748,16 @@ impl DistributedEngine {
         let shard_n = voter_ids.len().max(1);
         let mut stores = HashMap::new();
         let mut applied_watermark = HashMap::new();
+        // Timestamps alone are not unique enough: two clusters created in
+        // the same instant (parallel tests, coarse macOS clock) would share
+        // node directories and corrupt each other's WAL. Disambiguate with
+        // the process id and a process-wide counter.
+        static CLUSTER_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = CLUSTER_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         for id in &voter_ids {
             let dir = std::env::temp_dir().join(format!(
-                "noedb-engine-{}-{}",
+                "noedb-engine-{}-{}-{seq}-{}",
+                std::process::id(),
                 id.0,
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
