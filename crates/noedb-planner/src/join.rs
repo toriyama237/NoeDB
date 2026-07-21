@@ -125,10 +125,7 @@ pub fn column_name_matches(stored: &str, wanted: &str) -> bool {
         if stored == bare {
             return true;
         }
-        if stored
-            .rsplit_once('.')
-            .is_some_and(|(_, sb)| sb == bare)
-        {
+        if stored.rsplit_once('.').is_some_and(|(_, sb)| sb == bare) {
             return true;
         }
     }

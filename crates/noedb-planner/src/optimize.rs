@@ -163,7 +163,11 @@ fn fuse_top_k_sort(plan: PhysicalPlan) -> PhysicalPlan {
         PhysicalPlan::Dedup { input } => PhysicalPlan::Dedup {
             input: Box::new(fuse_top_k_sort(*input)),
         },
-        PhysicalPlan::SubqueryScan { input, prefix, columns } => PhysicalPlan::SubqueryScan {
+        PhysicalPlan::SubqueryScan {
+            input,
+            prefix,
+            columns,
+        } => PhysicalPlan::SubqueryScan {
             input: Box::new(fuse_top_k_sort(*input)),
             prefix,
             columns,
@@ -525,7 +529,11 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
                 Some(cols)
             }
         }
-        PhysicalPlan::Sort { input, keys, top_k: _ } => {
+        PhysicalPlan::Sort {
+            input,
+            keys,
+            top_k: _,
+        } => {
             let mut cols = collect_columns(input).unwrap_or_default();
             cols.extend(keys.iter().map(|(k, _)| k.clone()));
             Some(dedup(cols))

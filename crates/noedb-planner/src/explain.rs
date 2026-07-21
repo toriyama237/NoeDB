@@ -107,9 +107,7 @@ impl<'a> ExplainWriter<'a> {
                 self.write_plan(input, indent + 1);
             }
             PhysicalPlan::Sort { input, keys, top_k } => {
-                let top = top_k
-                    .map(|k| format!(", top_k={k}"))
-                    .unwrap_or_default();
+                let top = top_k.map(|k| format!(", top_k={k}")).unwrap_or_default();
                 self.lines
                     .push(format!("{pad}Sort(keys={}{top})", keys.len()));
                 self.write_plan(input, indent + 1);
