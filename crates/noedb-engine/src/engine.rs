@@ -362,6 +362,32 @@ impl LocalEngine {
         self.put_row(DEFAULT_SESSION, table, row, column, value)
     }
 
+    /// Insert a full row as one packed record (v2.3 layout).
+    ///
+    /// One storage key, one WAL append, and one MVCC version per row —
+    /// instead of one per column. This is the fast path used by SQL
+    /// `INSERT` and the recommended API for bulk ingest.
+    ///
+    /// # Errors
+    ///
+    /// Storage write failure.
+    pub fn put_packed_row(
+        &self,
+        table: &str,
+        row: &str,
+        columns: &[(String, Vec<u8>)],
+    ) -> Result<(), EngineError> {
+        let key = noedb_storage::packed_row_key(table, row);
+        let record = noedb_storage::encode_row(columns);
+        let ts = self.txn.oracle().next();
+        self.storage
+            .write()
+            .put_version(&key, &Version::put(ts, record))
+            .map_err(EngineError::Storage)?;
+        self.cache.lock().invalidate_table(table);
+        Ok(())
+    }
+
     /// Parse and run SQL on the default session.
     ///
     /// # Errors

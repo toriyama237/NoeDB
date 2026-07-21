@@ -113,8 +113,13 @@ impl LsmTree {
             }
         };
 
+        // The scan window `[user_key, prefix_end)` also covers longer keys
+        // sharing the prefix (e.g. legacy cell keys `key\0col`): only exact
+        // matches on the decoded user key are versions of this key.
         for (ik, raw) in self.active.range(&start, &end) {
-            let _ = decode_user_key(&ik);
+            if decode_user_key(&ik) != user_key && ik.as_slice() != user_key {
+                continue;
+            }
             consider(decode_or_legacy(&raw)?);
         }
 
