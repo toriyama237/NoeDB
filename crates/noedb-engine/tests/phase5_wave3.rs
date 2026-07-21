@@ -85,11 +85,14 @@ fn not_exists_correlated() {
 fn not_exists_select_one_with_aliases() {
     let (eng, dir) = temp_engine();
     eng.put_row_default("employees", "1", "id", b"1").unwrap();
-    eng.put_row_default("employees", "1", "name", b"Ada").unwrap();
+    eng.put_row_default("employees", "1", "name", b"Ada")
+        .unwrap();
     eng.put_row_default("employees", "2", "id", b"2").unwrap();
-    eng.put_row_default("employees", "2", "name", b"Bob").unwrap();
+    eng.put_row_default("employees", "2", "name", b"Bob")
+        .unwrap();
     eng.put_row_default("payslips", "1", "id", b"1").unwrap();
-    eng.put_row_default("payslips", "1", "employee_id", b"1").unwrap();
+    eng.put_row_default("payslips", "1", "employee_id", b"1")
+        .unwrap();
 
     let out = eng
         .execute(
