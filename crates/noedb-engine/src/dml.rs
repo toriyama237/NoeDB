@@ -362,8 +362,9 @@ fn scan_table<S: StorageEngine<Error = StorageError>>(
 ) -> Result<Vec<(String, RowMap)>, EngineError> {
     let mut prefix = table.as_bytes().to_vec();
     prefix.push(0);
+    let end = noedb_storage::prefix_end(&prefix);
     let mut grouped: BTreeMap<Vec<u8>, RowMap> = BTreeMap::new();
-    for (key, val) in StorageEngine::iter(store) {
+    for (key, val) in store.range(&prefix, &end) {
         if !key.starts_with(&prefix) {
             continue;
         }
@@ -391,7 +392,9 @@ fn delete_row(
     row_id: &str,
 ) -> Result<(), EngineError> {
     let prefix = row_prefix(table, row_id);
-    let keys: Vec<Vec<u8>> = StorageEngine::iter(tree)
+    let end = noedb_storage::prefix_end(&prefix);
+    let keys: Vec<Vec<u8>> = tree
+        .range(&prefix, &end)
         .filter_map(|(key, _)| key.starts_with(&prefix).then_some(key))
         .collect();
     for key in keys {

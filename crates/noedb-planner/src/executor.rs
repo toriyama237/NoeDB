@@ -839,13 +839,11 @@ fn load_row_by_id<S: StorageEngine<Error = StorageError>>(
     prefix.push(0);
     prefix.extend_from_slice(row_id);
     prefix.push(0);
+    let end = noedb_storage::prefix_end(&prefix);
 
     let mut row = RowMap::new();
-    for (key, val) in StorageEngine::iter(store) {
+    for (key, val) in store.range(&prefix, &end) {
         if !key.starts_with(&prefix) {
-            if key.as_slice() > prefix.as_slice() {
-                break;
-            }
             continue;
         }
         let col = &key[prefix.len()..];

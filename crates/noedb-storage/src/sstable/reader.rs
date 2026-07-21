@@ -92,6 +92,14 @@ impl SstReader {
         SstIter::new(self)
     }
 
+    /// Bounded scan over `[start, end)`, skipping blocks outside the range.
+    ///
+    /// Uses the block index to seek directly to the first candidate block and
+    /// stops as soon as a block cannot contain keys below `end`.
+    pub fn scan_range(&self, start: &[u8], end: &[u8]) -> Result<SstRangeIter, StorageError> {
+        SstRangeIter::new(self, start, end)
+    }
+
     fn find_block(&self, key: &[u8]) -> Option<usize> {
         if self.index.is_empty() {
             return None;
@@ -281,6 +289,103 @@ impl Iterator for SstIter {
     }
 }
 
+/// Bounded iterator over KV pairs whose keys fall in `[start, end)`.
+///
+/// Blocks entirely outside the range are never read from disk.
+pub struct SstRangeIter {
+    reader: SstReader,
+    block_idx: usize,
+    block: Vec<u8>,
+    off: usize,
+    start: Vec<u8>,
+    end: Vec<u8>,
+    done: bool,
+}
+
+impl SstRangeIter {
+    fn new(reader: &SstReader, start: &[u8], end: &[u8]) -> Result<Self, StorageError> {
+        // Seek to the block that may contain `start`; fall back to block 0
+        // when `start` sorts before every indexed first key.
+        let block_idx = reader.find_block(start).unwrap_or(0);
+        let mut iter = Self {
+            reader: reader.clone(),
+            block_idx,
+            block: Vec::new(),
+            off: 0,
+            start: start.to_vec(),
+            end: end.to_vec(),
+            done: false,
+        };
+        iter.load_block()?;
+        Ok(iter)
+    }
+
+    fn load_block(&mut self) -> Result<(), StorageError> {
+        let index = self.reader.index();
+        if self.block_idx >= index.len() {
+            self.done = true;
+            self.block.clear();
+            self.off = 0;
+            return Ok(());
+        }
+        // A block whose first key is already >= end cannot contain range keys.
+        if index[self.block_idx].first_key.as_slice() >= self.end.as_slice() {
+            self.done = true;
+            self.block.clear();
+            self.off = 0;
+            return Ok(());
+        }
+        let offset = index[self.block_idx].offset;
+        self.block = self.reader.read_block_at(offset)?;
+        self.off = 0;
+        Ok(())
+    }
+}
+
+impl Iterator for SstRangeIter {
+    type Item = Result<(Vec<u8>, Vec<u8>), StorageError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.done {
+                return None;
+            }
+            if self.off + 6 > self.block.len() {
+                self.block_idx += 1;
+                if let Err(e) = self.load_block() {
+                    return Some(Err(e));
+                }
+                continue;
+            }
+            let key_len =
+                u16::from_le_bytes(self.block[self.off..self.off + 2].try_into().ok()?) as usize;
+            let val_len =
+                u32::from_le_bytes(self.block[self.off + 2..self.off + 6].try_into().ok()?)
+                    as usize;
+            self.off += 6;
+            if self.off + key_len + val_len > self.block.len() {
+                self.block_idx += 1;
+                let _ = self.load_block();
+                continue;
+            }
+            let key = self.block[self.off..self.off + key_len].to_vec();
+            self.off += key_len;
+            let val_start = self.off;
+            self.off += val_len;
+            if key.as_slice() < self.start.as_slice() {
+                continue;
+            }
+            if key.as_slice() >= self.end.as_slice() {
+                // Keys are sorted within and across blocks: nothing left.
+                self.done = true;
+                return None;
+            }
+            let val = self.block[val_start..val_start + val_len].to_vec();
+            return Some(Ok((key, val)));
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
@@ -314,6 +419,36 @@ mod tests {
         }
         let count = reader.scan().unwrap().count();
         assert_eq!(count, 50_000);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn scan_range_returns_only_bounded_keys() {
+        let path = temp_sst();
+        let mut table = MemTable::new();
+        for i in 0..10_000u32 {
+            let k = format!("k:{i:05}");
+            table.put(k.as_bytes(), k.as_bytes()).unwrap();
+        }
+        SstWriter::write_from_memtable(&path, &table).unwrap();
+        let reader = SstReader::open(&path).unwrap();
+
+        let items: Vec<_> = reader
+            .scan_range(b"k:00100", b"k:00200")
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(items.len(), 100);
+        assert_eq!(items[0].0, b"k:00100".to_vec());
+        assert_eq!(items[99].0, b"k:00199".to_vec());
+
+        // Bounds outside the keyspace.
+        let none: Vec<_> = reader
+            .scan_range(b"z", b"zz")
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(none.is_empty());
         let _ = std::fs::remove_file(path);
     }
 }

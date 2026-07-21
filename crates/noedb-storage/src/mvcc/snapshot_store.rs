@@ -1,6 +1,7 @@
 //! Snapshot-isolated read view over LSM + MVCC + txn write set.
 
 use std::collections::BTreeMap;
+use std::ops::Bound;
 
 use crate::engine::StorageEngine;
 use crate::error::StorageError;
@@ -94,6 +95,39 @@ impl StorageEngine for SnapshotStore<'_> {
         }
         if let Some(writes) = &self.writes {
             for (k, op) in writes {
+                match op {
+                    Some(v) => {
+                        merged.insert(k.clone(), v.clone());
+                    }
+                    None => {
+                        merged.remove(k);
+                    }
+                }
+            }
+        }
+        merged.into_iter()
+    }
+
+    fn range<'b>(
+        &'b self,
+        start: &'b [u8],
+        end: &'b [u8],
+    ) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + 'b {
+        let in_range = |k: &[u8]| k >= start && (end.is_empty() || k < end);
+        let mut merged: BTreeMap<Vec<u8>, Vec<u8>> = BTreeMap::new();
+        for (k, v) in self.mvcc.scan(&self.view) {
+            if in_range(&k) {
+                merged.insert(k, v);
+            }
+        }
+        for (k, v) in self.base.range_visible(start, end, &self.view) {
+            merged.entry(k).or_insert(v);
+        }
+        if let Some(writes) = &self.writes {
+            for (k, op) in writes.range::<[u8], _>((Bound::Included(start), Bound::Unbounded)) {
+                if !in_range(k) {
+                    break;
+                }
                 match op {
                     Some(v) => {
                         merged.insert(k.clone(), v.clone());
