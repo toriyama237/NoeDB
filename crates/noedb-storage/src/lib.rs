@@ -36,6 +36,7 @@ mod manifest;
 mod memtable;
 mod mmap_io;
 pub mod mvcc;
+mod rowpack;
 mod scrub;
 mod sstable;
 mod wal;
@@ -60,6 +61,7 @@ pub use crate::mvcc::{
     encode_internal_key, gc_versions, CommitTs, GcStats, MvccMemTable, ReadView, SnapshotStore,
     TimestampOracle, TxnId, Version,
 };
+pub use crate::rowpack::{decode_row, encode_row, is_packed_row, packed_row_key, ROWPACK_MAGIC};
 pub use crate::scrub::{scrub_data_dir, ScrubReport};
 pub use crate::sstable::{
     SstRangeIter, SstReader, SstWriteOptions, SstWriter, SST_MAGIC, SST_VERSION, SST_VERSION_V2,

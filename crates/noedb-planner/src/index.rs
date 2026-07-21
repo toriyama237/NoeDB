@@ -75,15 +75,23 @@ impl SecondaryIndex {
                 continue;
             }
             let rest = &key[table_prefix.len()..];
-            let Some(pos) = rest.iter().position(|&b| b == 0) else {
-                continue;
-            };
-            let row_id = &rest[..pos];
-            let col = &rest[pos + 1..];
-            if col != column.as_bytes() {
-                continue;
+            if let Some(pos) = rest.iter().position(|&b| b == 0) {
+                // Legacy cell entry: `table\0row\0col`.
+                let row_id = &rest[..pos];
+                let col = &rest[pos + 1..];
+                if col != column.as_bytes() {
+                    continue;
+                }
+                index.insert(val.clone(), row_id.to_vec());
+            } else if noedb_storage::is_packed_row(&val) {
+                // Packed row: extract the indexed column from the record.
+                let Some(cols) = noedb_storage::decode_row(&val) else {
+                    continue;
+                };
+                if let Some((_, cell)) = cols.into_iter().find(|(name, _)| name == column) {
+                    index.insert(cell, rest.to_vec());
+                }
             }
-            index.insert(val.clone(), row_id.to_vec());
         }
 
         Self::persist(store, table, column, &index)?;

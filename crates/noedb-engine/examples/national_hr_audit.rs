@@ -79,9 +79,12 @@ fn run_bench(eng: &LocalEngine, name: &str, sql: &str) -> Bench {
     }
 }
 
-fn put(eng: &LocalEngine, table: &str, row: &str, col: &str, val: &str) {
-    eng.put_row_default(table, row, col, val.as_bytes())
-        .unwrap();
+fn put_row(eng: &LocalEngine, table: &str, row: &str, cols: &[(&str, String)]) {
+    let packed: Vec<(String, Vec<u8>)> = cols
+        .iter()
+        .map(|(name, val)| ((*name).to_string(), val.clone().into_bytes()))
+        .collect();
+    eng.put_packed_row(table, row, &packed).unwrap();
 }
 
 fn main() {
@@ -158,7 +161,7 @@ fn main() {
     eng.execute("INSERT INTO payroll_periods VALUES (1, 2026, 3, '2026-03', 'closed')")
         .unwrap();
 
-    eprintln!("Phase 2: {EMPLOYEES} employees (put_row bulk)…");
+    eprintln!("Phase 2: {EMPLOYEES} employees (packed row bulk)…");
     let t_emp = Instant::now();
     let grades = ["A1", "B1", "C1", "M1", "DIR"];
     for eid in 1..=EMPLOYEES {
@@ -167,19 +170,20 @@ fn main() {
         let dept = ((eid * 7) % DEPARTMENTS) + 1;
         let salary = 220_000 + (eid % 980) * 1000;
         let grade = grades[(eid as usize) % grades.len()];
-        put(&eng, "employees", &row, "id", &row);
-        put(&eng, "employees", &row, "agency_id", &agency.to_string());
-        put(&eng, "employees", &row, "department_id", &dept.to_string());
-        put(
+        put_row(
             &eng,
             "employees",
             &row,
-            "matricule",
-            &format!("MAT{eid:06}"),
+            &[
+                ("id", row.clone()),
+                ("agency_id", agency.to_string()),
+                ("department_id", dept.to_string()),
+                ("matricule", format!("MAT{eid:06}")),
+                ("name", format!("Emp {eid}")),
+                ("grade", (*grade).to_string()),
+                ("salary_base", salary.to_string()),
+            ],
         );
-        put(&eng, "employees", &row, "name", &format!("Emp {eid}"));
-        put(&eng, "employees", &row, "grade", grade);
-        put(&eng, "employees", &row, "salary_base", &salary.to_string());
         if eid % 10_000 == 0 {
             eprintln!(
                 "  … {eid} employees ({:.0}/s)",
@@ -189,7 +193,7 @@ fn main() {
     }
     eprintln!("  employees: {:.1}s", t_emp.elapsed().as_secs_f64());
 
-    eprintln!("Phase 3: {EMPLOYEES} payslips (put_row bulk)…");
+    eprintln!("Phase 3: {EMPLOYEES} payslips (packed row bulk)…");
     let t_pay = Instant::now();
     for eid in 1..=EMPLOYEES {
         let row = eid.to_string();
@@ -197,18 +201,36 @@ fn main() {
         let social = gross * 22 / 100;
         let tax = gross * 15 / 100;
         let net = gross - social - tax;
-        put(&eng, "payslips", &row, "id", &row);
-        put(&eng, "payslips", &row, "period_id", "1");
-        put(&eng, "payslips", &row, "employee_id", &row);
-        put(&eng, "payslips", &row, "gross", &gross.to_string());
-        put(&eng, "payslips", &row, "net", &net.to_string());
-        put(&eng, "payslips", &row, "income_tax", &tax.to_string());
-        put(&eng, "payslips", &row, "social", &social.to_string());
+        put_row(
+            &eng,
+            "payslips",
+            &row,
+            &[
+                ("id", row.clone()),
+                ("period_id", "1".to_string()),
+                ("employee_id", row.clone()),
+                ("gross", gross.to_string()),
+                ("net", net.to_string()),
+                ("income_tax", tax.to_string()),
+                ("social", social.to_string()),
+            ],
+        );
         if eid % 10_000 == 0 {
             eprintln!("  … {eid} payslips");
         }
     }
     eprintln!("  payslips: {:.1}s", t_pay.elapsed().as_secs_f64());
+
+    eprintln!("Phase 3b: ANALYZE TABLE (statistiques optimiseur)…");
+    for table in [
+        "agencies",
+        "departments",
+        "employees",
+        "payroll_periods",
+        "payslips",
+    ] {
+        eng.execute(&format!("ANALYZE TABLE {table}")).unwrap();
+    }
 
     let seed_ms = seed_start.elapsed().as_secs_f64() * 1000.0;
     eprintln!("Seed total: {:.1}s", seed_ms / 1000.0);

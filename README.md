@@ -6,9 +6,9 @@
 
 # NoeDB
 
-**Sovereign distributed SQL database engine, written in Rust.**
+**A distributed SQL database engine, written from scratch in Rust.**
 
-Auditable line by line · Zero mandatory cloud dependency · Security by default
+Every layer in-repo and auditable · Zero mandatory cloud dependency · Security by default
 
 [![CI](https://github.com/toriyama237/NoeDB/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/toriyama237/NoeDB/actions/workflows/ci.yml)
 [![Security audit](https://github.com/toriyama237/NoeDB/actions/workflows/audit.yml/badge.svg?branch=main)](https://github.com/toriyama237/NoeDB/actions/workflows/audit.yml)
@@ -18,27 +18,51 @@ Auditable line by line · Zero mandatory cloud dependency · Security by default
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](Cargo.toml)
 
-[Quickstart](#quickstart) · [Architecture](#architecture) · [Security](#security-model) ·
-[Benchmarks](#validated-at-scale) · [Docs](https://toriyama237.github.io/NoeDB/) · [Contributing](#contributing)
+[Status](#status--read-this-first) · [Quickstart](#quickstart) · [Architecture](#architecture) ·
+[Security](#security-model) · [Benchmarks](#measured-not-claimed) · [Docs](https://toriyama237.github.io/NoeDB/) · [Contributing](#contributing)
 
 </div>
 
 ---
 
-## Why NoeDB
+## What NoeDB is
 
-Organizations subject to data-sovereignty requirements — banks, public agencies,
-healthcare, defense — need a database they can **audit, embed, and operate**
-without a foreign cloud dependency or an opaque binary blob. NoeDB is built for
-that mandate:
+NoeDB is a complete SQL database engine built from first principles: lexer,
+parser, cost-based planner, Volcano executor, MVCC transactions, LSM storage
+with WAL, and Raft consensus — **every layer written in this repository**
+(no `sqlx`, no `sled`, no embedded C). The goal is an engine you can read,
+audit, and embed end to end:
 
-| Requirement | NoeDB answer |
+| Property | How |
 |---|---|
-| **Auditability** | 100 % Rust, `unsafe` forbidden workspace-wide, every layer written in-repo (no `sqlx`, no `sled`, no embedded C) |
-| **Sovereignty** | Runs fully on-premises or air-gapped; no telemetry, no license server, no phone-home |
+| **Auditability** | 100 % Rust, `unsafe` forbidden workspace-wide, ~40 k lines you can actually read |
+| **Self-contained** | Runs fully on-premises or air-gapped; no telemetry, no license server, no phone-home |
 | **Security by default** | mTLS + SPIFFE identity, RBAC + row-level security, at-rest encryption, hash-chained audit log, rate limiting |
 | **Durability** | WAL-first LSM storage with CRC-32C on every frame, MVCC snapshots, Raft replication |
-| **Traceability** | Conventional-commit history, `--no-ff` feature branches, CHANGELOG under Keep-a-Changelog, signed releases |
+| **Traceability** | Conventional-commit history, `--no-ff` feature branches, CHANGELOG under Keep-a-Changelog |
+
+## Status — read this first
+
+NoeDB is a serious engineering project, **not a production-ready database**.
+An honest map of where it stands:
+
+- **Works and is tested**: the full SQL path (parse → plan → optimize →
+  execute), MVCC snapshot transactions, WAL crash recovery, packed-row LSM
+  storage with bounded scans, secondary-index maintenance, RBAC/RLS, the
+  security hardening listed below — validated by 340+ tests and a 100 k-row
+  end-to-end audit workload.
+- **Works within limits**: Raft (election, replication, membership,
+  snapshots) is validated with an in-process 3-node simulator and TCP+mTLS
+  transport — it has **not** been through Jepsen-style network fault
+  injection. Compaction covers L0→L1 only. MVCC garbage collection reclaims
+  the active memtable, not flushed SSTs.
+- **Does not exist yet**: online backup / point-in-time recovery,
+  multi-region deployment tooling, a stabilized wire protocol, and the long
+  tail of the SQL surface. One maintainer, no support contract.
+
+If your data matters, run PostgreSQL. If you want a readable, tested,
+from-scratch engine to study, extend, or embed in workloads that fit the
+envelope above, that is exactly what NoeDB is for.
 
 ## Feature matrix
 
@@ -162,25 +186,31 @@ export NOEDB_QPS=2000 NOEDB_STMT_TIMEOUT_MS=5000
 Vulnerability reports: [private disclosure](https://github.com/toriyama237/NoeDB/security/advisories/new)
 — policy in [SECURITY.md](./SECURITY.md).
 
-## Validated at scale
+## Measured, not claimed
 
-NoeDB ships an end-to-end audit binary that simulates a multinational bank —
-**80 agencies, 22 departments, 50 009 employees, 50 009 payslips** — and runs
-20 business SQL benchmarks plus constraint checks:
+NoeDB ships an end-to-end audit binary that simulates a mid-size payroll
+system — **80 agencies, 22 departments, 50 009 employees, 50 009 payslips** —
+and runs 20 business SQL benchmarks plus constraint checks:
 
 ```bash
 cargo run --release -p noedb-engine --example national_hr_audit
 ```
 
-Latest run (release build, commodity hardware):
+Latest run (v2.3, release build, commodity hardware):
 
 | Metric | Result |
 |---|---|
-| Bulk load (100 k rows / 700 k cells) | **6.4 s** |
-| 20 business queries (joins, aggregates, CTEs, subqueries) | **22 / 22 PASS** |
-| Correlated `NOT EXISTS` on 50 k × 50 k | 329 s → **1.8 s** (hash semi-join + bounded scans) |
-| `IN (SELECT …)` on 50 k rows | 221 s → **1.7 s** |
-| Full workspace test suite | **330 tests, 0 failures** |
+| Bulk load (100 k rows, packed-row layout) | **1.8 s** (~60 k rows/s) |
+| `COUNT(*)` over 50 k rows | **250 ms** |
+| 20 business queries (3-way joins, aggregates, CTEs, subqueries) | **22 / 22 PASS, all ≤ 1 s** |
+| Correlated `NOT EXISTS` on 50 k × 50 k | **0.5 s** (was 329 s in v2.0) |
+| Full workspace test suite | **340+ tests, 0 failures** |
+
+For calibration: SQLite answers the same `COUNT(*)` in single-digit
+milliseconds. NoeDB's executor still materializes rows as
+`Vec<(String, Value)>`; closing that gap (typed columnar batches, streaming
+operators) is the v2.4 theme. The numbers above are honest, reproducible on
+your machine, and improving release over release.
 
 Micro-benchmarks (Criterion): `cargo bench -p noedb-lexer --bench lexer`
 (~1 M tokens / 21 ms), `cargo bench -p noedb-storage --bench lsm`,
@@ -212,8 +242,9 @@ cargo doc --no-deps                                       # documented public AP
 | **v2.0** | Query engine v2, observability, clients, docs | ✅ shipped |
 | **v2.1** | Planner performance (hash semi-join, top-k), UTF-8 SQL, audit tooling | ✅ shipped |
 | **v2.2** | Bounded range scans, secondary-index DML maintenance, statement cache | ✅ shipped |
-| v2.3 | Aggregate pushdown, index-nested-loop joins, columnar cell packing | 🔜 |
-| v3.0 | Online backup/restore, point-in-time recovery, multi-region Raft | planned |
+| **v2.3** | Packed row layout (one record per row), LSM read-order & tombstone fixes, realistic join costing | ✅ shipped |
+| v2.4 | Typed columnar batches, streaming executor, aggregate pushdown | 🔜 |
+| v3.0 | Online backup/restore, point-in-time recovery, network fault-injection testing for Raft | planned |
 
 History: [`docs/sprint-plan-v2.md`](docs/sprint-plan-v2.md) ·
 [`docs/post-v2-roadmap.md`](docs/post-v2-roadmap.md).

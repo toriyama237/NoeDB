@@ -6,6 +6,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-07-21
+
+Structural release: the data model itself changes. Rows are now stored as
+one packed record instead of one KV pair per cell, LSM read semantics are
+fixed at the root, join costing becomes realistic, and the README stops
+overselling. National audit (50 009 employees + 50 009 payslips):
+bulk load **6.4 s → 1.8 s** (~60 k rows/s), `COUNT(*)` **1.2 s → 0.25 s**,
+worst query (3-way join) **6.4 s → 1.0 s**, all 20 queries ≤ 1 s.
+
+### Changed — packed row layout (v2.3 data model)
+- New self-describing row codec (`NRP1` magic) in `noedb-storage::rowpack`:
+  the whole row is one record under `table\0row_id`. A 7-column row now
+  costs 1 key, 1 WAL append and 1 MVCC version instead of 7 of each.
+- SQL `INSERT` writes packed records; `UPDATE` merges assignments and
+  upgrades legacy cell-based rows in place (stale cells are tombstoned);
+  `DELETE` removes both layouts.
+- All readers (scans, row-id lookups, index builds, `ANALYZE`, txn overlay)
+  understand both layouts; when a row exists in both, cell writes override
+  packed columns. Existing databases keep working without migration.
+- New bulk API `LocalEngine::put_packed_row` for ingest workloads
+  (~60 k rows/s in the audit seed).
+
+### Fixed — storage semantics
+- **LSM read order**: `get()` consulted SSTs before the active memtable, so
+  a newer in-memory write could be shadowed by a stale flushed copy.
+  Resolution is now memtable → MVCC versions → L0 (newest first) → L1.
+- **Durable deletes**: `delete()` only removed the key from the active
+  memtable; copies already flushed to SSTs resurrected on the next read.
+  A WAL-logged MVCC tombstone now shadows any on-disk copy.
+- **Version-scan precision**: `find_visible_version` matched any key sharing
+  the user-key prefix, so a packed row could be shadowed by its own cells'
+  tombstones. Exact user-key matching now.
+- **Empty aggregates**: global aggregates over an empty input now return one
+  row (`COUNT(*)` = 0) per SQL semantics, instead of zero rows.
+
+### Performance — planner cost model
+- Join cardinality is now estimated (bounded by the larger input) instead of
+  defaulting to 0, which made every operator above a join look free and let
+  quadratic nested-loop joins win against hash joins.
+- Tables never `ANALYZE`d are costed pessimistically (1024 rows) instead
+  of 0 — the optimizer no longer bets on nested loops against unmeasured
+  tables.
+- MVCC point reads seek through the SST block index (`scan_range`) and the
+  shared reader cache instead of full-scanning every SST file.
+
+### Documentation
+- README repositioned honestly: "Status — read this first" section states
+  what works, what works within limits (in-process Raft validation, L0→L1
+  compaction only, memtable-only MVCC GC) and what does not exist yet
+  (backup/PITR, stabilized wire protocol). Benchmarks are calibrated
+  against SQLite instead of implying parity.
+
 ## [2.2.0] - 2026-07-21
 
 Scan-architecture release: bounded range scans through the whole storage

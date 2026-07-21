@@ -58,7 +58,14 @@ pub fn analyze_table<S: StorageEngine<Error = StorageError>>(store: &S, table: &
         let rest = &key[prefix.len()..];
         let Some(pos) = rest.iter().position(|&b| b == 0) else {
             row_ids.insert(rest.to_vec());
-            col_values.entry("value".into()).or_default().insert(val);
+            if let Some(cols) = noedb_storage::decode_row(&val) {
+                // Packed row record: one NDV sample per column.
+                for (col, cell) in cols {
+                    col_values.entry(col).or_default().insert(cell);
+                }
+            } else {
+                col_values.entry("value".into()).or_default().insert(val);
+            }
             continue;
         };
         let row_id = rest[..pos].to_vec();

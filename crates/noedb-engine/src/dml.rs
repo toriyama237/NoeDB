@@ -12,7 +12,7 @@ use noedb_planner::SecondaryIndex;
 use crate::error::EngineError;
 use crate::machine::row_key;
 use crate::schema::SchemaCatalog;
-use crate::txn::{delete_cell_in_txn, put_key_in_txn, put_row_in_txn, txn_err, TxnOverlayStore};
+use crate::txn::{delete_cell_in_txn, put_key_in_txn, txn_err, TxnOverlayStore};
 use crate::vector_index::VectorIndexCatalog;
 
 type RowMap = Vec<(String, Value)>;
@@ -116,10 +116,9 @@ pub(crate) fn execute_insert(
         let row_id = value_to_row_id(&values[0]);
         enforce_primary_key(table, &col_names, &values, schema, tree, txn)?;
 
-        // Pre-flight: validate constraints and encode every cell BEFORE writing
-        // any of them, so a rejected row never leaves a partial/corrupt row
-        // behind (e.g. a NOT NULL failure on a later column after the earlier
-        // cells were already persisted).
+        // Pre-flight: validate constraints and encode every column BEFORE
+        // writing anything, so a rejected row never leaves a partial/corrupt
+        // row behind (e.g. a NOT NULL failure on a later column).
         let mut pending: Vec<(&str, Vec<u8>, Option<Value>)> = Vec::with_capacity(col_names.len());
         for (col, val) in col_names.iter().zip(values) {
             if let Some(meta) = schema.column(table, col) {
@@ -135,8 +134,16 @@ pub(crate) fn execute_insert(
                 pending.push((col.as_str(), value_to_bytes(&val), None));
             }
         }
+
+        // v2.3 layout: the whole row is one packed record — one key, one WAL
+        // append, one MVCC version, instead of one per column.
+        let packed: Vec<(String, Vec<u8>)> = pending
+            .iter()
+            .map(|(col, bytes, _)| ((*col).to_string(), bytes.clone()))
+            .collect();
+        write_packed_row(tree, oracle, txn, table, &row_id, &packed)?;
+
         for (col, bytes, vector) in pending {
-            write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
             if indexed.iter().any(|c| c == col) {
                 index_entry_put(tree, oracle, txn, table, col, &bytes, &row_id)?;
             }
@@ -208,8 +215,24 @@ pub(crate) fn execute_update(
                 pending.push((col.as_str(), value_to_bytes(&val), None));
             }
         }
+        // Merge the assignments into the full row and rewrite it as a single
+        // packed record; legacy cell keys for this row are tombstoned so the
+        // row is upgraded to the v2.3 layout on first update.
+        let mut merged: Vec<(String, Vec<u8>)> = row
+            .iter()
+            .map(|(name, val)| (name.clone(), value_to_bytes(val)))
+            .collect();
+        for (col, bytes, _) in &pending {
+            if let Some(slot) = merged.iter_mut().find(|(name, _)| name == col) {
+                slot.1.clone_from(bytes);
+            } else {
+                merged.push(((*col).to_string(), bytes.clone()));
+            }
+        }
+        write_packed_row(tree, oracle, txn, table, &row_id, &merged)?;
+        tombstone_row_cells(tree, oracle, txn, table, &row_id)?;
+
         for (col, bytes, vector) in pending {
-            write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
             if indexed.iter().any(|c| c == col) {
                 let old_bytes = row.iter().find_map(|(n, v)| match v {
                     Value::Bytes(b) if n == col => Some(b.clone()),
@@ -299,20 +322,56 @@ pub(crate) fn execute_delete(
     Ok(deleted)
 }
 
-fn write_cell(
+/// Write a full row as one packed record (`table\0row_id` → NRP1 payload).
+fn write_packed_row(
     tree: &mut LsmTree,
     oracle: &TimestampOracle,
     txn: Option<(&TxnManager, u64)>,
     table: &str,
     row_id: &str,
-    column: &str,
-    value: &[u8],
+    columns: &[(String, Vec<u8>)],
 ) -> Result<(), EngineError> {
+    let key = noedb_storage::packed_row_key(table, row_id);
+    let record = noedb_storage::encode_row(columns);
     if let Some((mgr, sid)) = txn {
-        put_row_in_txn(mgr, sid, table, row_id, column, value)
+        put_key_in_txn(mgr, sid, key, record)
     } else {
-        put_cell(tree, oracle, &row_key(table, row_id, column), value)
+        put_cell(tree, oracle, &key, &record)
     }
+}
+
+/// Tombstone any legacy cell keys (`table\0row\0col`) left for `row_id`.
+///
+/// Called after an UPDATE rewrites the row as a packed record: without
+/// this the stale cells would override the packed columns at scan time.
+fn tombstone_row_cells(
+    tree: &mut LsmTree,
+    oracle: &TimestampOracle,
+    txn: Option<(&TxnManager, u64)>,
+    table: &str,
+    row_id: &str,
+) -> Result<(), EngineError> {
+    let prefix = row_prefix(table, row_id);
+    let end = noedb_storage::prefix_end(&prefix);
+    let keys: Vec<Vec<u8>> = if let Some((mgr, sid)) = txn {
+        let overlay = TxnOverlayStore::for_session(mgr, sid, tree)?;
+        overlay
+            .range(&prefix, &end)
+            .filter_map(|(key, _)| key.starts_with(&prefix).then_some(key))
+            .collect()
+    } else {
+        tree.range(&prefix, &end)
+            .filter_map(|(key, _)| key.starts_with(&prefix).then_some(key))
+            .collect()
+    };
+    for key in keys {
+        if let Some((mgr, sid)) = txn {
+            delete_cell_in_txn(mgr, sid, key)?;
+        } else {
+            delete_cell(tree, oracle, &key)?;
+        }
+    }
+    Ok(())
 }
 
 fn delete_row_in_txn(
@@ -322,6 +381,7 @@ fn delete_row_in_txn(
     table: &str,
     row_id: &str,
 ) -> Result<(), EngineError> {
+    delete_cell_in_txn(mgr, sid, noedb_storage::packed_row_key(table, row_id))?;
     let cols = schema.column_names(table).ok_or_else(|| {
         EngineError::Exec(ExecError::UnknownColumn {
             name: format!("table `{table}` not in schema"),
@@ -356,11 +416,17 @@ fn enforce_primary_key(
             }));
         }
         let pk_row = value_to_row_id(&values[idx]);
-        let key = row_key(table, &pk_row, pk);
+        // Rows may live as a packed record (v2.3) or legacy cells.
+        let packed_key = noedb_storage::packed_row_key(table, &pk_row);
+        let cell_key = row_key(table, &pk_row, pk);
         let exists = if let Some((mgr, sid)) = txn {
-            mgr.get(sid, &key).map_err(txn_err)?.is_some()
+            mgr.get(sid, &packed_key).map_err(txn_err)?.is_some()
+                || mgr.get(sid, &cell_key).map_err(txn_err)?.is_some()
         } else {
-            tree.get(&key).map_err(EngineError::Storage)?.is_some()
+            tree.get(&packed_key)
+                .map_err(EngineError::Storage)?
+                .is_some()
+                || tree.get(&cell_key).map_err(EngineError::Storage)?.is_some()
         };
         if exists {
             return Err(EngineError::Exec(ExecError::TypeMismatch {
@@ -427,25 +493,42 @@ fn scan_table<S: StorageEngine<Error = StorageError>>(
     let mut prefix = table.as_bytes().to_vec();
     prefix.push(0);
     let end = noedb_storage::prefix_end(&prefix);
-    let mut grouped: BTreeMap<Vec<u8>, RowMap> = BTreeMap::new();
+    // Per row: packed record (if any) plus legacy cell overrides.
+    let mut grouped: BTreeMap<Vec<u8>, (Option<RowMap>, RowMap)> = BTreeMap::new();
     for (key, val) in store.range(&prefix, &end) {
         if !key.starts_with(&prefix) {
             continue;
         }
         let rest = &key[prefix.len()..];
-        let Some(pos) = rest.iter().position(|&b| b == 0) else {
-            continue;
-        };
-        let row_id = rest[..pos].to_vec();
-        let col = String::from_utf8_lossy(&rest[pos + 1..]).into_owned();
-        grouped
-            .entry(row_id)
-            .or_default()
-            .push((col, Value::Bytes(val)));
+        if let Some(pos) = rest.iter().position(|&b| b == 0) {
+            let row_id = rest[..pos].to_vec();
+            let col = String::from_utf8_lossy(&rest[pos + 1..]).into_owned();
+            grouped
+                .entry(row_id)
+                .or_default()
+                .1
+                .push((col, Value::Bytes(val)));
+        } else if let Some(cols) = noedb_storage::decode_row(&val) {
+            let row: RowMap = cols
+                .into_iter()
+                .map(|(name, cell)| (name, Value::Bytes(cell)))
+                .collect();
+            grouped.entry(rest.to_vec()).or_default().0 = Some(row);
+        }
     }
     Ok(grouped
         .into_iter()
-        .map(|(id, row)| (String::from_utf8_lossy(&id).into_owned(), row))
+        .map(|(id, (packed, cells))| {
+            let mut row = packed.unwrap_or_default();
+            for (col, val) in cells {
+                if let Some(slot) = row.iter_mut().find(|(name, _)| *name == col) {
+                    slot.1 = val;
+                } else {
+                    row.push((col, val));
+                }
+            }
+            (String::from_utf8_lossy(&id).into_owned(), row)
+        })
         .collect())
 }
 
@@ -455,6 +538,15 @@ fn delete_row(
     table: &str,
     row_id: &str,
 ) -> Result<(), EngineError> {
+    // Tombstone the packed record and any legacy cell keys.
+    let packed_key = noedb_storage::packed_row_key(table, row_id);
+    if tree
+        .get(&packed_key)
+        .map_err(EngineError::Storage)?
+        .is_some()
+    {
+        delete_cell(tree, oracle, &packed_key)?;
+    }
     let prefix = row_prefix(table, row_id);
     let end = noedb_storage::prefix_end(&prefix);
     let keys: Vec<Vec<u8>> = tree
@@ -642,9 +734,19 @@ mod tests {
         };
         let oracle = TimestampOracle::new();
         execute_insert(&ins, &schema, &mut tree, &oracle, None, None).unwrap();
-        let name = tree.get(&row_key("users", "1", "name")).unwrap().unwrap();
+        let name = read_column(&tree, "users", "1", "name").unwrap();
         assert_eq!(name, b"Rykiel");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Read one column of a row stored as a packed record.
+    fn read_column(tree: &LsmTree, table: &str, row_id: &str, column: &str) -> Option<Vec<u8>> {
+        let record = tree
+            .get(&noedb_storage::packed_row_key(table, row_id))
+            .unwrap()?;
+        noedb_storage::decode_row(&record)?
+            .into_iter()
+            .find_map(|(name, val)| (name == column).then_some(val))
     }
 
     #[test]
@@ -697,7 +799,7 @@ mod tests {
             execute_update(&upd, &schema, &mut tree, &oracle, None, None).unwrap(),
             1
         );
-        let name = tree.get(&row_key("users", "1", "name")).unwrap().unwrap();
+        let name = read_column(&tree, "users", "1", "name").unwrap();
         assert_eq!(name, b"Augusta");
         let del = parse("DELETE FROM users WHERE id = '1'").unwrap();
         let Statement::Delete(del) = del else {
@@ -707,7 +809,7 @@ mod tests {
             execute_delete(&del, &schema, &mut tree, &oracle, None, None).unwrap(),
             1
         );
-        assert!(tree.get(&row_key("users", "1", "name")).unwrap().is_none());
+        assert!(read_column(&tree, "users", "1", "name").is_none());
         let _ = std::fs::remove_dir_all(dir);
     }
 
