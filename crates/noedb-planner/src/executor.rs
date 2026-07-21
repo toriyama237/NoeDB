@@ -264,9 +264,7 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
     ctx: &ExecutionContext<'_, S>,
 ) -> Result<ExecState, ExecError> {
     match plan {
-        PhysicalPlan::SeqScan {
-            table, columns: _, ..
-        } if table.is_empty() => Ok(ExecState::LiteralProject {
+        PhysicalPlan::SeqScan { table, .. } if table.is_empty() => Ok(ExecState::LiteralProject {
             items: vec![],
             emitted: false,
         }),

@@ -8,6 +8,8 @@ extend-exclude = [
     "*.lock",
     "docs/**",
     "scripts/**",
+    # French-language simulation data (national bank audit example).
+    "crates/noedb-engine/examples/national_hr_audit.rs",
 ]
 
 [default]
