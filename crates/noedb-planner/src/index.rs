@@ -122,14 +122,12 @@ impl SecondaryIndex {
         index
     }
 
-    /// Point lookup: indexed column value → row ids.
+    /// Point lookup: indexed column value → row ids (duplicates included).
+    ///
+    /// Reads the duplicate-entry keyspace only; entries tombstoned by DML
+    /// index maintenance are invisible to the bounded MVCC scan.
     #[must_use]
     pub fn lookup(store: &LsmTree, table: &str, column: &str, key: &[u8]) -> Vec<Vec<u8>> {
-        let pk = point_key(table, column, key);
-        if let Ok(Some(row_id)) = store.get(&pk) {
-            return vec![row_id];
-        }
-
         let mut prefix = entry_prefix(table, column);
         prefix.extend_from_slice(key);
         prefix.push(0);
@@ -146,6 +144,29 @@ impl SecondaryIndex {
         row_ids
     }
 
+    /// Columns of `table` that have a secondary index.
+    #[must_use]
+    pub fn indexed_columns(store: &LsmTree, table: &str) -> Vec<String> {
+        let mut prefix = META_PREFIX.to_vec();
+        prefix.extend_from_slice(table.as_bytes());
+        prefix.push(0);
+        let end = prefix_end(&prefix);
+        store
+            .range(&prefix, &end)
+            .filter(|(k, _)| k.starts_with(&prefix))
+            .map(|(k, _)| String::from_utf8_lossy(&k[prefix.len()..]).into_owned())
+            .collect()
+    }
+
+    /// Storage key of the duplicate-entry record for `(value, row_id)`.
+    ///
+    /// Engines use this to maintain the index on DML: write the key with an
+    /// empty value on insert, tombstone it on delete/update.
+    #[must_use]
+    pub fn entry_key_for(table: &str, column: &str, value: &[u8], row_id: &[u8]) -> Vec<u8> {
+        entry_key(table, column, value, row_id)
+    }
+
     fn persist(
         store: &mut LsmTree,
         table: &str,
@@ -154,9 +175,6 @@ impl SecondaryIndex {
     ) -> Result<(), StorageError> {
         store.put(&meta_key(table, column), b"1")?;
         for (key, row_ids) in index.iter() {
-            if let Some(last) = row_ids.last() {
-                store.put(&point_key(table, column, key), last)?;
-            }
             for row_id in row_ids {
                 let entry_key = entry_key(table, column, key, row_id);
                 store.put(&entry_key, b"")?;
@@ -164,12 +182,6 @@ impl SecondaryIndex {
         }
         Ok(())
     }
-}
-
-fn point_key(table: &str, column: &str, key: &[u8]) -> Vec<u8> {
-    let mut k = entry_prefix(table, column);
-    k.extend_from_slice(key);
-    k
 }
 
 fn table_key_prefix(table: &str) -> Vec<u8> {

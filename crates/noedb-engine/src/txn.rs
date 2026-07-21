@@ -38,6 +38,20 @@ pub(crate) fn commit_to_storage(
     Ok(())
 }
 
+/// Buffer a raw-key write (e.g. secondary-index entry) in the active transaction.
+pub(crate) fn put_key_in_txn(
+    manager: &TxnManager,
+    session_id: u64,
+    key: Vec<u8>,
+    value: Vec<u8>,
+) -> Result<(), EngineError> {
+    manager
+        .with_txn(session_id, |txn| {
+            txn.put(key, value);
+        })
+        .map_err(txn_err)
+}
+
 /// Buffer a cell write in the active transaction.
 pub(crate) fn put_row_in_txn(
     manager: &TxnManager,
