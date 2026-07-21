@@ -224,7 +224,7 @@ pub(crate) fn execute_update(
             .collect();
         for (col, bytes, _) in &pending {
             if let Some(slot) = merged.iter_mut().find(|(name, _)| name == col) {
-                slot.1 = bytes.clone();
+                slot.1.clone_from(bytes);
             } else {
                 merged.push(((*col).to_string(), bytes.clone()));
             }
