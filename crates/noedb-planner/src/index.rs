@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use noedb_storage::{LsmTree, StorageEngine, StorageError};
+use noedb_storage::{prefix_end, LsmTree, StorageEngine, StorageError};
 
 const META_PREFIX: &[u8] = b"\x02idx_meta\0";
 const ENTRY_PREFIX: &[u8] = b"\x02idx\0";
@@ -68,8 +68,9 @@ impl SecondaryIndex {
     pub fn build(store: &mut LsmTree, table: &str, column: &str) -> Result<(), StorageError> {
         let mut index = BTreeIndex::new();
         let table_prefix = table_key_prefix(table);
+        let table_end = prefix_end(&table_prefix);
 
-        for (key, val) in StorageEngine::iter(store) {
+        for (key, val) in store.range(&table_prefix, &table_end) {
             if !key.starts_with(&table_prefix) {
                 continue;
             }
@@ -105,7 +106,8 @@ impl SecondaryIndex {
     pub fn load(store: &LsmTree, table: &str, column: &str) -> BTreeIndex {
         let mut index = BTreeIndex::new();
         let prefix = entry_prefix(table, column);
-        for (key, _) in StorageEngine::iter(store) {
+        let end = prefix_end(&prefix);
+        for (key, _) in store.range(&prefix, &end) {
             if !key.starts_with(&prefix) {
                 continue;
             }
@@ -131,13 +133,11 @@ impl SecondaryIndex {
         let mut prefix = entry_prefix(table, column);
         prefix.extend_from_slice(key);
         prefix.push(0);
+        let end = prefix_end(&prefix);
 
         let mut row_ids = Vec::new();
-        for (k, _) in StorageEngine::iter(store) {
+        for (k, _) in store.range(&prefix, &end) {
             if !k.starts_with(&prefix) {
-                if k.as_slice() > prefix.as_slice() {
-                    break;
-                }
                 continue;
             }
             let rest = &k[prefix.len()..];

@@ -289,6 +289,146 @@ impl LsmTree {
         self.persist_manifest()?;
         Ok(())
     }
+
+    fn cached_reader(&self, path: &Path) -> Result<SstReader, StorageError> {
+        let mut cache = self.sst_cache.lock();
+        Ok(match cache.entry(path.to_path_buf()) {
+            Entry::Vacant(slot) => slot.insert(SstReader::open(path)?).clone(),
+            Entry::Occupied(slot) => slot.get().clone(),
+        })
+    }
+
+    /// Bounded snapshot scan: latest version per user key in `[start, end)`
+    /// visible at `view`, in one merged pass over SSTs + memtable.
+    pub fn range_visible(
+        &self,
+        start: &[u8],
+        end: &[u8],
+        view: &crate::mvcc::ReadView,
+    ) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> {
+        self.merge_visible_at(view, Some((start, end)))
+            .into_iter()
+            .filter_map(|(k, ver)| {
+                if ver.deleted {
+                    None
+                } else {
+                    Some((k, ver.value))
+                }
+            })
+    }
+
+    fn merge_visible(
+        &self,
+        bounds: Option<(&[u8], &[u8])>,
+    ) -> std::collections::BTreeMap<Vec<u8>, crate::mvcc::Version> {
+        let view = crate::mvcc::ReadView::new(0, u64::MAX, std::collections::BTreeSet::new());
+        self.merge_visible_at(&view, bounds)
+    }
+
+    /// Merge SSTs + active memtable into latest version per user key visible
+    /// at `view`.
+    ///
+    /// With `bounds = Some((start, end))`, only internal keys near `[start,
+    /// end)` are read (block-index seek per SST) and only user keys in
+    /// `[start, end)` are retained — the fast path for table-prefix scans.
+    fn merge_visible_at(
+        &self,
+        view: &crate::mvcc::ReadView,
+        bounds: Option<(&[u8], &[u8])>,
+    ) -> std::collections::BTreeMap<Vec<u8>, crate::mvcc::Version> {
+        let mut latest: std::collections::BTreeMap<Vec<u8>, crate::mvcc::Version> =
+            std::collections::BTreeMap::new();
+        let windows = bounds.map(|(start, end)| scan_windows(start, end));
+
+        let mut ingest = |ik: Vec<u8>, raw: Vec<u8>| {
+            let is_mvcc = raw.starts_with(b"MVCC") && ik.len() > 8;
+            let ver = if is_mvcc {
+                match crate::mvcc::decode_or_legacy(&raw) {
+                    Ok(v) => v,
+                    Err(_) => return,
+                }
+            } else {
+                crate::mvcc::Version::put(1, raw)
+            };
+            let user = if is_mvcc {
+                crate::mvcc::decode_user_key(&ik).to_vec()
+            } else {
+                ik
+            };
+            if let Some((start, end)) = bounds {
+                if user.as_slice() < start || (!end.is_empty() && user.as_slice() >= end) {
+                    return;
+                }
+            }
+            if !view.is_visible(&ver, None) {
+                return;
+            }
+            let newer = match latest.get(&user) {
+                None => true,
+                Some(prev) => ver.commit_ts > prev.commit_ts,
+            };
+            if newer {
+                latest.insert(user, ver);
+            }
+        };
+
+        for path in self.level1.iter().chain(self.level0.iter()) {
+            let Ok(reader) = self.cached_reader(path) else {
+                continue;
+            };
+            if let Some(windows) = &windows {
+                for (lo, hi) in windows {
+                    if let Ok(scan) = reader.scan_range(lo, hi) {
+                        for item in scan.flatten() {
+                            ingest(item.0, item.1);
+                        }
+                    }
+                }
+            } else if let Ok(scan) = reader.scan() {
+                for item in scan.flatten() {
+                    ingest(item.0, item.1);
+                }
+            }
+        }
+        if let Some(windows) = &windows {
+            for (lo, hi) in windows {
+                for (k, v) in self.active.range(lo, hi) {
+                    ingest(k, v);
+                }
+            }
+        } else {
+            for (k, v) in self.active.iter() {
+                ingest(k, v);
+            }
+        }
+        latest
+    }
+}
+
+/// Internal-key scan windows covering every MVCC version of user keys in
+/// `[start, end)`.
+///
+/// Internal keys are `user_key || inverted_commit_ts` (8 bytes), so versions of
+/// a user key that is a *proper prefix* of `end` can sort at or above `end`.
+/// One extra window per proper prefix of `end` closes that gap; the exact
+/// per-user-key filter runs during ingestion.
+fn scan_windows(start: &[u8], end: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
+    if end.is_empty() {
+        // All-0xFF prefix boundary: unbounded above.
+        return vec![(start.to_vec(), vec![0xFF; 64])];
+    }
+    let mut windows = vec![(start.to_vec(), end.to_vec())];
+    for plen in 1..end.len() {
+        let p = &end[..plen];
+        if p >= start && p < end {
+            // `p || 0xFF * 9` bounds all internal keys of exactly `p`
+            // (the MVCC suffix is 8 bytes, so 9 bytes of 0xFF dominate).
+            let mut hi = p.to_vec();
+            hi.extend_from_slice(&[0xFF; 9]);
+            windows.push((p.to_vec(), hi));
+        }
+    }
+    windows
 }
 
 impl StorageEngine for LsmTree {
@@ -307,57 +447,29 @@ impl StorageEngine for LsmTree {
     }
 
     fn iter(&self) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
-        let view = crate::mvcc::ReadView::new(0, u64::MAX, std::collections::BTreeSet::new());
-        let mut latest: std::collections::BTreeMap<Vec<u8>, crate::mvcc::Version> =
-            std::collections::BTreeMap::new();
-
-        let mut ingest = |ik: Vec<u8>, raw: Vec<u8>| {
-            let is_mvcc = raw.starts_with(b"MVCC") && ik.len() > 8;
-            let ver = if is_mvcc {
-                match crate::mvcc::decode_or_legacy(&raw) {
-                    Ok(v) => v,
-                    Err(_) => return,
-                }
-            } else {
-                crate::mvcc::Version::put(1, raw)
-            };
-            let user = if is_mvcc {
-                crate::mvcc::decode_user_key(&ik).to_vec()
-            } else {
-                ik
-            };
-            if !view.is_visible(&ver, None) {
-                return;
-            }
-            let newer = match latest.get(&user) {
-                None => true,
-                Some(prev) => ver.commit_ts > prev.commit_ts,
-            };
-            if newer {
-                latest.insert(user, ver);
-            }
-        };
-
-        for path in self.level1.iter().chain(self.level0.iter()) {
-            if let Ok(reader) = SstReader::open(path) {
-                if let Ok(scan) = reader.scan() {
-                    for item in scan.flatten() {
-                        ingest(item.0, item.1);
-                    }
-                }
-            }
-        }
-        for (k, v) in self.active.iter() {
-            ingest(k, v);
-        }
-
-        latest.into_iter().filter_map(|(k, ver)| {
+        self.merge_visible(None).into_iter().filter_map(|(k, ver)| {
             if ver.deleted {
                 None
             } else {
                 Some((k, ver.value))
             }
         })
+    }
+
+    fn range<'a>(
+        &'a self,
+        start: &'a [u8],
+        end: &'a [u8],
+    ) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + 'a {
+        self.merge_visible(Some((start, end)))
+            .into_iter()
+            .filter_map(|(k, ver)| {
+                if ver.deleted {
+                    None
+                } else {
+                    Some((k, ver.value))
+                }
+            })
     }
 }
 
@@ -458,6 +570,52 @@ mod tests {
             let k = format!("row:{i:05}");
             assert_eq!(tree.get(k.as_bytes()).unwrap(), Some(b"data".to_vec()));
         }
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn range_matches_filtered_iter_across_ssts_and_memtable() {
+        let dir = temp_dir("range");
+        let mut tree = LsmTree::open(
+            &dir,
+            LsmConfig {
+                max_mem_bytes: 4096,
+                l0_compaction_trigger: 4,
+                wal_sync: WalSyncMode::OnFlush,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // Two "tables" interleaved, spilled over several SSTs + active memtable.
+        for i in 0..2_000u32 {
+            let ka = format!("alpha\0{i:05}\0col");
+            let kb = format!("beta\0{i:05}\0col");
+            tree.put(ka.as_bytes(), b"a").unwrap();
+            tree.put(kb.as_bytes(), b"b").unwrap();
+        }
+        // MVCC versions on top (newest must win).
+        tree.put_version(
+            b"alpha\x0000042\0col",
+            &crate::mvcc::Version::put(9, b"a2".to_vec()),
+        )
+        .unwrap();
+
+        let mut prefix = b"alpha".to_vec();
+        prefix.push(0);
+        let end = crate::engine::prefix_end(&prefix);
+
+        let ranged: Vec<_> = StorageEngine::range(&tree, &prefix, &end).collect();
+        let filtered: Vec<_> = StorageEngine::iter(&tree)
+            .filter(|(k, _)| k.starts_with(&prefix))
+            .collect();
+        assert_eq!(ranged, filtered);
+        assert_eq!(ranged.len(), 2_000);
+        let updated = ranged
+            .iter()
+            .find(|(k, _)| k == b"alpha\x0000042\0col")
+            .unwrap();
+        assert_eq!(updated.1, b"a2".to_vec());
         let _ = fs::remove_dir_all(dir);
     }
 }
