@@ -6,17 +6,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-07-21
+
+Enterprise hardening release: planner correctness and performance validated by
+a national-scale audit (80 agencies / 50 009 employees / 50 009 payslips —
+**22/22 benchmarks PASS**), UTF-8 SQL, and an audit-ready git workflow.
+
+### Performance
+- **Planner**: hash semi-join for decorrelated `IN (SELECT …)` and
+  `EXISTS` / `NOT EXISTS` — replaces the O(n·m) nested loop
+  (national audit: `IN` 221 s → 2.8 s; `NOT EXISTS` 329 s → 3.5 s).
+- **Planner**: `ORDER BY … LIMIT k` fused into a partial top-k sort
+  (`select_nth_unstable_by`); `EXPLAIN` shows `Sort(top_k=N)`.
+
 ### Fixed
-- **Clients**: load dev TLS from `<data-dir>/tls/` (`ca.pem`, `client.pem`, `client-key.pem`)
-  to match `noedb-cli` layout.
+- **Planner**: hash-join keys are now oriented to the join tree's left/right
+  inputs — `ON e.agency_id = ag.id` (reversed operand order) returned 0 rows.
+- **Planner**: CTE column resolution — outer `SELECT`/`ORDER BY` referencing a
+  bare column (`country`) stored qualified in the CTE (`ag.country`) raised
+  `UnknownColumn`; shared suffix-aware matching in pruning and sort keys.
+- **INSERT atomicity**: all cells validated and encoded before any LSM write —
+  a failing `NOT NULL` no longer leaves ghost partial rows.
+- **HAVING**: aggregate matching by value (not span) — `HAVING COUNT(*) > n`
+  no longer fails with `UnsupportedExpr`.
+- **LEFT JOIN**: propagated `left_outer` through logical → physical plans;
+  previously executed as INNER.
+- **MVCC GC**: no longer collects the latest committed version.
+- **RLS**: row-level security enforced on `UPDATE` / `DELETE` (was SELECT-only).
+- **ALTER TABLE**: gated to admin roles.
+- **Clients**: load dev TLS from `<data-dir>/tls/` (`ca.pem`, `client.pem`,
+  `client-key.pem`) to match `noedb-cli` layout.
 
 ### Added
+- **Lexer**: UTF-8 accepted in string literals and quoted identifiers
+  (`'Direction Générale'` now lexes; previously `UnexpectedChar`).
+- **Example**: `national_hr_audit` — end-to-end enterprise audit binary
+  (bulk load, 20 business SQL benchmarks, constraint checks, JSON report).
+- **Docs**: [`docs/git-workflow.md`](docs/git-workflow.md) — audit-ready
+  branching model (feature branches, Conventional Commits, `--no-ff` merges).
 - **NoeDB Studio**: `./scripts/noedb-studio.sh` — branded bash launcher + `--studio` REPL
   (ASCII banner, boot animation, table output, `noedb›` prompt).
 - **YCSB smoke**: `post_v2_ycsb.rs` (workloads A/B/C/F at miniature scale).
 - **Grafana**: starter dashboard `docs/grafana/noedb-overview.json`.
 - **CI**: mdBook build + GitHub Pages deploy (`.github/workflows/docs.yml`).
 - **Docs**: [`docs/post-v2-roadmap.md`](docs/post-v2-roadmap.md) for post-sprint follow-ups.
+
+### Quality
+- `cargo clippy --workspace --all-targets` emits **0 warnings** (pedantic on,
+  `-D warnings` in CI); full `rustfmt` pass.
+- Workspace suite: **316 tests, 0 failures**.
 
 ## [2.0.0] - 2026-05-20
 

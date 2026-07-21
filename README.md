@@ -6,24 +6,94 @@
 
 # NoeDB
 
+**Sovereign distributed SQL database engine, written in Rust.**
+
+Auditable line by line · Zero mandatory cloud dependency · Security by default
+
 [![CI](https://github.com/toriyama237/NoeDB/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/toriyama237/NoeDB/actions/workflows/ci.yml)
 [![Security audit](https://github.com/toriyama237/NoeDB/actions/workflows/audit.yml/badge.svg?branch=main)](https://github.com/toriyama237/NoeDB/actions/workflows/audit.yml)
 [![CodeQL](https://github.com/toriyama237/NoeDB/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/toriyama237/NoeDB/actions/workflows/codeql.yml)
 [![Rust stable](https://img.shields.io/badge/rust-stable-orange.svg?logo=rust)](https://www.rust-lang.org)
 [![MSRV 1.88](https://img.shields.io/badge/MSRV-1.88-blue.svg?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
-[![crates.io](https://img.shields.io/badge/crates.io-not%20published%20yet-lightgrey.svg)](#)
-[![GitHub stars](https://img.shields.io/github/stars/toriyama237/NoeDB?style=social)](https://github.com/toriyama237/NoeDB/stargazers)
+[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](Cargo.toml)
 
-**A distributed embedded SQL query engine in Rust — think SQLite meets CockroachDB.**
-
-Built from scratch over 52 weeks, brick by brick, in public.
+[Quickstart](#quickstart) · [Architecture](#architecture) · [Security](#security-model) ·
+[Benchmarks](#validated-at-scale) · [Docs](https://toriyama237.github.io/NoeDB/) · [Contributing](#contributing)
 
 </div>
 
 ---
 
-## Architecture (target — end of sprint)
+## Why NoeDB
+
+Organizations subject to data-sovereignty requirements — banks, public agencies,
+healthcare, defense — need a database they can **audit, embed, and operate**
+without a foreign cloud dependency or an opaque binary blob. NoeDB is built for
+that mandate:
+
+| Requirement | NoeDB answer |
+|---|---|
+| **Auditability** | 100 % Rust, `unsafe` forbidden workspace-wide, every layer written in-repo (no `sqlx`, no `sled`, no embedded C) |
+| **Sovereignty** | Runs fully on-premises or air-gapped; no telemetry, no license server, no phone-home |
+| **Security by default** | mTLS + SPIFFE identity, RBAC + row-level security, at-rest encryption, hash-chained audit log, rate limiting |
+| **Durability** | WAL-first LSM storage with CRC-32C on every frame, MVCC snapshots, Raft replication |
+| **Traceability** | Conventional-commit history, `--no-ff` feature branches, CHANGELOG under Keep-a-Changelog, signed releases |
+
+## Feature matrix
+
+| Domain | Capabilities |
+|---|---|
+| **SQL** | `SELECT` / `INSERT` / `UPDATE` / `DELETE`, `INNER` / `LEFT JOIN`, `GROUP BY` / `HAVING`, window functions, CTEs (`WITH RECURSIVE`), subqueries (`IN` / `EXISTS`, correlated), set ops, `CAST`, `EXPLAIN`, `ANALYZE TABLE`, UTF-8 literals |
+| **Constraints** | `PRIMARY KEY`, `UNIQUE`, `NOT NULL`, typed columns — enforced atomically before any storage write |
+| **Storage** | LSM-tree: WAL segments, MemTable, SSTables (Bloom filters, 4 KiB blocks), leveled compaction, LZ4, CRC-32C |
+| **Transactions** | MVCC snapshots, transactional SQL DML, garbage collection safe for latest versions |
+| **Distribution** | Raft consensus (election, replication, joint-config membership, snapshots), 3-node in-process simulator, TCP + mTLS transport |
+| **Query engine** | Volcano executors, cost-based optimizer (stats via `ANALYZE`), hash/merge/nested-loop joins, hash semi-joins for decorrelated subqueries, predicate & projection pushdown, partial top-k sort, SIMD predicate paths, Rayon parallel scans |
+| **Security** | See [Security model](#security-model) |
+| **Observability** | Prometheus `/metrics`, Grafana starter dashboard, structured audit export (SIEM-ready TSV) |
+| **Ecosystem** | gRPC protocol + connection pool, Python / Go / Node.js clients, interactive REPL (`noedb-cli`), vector K-NN (HNSW) |
+
+## Quickstart
+
+```bash
+git clone https://github.com/toriyama237/NoeDB.git
+cd NoeDB
+cargo test --workspace          # full validation suite
+cargo run -p noedb-cli          # interactive REPL
+```
+
+Server mode (gRPC + TLS, Prometheus metrics):
+
+```bash
+cargo run -p noedb-cli -- --server --data-dir /var/lib/noedb \
+    --metrics-listen 127.0.0.1:9090
+```
+
+Embedded, as a library:
+
+```rust
+use noedb::engine::LocalEngine;
+
+let eng = LocalEngine::open("/var/lib/noedb")?;
+eng.execute("CREATE TABLE accounts (id INT PRIMARY KEY, iban TEXT UNIQUE NOT NULL, balance INT NOT NULL)")?;
+eng.execute("INSERT INTO accounts VALUES (1, 'FR7630001007941234567890185', 1000)")?;
+let rows = eng.execute("SELECT iban, balance FROM accounts WHERE balance >= 500")?;
+# Ok::<_, noedb::engine::EngineError>(())
+```
+
+Distributed (3-node Raft):
+
+```rust
+use noedb::engine::DistributedEngine;
+
+let cluster = DistributedEngine::new_voters(3)?;
+cluster.tick(80)?;
+cluster.execute("CREATE TABLE t (id INT PRIMARY KEY)")?;
+# Ok::<_, noedb::engine::EngineError>(())
+```
+
+## Architecture
 
 ```text
    ┌──────────┐   ┌──────────┐   ┌──────────────┐   ┌────────────┐   ┌───────────┐
@@ -37,309 +107,130 @@ Built from scratch over 52 weeks, brick by brick, in public.
                                                             └─────────────────────────────┘
 ```
 
-Each box above is its own Cargo crate inside this workspace. From day 2,
-the dependency graph is honest: the lexer cannot depend on the planner,
-the planner cannot depend on Raft, etc. This is the same shape Apache
-DataFusion uses.
+One Cargo crate per box; the dependency graph is enforced by the workspace
+(the lexer cannot depend on the planner, the planner cannot depend on Raft):
 
 ```text
 crates/
-├── noedb/            # meta-crate, re-exports the user-facing API
-├── noedb-lexer/      # tokens, spans, source map  (real code)
-├── noedb-ast/        # AST node types             (Phase 1 ✅)
-├── noedb-parser/     # recursive-descent parser   (Phase 1 ✅)
-├── noedb-planner/    # logical + physical plans   (Phase 3 ✅ W28)
-├── noedb-storage/    # LSM-tree engine            (Phase 2 ✅)
-├── noedb-raft/       # Raft consensus           (Phase 4 ✅)
-├── noedb-engine/     # SQL → Raft → LSM         (Phase 5 ✅)
-├── noedb-protocol/   # framed TCP RPC           (Phase 5 ✅)
-├── noedb-cli/        # REPL + server binary     (Phase 5 ✅)
-├── noedb-metrics/    # Prometheus metrics       (Phase 6 ✅)
-├── noedb-pool/       # gRPC connection pool     (Phase 7 ✅)
-└── clients/          # Python, Go, Node drivers (Phase 7 ✅)
+├── noedb/            # meta-crate — the public, user-facing API
+├── noedb-lexer/      # zero-copy tokenizer, byte-precise spans
+├── noedb-ast/        # typed AST, SQL Display round-trip
+├── noedb-parser/     # recursive descent + Pratt precedence
+├── noedb-planner/    # logical/physical plans, cost-based optimizer, executors
+├── noedb-storage/    # LSM-tree: WAL, MemTable, SSTables, compaction, MVCC
+├── noedb-txn/        # transaction control
+├── noedb-raft/       # Raft consensus core + transport
+├── noedb-engine/     # SQL → security → planner → Raft → LSM orchestration
+├── noedb-protocol/   # authenticated framed RPC
+├── noedb-tls/        # mTLS, SPIFFE identity
+├── noedb-grpc/       # gRPC service + auth guard
+├── noedb-pool/       # client connection pool, health checks
+├── noedb-metrics/    # Prometheus registry
+└── noedb-cli/        # REPL + server binary
 ```
 
-- **No `sqlx`, no `sled`, no `tokio-postgres`** — just the standard library and a
-  few deliberate dependencies introduced when the design forces them.
-- **Every commit is a step in a sprint.** The full plan is in
-  [`docs/sprint-plan-v2.md`](docs/sprint-plan-v2.md).
-- **CI is non-negotiable.** A red pipeline blocks merge. Always.
+Full design docs: [mdBook](https://toriyama237.github.io/NoeDB/) ·
+[`book/src/`](book/src/) (architecture, storage, Raft, query engine,
+banking tutorial, observability).
 
----
+## Security model
 
-## Why I built this
-
-I'd been reading database papers for years (Raft, LSM-Tree, Volcano) and using
-SQL every day at work — but I still couldn't have explained, end to end, what
-happens between `SELECT * FROM users WHERE id = 42;` and the bytes coming back
-off disk. NoeDB is the answer to that gap: a database I can actually justify,
-line by line, because I wrote every line.
-
-Second, I wanted a 12-month project that forced me to think like a systems
-engineer rather than an application developer: a project where correctness,
-durability, concurrency, and performance all have to be true at the same time.
-A from-scratch distributed SQL engine is exactly that, and it doesn't let you
-hide behind a framework.
-
----
-
-## What was technically hard
-
-> *Filled in as each phase ships. The honest version, not the polished one.*
-
-- **Lexer & Parser (Phase 1)** — shipped Week 08. Pratt precedence for
-  `WHERE`, zero-copy identifiers in the lexer, `Display` round-trip on the
-  AST. Hardest surprise: disambiguating bare table aliases from column names
-  without a full symbol table.
-- **LSM Storage Engine (Phase 2)** — shipped Week 16. Hardest surprise: keeping
-  the SSTable writer's tracked byte offset aligned with the on-disk header size
-  (a 2-byte padding bug broke every footer read). WAL segment replay and k-way
-  L0 compaction were straightforward once the on-disk format was honest.
-- **Query Planner (Phase 3)** — shipped Week 28. Cost-based index selection
-  (`SeqScan` vs `IndexScan`), B-tree secondary indexes over the LSM, Volcano
-  executors through `HashJoin`, predicate/projection pushdown, and `EXPLAIN`.
-  Hardest surprise: projection pushdown silently dropped join keys until the
-  optimizer merged required columns from the whole plan tree.
-- **Raft Consensus (Phase 4)** — shipped Week 44. Pure core FSM, 3-node
-  in-process simulator, `FileStorage` + CRC, auth-framed bincode RPC, Tokio TCP
-  + mTLS transport, joint-config membership. Hardest surprise: AppendEntries
-  ping-pong when every response triggered a full broadcast — fixed by only
-  replicating when `next_index` lags.
-- **Query engine v2 (Phase 5)** — windows, CTEs, subqueries, set ops, casts,
-  `ANALYZE TABLE`, TPC-H lite bench (`v1.4.0-query`). Hardest surprise:
-  correlated `IN (SELECT …)` vs column pruning in `EXPLAIN`.
-- **Observability (Phase 6)** — `noedb-metrics`, Prometheus `/metrics`, fuzz
-  (`protocol_wire`, `mvcc_codec`), Raft chaos + proptest smoke tests.
-- **Ecosystem (Phase 7)** — Python / Go / Node gRPC clients, `noedb-pool`,
-  mdBook docs, **v2.0.0** release. See [`docs/post-v2-roadmap.md`](docs/post-v2-roadmap.md)
-  for optional follow-ups (`madsim`, crates.io, OTEL exporter).
-
----
-
-## Security hardening
-
-NoeDB treats hostile input as the default. The engine ships a defense-in-depth
-layer that is enabled at the query boundary, not bolted on:
+Hostile input is the default assumption. Defenses are enforced at the query
+boundary, not bolted on:
 
 | Threat | Defense | Where |
 |--------|---------|-------|
 | SQL injection via stacked queries | multi-statement batches rejected pre-parse | `security.rs` |
 | Privilege abuse | DDL / RLS / policy changes gated to admin roles; `SET ROLE` escalation blocked | `security.rs` |
-| Audit tampering | append-only log with SHA-256 hash chain + `--audit-verify` | `audit.rs` |
-| Credential leakage in logs | secret literals (`PASSWORD`, `IDENTIFIED BY`, `token`…) masked before audit write | `redact.rs` |
-| Query-flood / runaway DoS | per-session token-bucket rate limiter + wall-clock statement deadlines | `ratelimit.rs` |
-| Data theft from disk/backups | at-rest value encryption (XChaCha20-Poly1305, per-record nonce, cell-bound AAD) | `crypto.rs` |
-| Brute-forced cluster auth | per-IP failure tracking with temporary ban on the gRPC token check | `noedb-grpc/auth_guard.rs` |
-| Impersonation on the wire | mTLS with mandatory SPIFFE CN enforcement on client certs | `noedb-tls/spiffe.rs` |
+| Audit tampering | append-only log, SHA-256 hash chain, `--audit-verify` | `audit.rs` |
+| Credential leakage in logs | secret literals masked before audit write | `redact.rs` |
+| Query-flood / DoS | per-session token-bucket rate limiter + statement deadlines | `ratelimit.rs` |
+| Data theft from disk/backups | at-rest encryption (XChaCha20-Poly1305, per-record nonce, cell-bound AAD) | `crypto.rs` |
+| Brute-forced cluster auth | per-IP failure tracking with temporary ban | `noedb-grpc/auth_guard.rs` |
+| Impersonation on the wire | mTLS with mandatory SPIFFE CN enforcement | `noedb-tls/spiffe.rs` |
 
 ```bash
-# Verify the audit chain has not been tampered with, then export for a SIEM
+# Verify the audit chain, then export for a SIEM
 noedb --data /var/lib/noedb --audit-verify
 noedb --data /var/lib/noedb --audit-export > audit.tsv
 
-# Turn on at-rest encryption and per-session limits
+# At-rest encryption and per-session limits
 export NOEDB_DATA_KEY="$(openssl rand -hex 32)"
 export NOEDB_QPS=2000 NOEDB_STMT_TIMEOUT_MS=5000
 ```
 
-## Status
+Vulnerability reports: [private disclosure](https://github.com/toriyama237/NoeDB/security/advisories/new)
+— policy in [SECURITY.md](./SECURITY.md).
 
-> **v2.0.0** — 52-week sprint complete: MVCC, Raft, query engine v2, metrics,
-> multi-language gRPC clients. REPL: `cargo run -p noedb-cli`. Server:
-> `cargo run -p noedb-cli -- --server --metrics-listen 127.0.0.1:9090`.
-> **Docs:** [GitHub Pages](https://toriyama237.github.io/NoeDB/) (mdBook) · local: `mdbook build`.
-> **Clients:** [`clients/README.md`](clients/README.md).
+## Validated at scale
 
-Phase 1 parses `SELECT` (with `JOIN` / `WHERE`), DML (`INSERT`, `UPDATE`,
-`DELETE`), and core DDL (`CREATE TABLE`, `DROP TABLE`, `CREATE INDEX`):
-
-```rust
-use noedb::parser::parse;
-use noedb::ast::Statement;
-
-let stmt = parse("SELECT u.name FROM users u INNER JOIN orders o ON u.id = o.user_id")?;
-assert!(matches!(stmt, Statement::Select(_)));
-# Ok::<_, noedb::parser::ParseError>(())
-```
-
-Phase 2 adds a durable LSM engine — WAL segments, MemTable, SSTables with Bloom
-filters, and leveled compaction:
-
-```rust
-use noedb::storage::{LsmTree, LsmConfig};
-
-let mut tree = LsmTree::open("/tmp/noedb-data", LsmConfig::default())?;
-tree.put(b"user:42", b"alice")?;
-assert_eq!(tree.get(b"user:42")?, Some(b"alice".to_vec()));
-# Ok::<_, noedb::storage::StorageError>(())
-```
-
-Phase 3 adds a Volcano-style query planner with a cost-based optimizer:
-
-```rust
-use noedb::parser::parse;
-use noedb::planner::{apply_statement, explain_sql, execute_sql};
-
-let mut tree = noedb::storage::LsmTree::open("/tmp/noedb-data", noedb::storage::LsmConfig::default())?;
-apply_statement(&parse("CREATE INDEX idx ON users (id)")?, &mut tree)?;
-let rows = execute_sql(&parse("SELECT name FROM users WHERE id = '42'")?, &tree)?;
-println!("{}", explain_sql(&parse("SELECT name FROM users WHERE id = '42'")?, &tree)?);
-# Ok::<_, Box<dyn std::error::Error>>(())
-```
-
-Phase 4 adds Raft consensus (election, replication, in-process 3-node cluster):
-
-```rust
-use noedb::raft::Cluster;
-
-let mut cluster = Cluster::new_voters(3)?;
-cluster.run_rounds(80)?;
-cluster.propose_on_leader(b"SET x 1".to_vec())?;
-assert!(cluster.applied_count() >= 1);
-# Ok::<_, noedb::raft::RaftError>(())
-```
-
-Phase 5 runs the full stack (local or 3-node Raft cluster):
-
-```rust
-use noedb::engine::{DistributedEngine, LocalEngine};
-
-// Local: one LSM (Arc — safe to share across Rayon threads)
-let eng = LocalEngine::open("/tmp/noedb-data")?;
-eng.put_row_default("users", "1", "name", b"ada")?;
-let rows = eng.execute("SELECT name FROM users")?;
-
-// Distributed: parser → planner → Raft → LSM on each replica
-let cluster = DistributedEngine::new_voters(3)?;
-cluster.tick(80)?;
-cluster.put_row("users", "1", "name", b"ada")?;
-let rows = cluster.execute("SELECT name FROM users")?;
-# Ok::<_, noedb::engine::EngineError>(())
-```
+NoeDB ships an end-to-end audit binary that simulates a multinational bank —
+**80 agencies, 22 departments, 50 009 employees, 50 009 payslips** — and runs
+20 business SQL benchmarks plus constraint checks:
 
 ```bash
-# 🎬 Demo LinkedIn / talk — shell branded + tables SQL
-./scripts/noedb-studio.sh
-
-# Nouvelle fenêtre terminal (Linux/macOS)
-./scripts/noedb-studio.sh --window
-
-# Mode cluster Raft
-./scripts/noedb-studio.sh --cluster
-
-cargo run -p noedb-cli              # REPL classique
-cargo run -p noedb-cli -- --cluster # REPL over 3-node Raft sim
-cargo run -p noedb-cli -- --server --data-dir /tmp/noedb-dev   # gRPC :5434 + TLS
-cargo run -p noedb-cli -- --server --legacy-tcp --listen 127.0.0.1:5433
+cargo run --release -p noedb-engine --example national_hr_audit
 ```
 
-The lexer tokenizes ~95 % of SQL surface syntax. **200+ tests**, a
-**1M-token Criterion bench**, and a **`cargo-fuzz`** target ship with
-Phase 1. See [`crates/noedb-lexer/README.md`](crates/noedb-lexer/README.md)
-for lexer details.
+Latest run (release build, commodity hardware):
 
-```text
-   SQL text
-      │
-      ▼
-  ┌────────┐     ┌─────────┐     ┌──────────────┐
-  │ Lexer  │ ──▶ │ Parser  │ ──▶ │     AST      │
-  │ tokens │     │ recursive│     │ Select/DML/  │
-  └────────┘     │ + Pratt  │     │ DDL nodes    │
-                 └─────────┘     └──────────────┘
+| Metric | Result |
+|---|---|
+| Bulk load (100 k rows / 700 k cells) | **7.5 s** |
+| 20 business queries (joins, aggregates, CTEs, subqueries) | **22 / 22 PASS** |
+| Correlated `NOT EXISTS` on 50 k × 50 k | 329 s → **3.5 s** (hash semi-join) |
+| `IN (SELECT …)` on 50 k rows | 221 s → **2.8 s** |
+| Full workspace test suite | **316 tests, 0 failures** |
+
+Micro-benchmarks (Criterion): `cargo bench -p noedb-lexer --bench lexer`
+(~1 M tokens / 21 ms), `cargo bench -p noedb-storage --bench lsm`,
+`cargo bench -p noedb-engine --bench tpch_lite` (TPC-H lite analytical suite).
+
+## Engineering standards
+
+Every merge to `main` satisfies:
+
+```bash
+cargo fmt --all -- --check                                # formatting
+cargo clippy --workspace --all-targets -- -D warnings     # zero warnings, pedantic on
+cargo test --workspace                                    # full suite
+cargo doc --no-deps                                       # documented public API
 ```
 
----
+- `unsafe_code = "forbid"` — workspace-wide, no exceptions.
+- `missing_docs = "warn"` — public API is documented.
+- Supply chain: `cargo-deny` (licenses, advisories), `cargo audit`, CodeQL, typos check in CI.
+- Git: feature branches, [Conventional Commits](https://www.conventionalcommits.org/),
+  `--no-ff` merges — see [`docs/git-workflow.md`](docs/git-workflow.md).
+- Releases: [SemVer](https://semver.org), [Keep a Changelog](https://keepachangelog.com) — see [CHANGELOG.md](CHANGELOG.md).
 
-## Roadmap — 52 weeks (v2 sprint) ✅
+## Roadmap
 
-| Phase | Weeks   | Theme                     | Milestone tag       | Status    |
-|-------|---------|---------------------------|---------------------|-----------|
-| 1     | 01 – 08 | Security & protocol       | TLS, gRPC, RLS      | ✅        |
-| 2     | 09 – 16 | MVCC & transactions       | MVCC                | ✅        |
-| 3     | 17 – 24 | Performance               | SIMD, LZ4, parallel | ✅        |
-| 4     | 25 – 36 | Distributed Raft          | `v0.4.0-raft`       | ✅        |
-| 5     | 37 – 44 | Query engine v2             | `v1.4.0-query`      | ✅        |
-| 6     | 45 – 48 | Observability & reliability | metrics, fuzz     | ✅        |
-| 7     | 49 – 52 | Ecosystem & launch          | **`v2.0.0`**        | ✅        |
+| Milestone | Theme | Status |
+|---|---|---|
+| v0.x – v1.x | Lexer → parser → LSM → planner → Raft → engine | ✅ shipped |
+| **v2.0** | Query engine v2, observability, clients, docs | ✅ shipped |
+| **v2.1** | Planner performance (hash semi-join, top-k), UTF-8 SQL, audit tooling | ✅ shipped |
+| v2.2 | Secondary-index join acceleration, aggregate pushdown, prepared-statement cache | 🔜 |
+| v3.0 | Online backup/restore, point-in-time recovery, multi-region Raft | planned |
 
-Full plan: [`docs/sprint-plan-v2.md`](docs/sprint-plan-v2.md) · After v2:
+History: [`docs/sprint-plan-v2.md`](docs/sprint-plan-v2.md) ·
 [`docs/post-v2-roadmap.md`](docs/post-v2-roadmap.md).
 
----
+## References
 
-## Getting started
+The design stands on published, peer-reviewed foundations:
 
-```bash
-# 1. Install Rust stable (one-time)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-
-# 2. Clone and test
-git clone https://github.com/toriyama237/NoeDB.git
-cd NoeDB
-cargo test --all-features
-mdbook build   # optional: install mdbook, builds site to book/build/
-```
-
-Three Rust commands. If `cargo test` takes more than a few minutes on first build,
-that's expected (LSM durability tests). Please open an issue for regressions.
-
-### Local development loop
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test  --all-features
-cargo doc   --no-deps --all-features
-cargo bench --no-run --all-features
-```
-
-The exact same checks run in [CI](.github/workflows/ci.yml).
-
----
-
-## Benchmarks
-
-Micro-benchmarks live in [`crates/noedb-lexer/benches/`](crates/noedb-lexer/benches/)
-and are powered by [Criterion](https://bheisler.github.io/criterion.rs/book/).
-Run them with:
-
-```bash
-cargo bench -p noedb-lexer --bench lexer
-open target/criterion/report/index.html
-```
-
-The `one_million_tokens` bench targets ~1M tokens per run (~**21 ms** / ~47 Melem/s
-on release builds as of v0.2). LSM benches: `cargo bench -p noedb-storage --bench lsm`.
-Analytical **TPC-H lite** workload (joins, CTEs, subqueries, windows):
-`cargo bench -p noedb-engine --bench tpch_lite`.
-
----
-
-## Papers & references
-
-Reading list — each entry will be checked off when the corresponding code lands.
-
-- [x] Ongaro & Ousterhout (2014), *In Search of an Understandable Consensus Algorithm (Raft)*
-- [x] O'Neil et al. (1996), *The Log-Structured Merge-Tree (LSM-Tree)*
-- [x] Graefe (1994), *Volcano — An Extensible and Parallel Query Evaluation System*
-- [x] Bloom (1970), *Space/Time Trade-offs in Hash Coding with Allowable Errors*
-- [x] Selinger et al. (1979), *Access Path Selection in a Relational Database Management System*
-
----
+- Ongaro & Ousterhout (2014), *In Search of an Understandable Consensus Algorithm (Raft)*
+- O'Neil et al. (1996), *The Log-Structured Merge-Tree (LSM-Tree)*
+- Graefe (1994), *Volcano — An Extensible and Parallel Query Evaluation System*
+- Bloom (1970), *Space/Time Trade-offs in Hash Coding with Allowable Errors*
+- Selinger et al. (1979), *Access Path Selection in a Relational Database Management System*
 
 ## Contributing
 
-NoeDB is built in the open. Issues, ideas, and PRs are welcome — see
-[CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide. Look for
-[`good first issue`](https://github.com/toriyama237/NoeDB/labels/good%20first%20issue)
-to find a starter task.
-
-Security reports: please use
-[private vulnerability reporting](https://github.com/toriyama237/NoeDB/security/advisories/new).
-See [SECURITY.md](./SECURITY.md) for the full policy.
-
----
+Issues, ideas, and PRs are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md).
+Start with [`good first issue`](https://github.com/toriyama237/NoeDB/labels/good%20first%20issue).
 
 ## License
 
