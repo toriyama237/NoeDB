@@ -35,6 +35,7 @@ mod schema;
 mod security;
 mod session;
 mod shard;
+mod stmt_cache;
 mod txn;
 mod vector_index;
 
@@ -61,4 +62,5 @@ pub use security::{
 };
 pub use session::SessionContext;
 pub use shard::ShardRouter;
+pub use stmt_cache::{StatementCache, DEFAULT_STMT_CACHE_CAPACITY};
 pub use vector_index::VectorIndexCatalog;

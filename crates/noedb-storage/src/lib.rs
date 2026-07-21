@@ -46,7 +46,7 @@ pub use crate::atomic_io::atomic_write;
 pub use crate::bloom::BloomFilter;
 pub use crate::compaction::{compact_level0_to_l1, L0_COMPACTION_TRIGGER};
 pub use crate::durable::DurableStore;
-pub use crate::engine::StorageEngine;
+pub use crate::engine::{prefix_end, StorageEngine};
 pub use crate::error::StorageError;
 pub use crate::fast_wal::append_batch_sync;
 pub use crate::hnsw::HnswIndex;
@@ -62,7 +62,8 @@ pub use crate::mvcc::{
 };
 pub use crate::scrub::{scrub_data_dir, ScrubReport};
 pub use crate::sstable::{
-    SstReader, SstWriteOptions, SstWriter, SST_MAGIC, SST_VERSION, SST_VERSION_V2, SST_VERSION_V3,
+    SstRangeIter, SstReader, SstWriteOptions, SstWriter, SST_MAGIC, SST_VERSION, SST_VERSION_V2,
+    SST_VERSION_V3,
 };
 pub use crate::wal::{
     replay_into_memtable, replay_wal_dir, LogEntry, OpType, Wal, WalSegmentManager, WalSyncMode,

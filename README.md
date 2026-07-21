@@ -176,11 +176,11 @@ Latest run (release build, commodity hardware):
 
 | Metric | Result |
 |---|---|
-| Bulk load (100 k rows / 700 k cells) | **7.5 s** |
+| Bulk load (100 k rows / 700 k cells) | **6.4 s** |
 | 20 business queries (joins, aggregates, CTEs, subqueries) | **22 / 22 PASS** |
-| Correlated `NOT EXISTS` on 50 k × 50 k | 329 s → **3.5 s** (hash semi-join) |
-| `IN (SELECT …)` on 50 k rows | 221 s → **2.8 s** |
-| Full workspace test suite | **316 tests, 0 failures** |
+| Correlated `NOT EXISTS` on 50 k × 50 k | 329 s → **1.8 s** (hash semi-join + bounded scans) |
+| `IN (SELECT …)` on 50 k rows | 221 s → **1.7 s** |
+| Full workspace test suite | **330 tests, 0 failures** |
 
 Micro-benchmarks (Criterion): `cargo bench -p noedb-lexer --bench lexer`
 (~1 M tokens / 21 ms), `cargo bench -p noedb-storage --bench lsm`,
@@ -211,7 +211,8 @@ cargo doc --no-deps                                       # documented public AP
 | v0.x – v1.x | Lexer → parser → LSM → planner → Raft → engine | ✅ shipped |
 | **v2.0** | Query engine v2, observability, clients, docs | ✅ shipped |
 | **v2.1** | Planner performance (hash semi-join, top-k), UTF-8 SQL, audit tooling | ✅ shipped |
-| v2.2 | Secondary-index join acceleration, aggregate pushdown, prepared-statement cache | 🔜 |
+| **v2.2** | Bounded range scans, secondary-index DML maintenance, statement cache | ✅ shipped |
+| v2.3 | Aggregate pushdown, index-nested-loop joins, columnar cell packing | 🔜 |
 | v3.0 | Online backup/restore, point-in-time recovery, multi-region Raft | planned |
 
 History: [`docs/sprint-plan-v2.md`](docs/sprint-plan-v2.md) ·

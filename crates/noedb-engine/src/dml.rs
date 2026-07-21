@@ -7,10 +7,12 @@ use noedb_planner::{eval_expr, eval_predicate, increment_row_count, ExecError, V
 use noedb_storage::{LsmTree, StorageEngine, StorageError, TimestampOracle, Version};
 use noedb_txn::TxnManager;
 
+use noedb_planner::SecondaryIndex;
+
 use crate::error::EngineError;
 use crate::machine::row_key;
 use crate::schema::SchemaCatalog;
-use crate::txn::{delete_cell_in_txn, put_row_in_txn, txn_err, TxnOverlayStore};
+use crate::txn::{delete_cell_in_txn, put_key_in_txn, put_row_in_txn, txn_err, TxnOverlayStore};
 use crate::vector_index::VectorIndexCatalog;
 
 type RowMap = Vec<(String, Value)>;
@@ -36,6 +38,42 @@ fn delete_cell(
         .map_err(EngineError::Storage)
 }
 
+/// Add the index entry for `(table, column, value) -> row_id`.
+fn index_entry_put(
+    tree: &mut LsmTree,
+    oracle: &TimestampOracle,
+    txn: Option<(&TxnManager, u64)>,
+    table: &str,
+    column: &str,
+    value: &[u8],
+    row_id: &str,
+) -> Result<(), EngineError> {
+    let key = SecondaryIndex::entry_key_for(table, column, value, row_id.as_bytes());
+    if let Some((mgr, sid)) = txn {
+        put_key_in_txn(mgr, sid, key, Vec::new())
+    } else {
+        put_cell(tree, oracle, &key, b"")
+    }
+}
+
+/// Tombstone the index entry for `(table, column, value) -> row_id`.
+fn index_entry_delete(
+    tree: &mut LsmTree,
+    oracle: &TimestampOracle,
+    txn: Option<(&TxnManager, u64)>,
+    table: &str,
+    column: &str,
+    value: &[u8],
+    row_id: &str,
+) -> Result<(), EngineError> {
+    let key = SecondaryIndex::entry_key_for(table, column, value, row_id.as_bytes());
+    if let Some((mgr, sid)) = txn {
+        delete_cell_in_txn(mgr, sid, key)
+    } else {
+        delete_cell(tree, oracle, &key)
+    }
+}
+
 /// Apply `INSERT INTO … VALUES …` to the LSM.
 ///
 /// # Errors
@@ -59,6 +97,7 @@ pub(crate) fn execute_insert(
             })
         })?
     };
+    let indexed = SecondaryIndex::indexed_columns(tree, table);
 
     for row_exprs in &ins.values {
         if row_exprs.len() != col_names.len() {
@@ -98,6 +137,9 @@ pub(crate) fn execute_insert(
         }
         for (col, bytes, vector) in pending {
             write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
+            if indexed.iter().any(|c| c == col) {
+                index_entry_put(tree, oracle, txn, table, col, &bytes, &row_id)?;
+            }
             if let (Some(val), Some(catalog)) = (vector, vectors.as_deref_mut()) {
                 catalog.upsert(table, col, &row_id, &val);
             }
@@ -123,6 +165,7 @@ pub(crate) fn execute_update(
     txn: Option<(&TxnManager, u64)>,
 ) -> Result<u64, EngineError> {
     let table = &upd.table.value;
+    let indexed = SecondaryIndex::indexed_columns(tree, table);
     let rows: Vec<(String, RowMap)> = {
         let overlay = txn
             .map(|(mgr, sid)| TxnOverlayStore::for_session(mgr, sid, tree))
@@ -167,6 +210,18 @@ pub(crate) fn execute_update(
         }
         for (col, bytes, vector) in pending {
             write_cell(tree, oracle, txn, table, &row_id, col, &bytes)?;
+            if indexed.iter().any(|c| c == col) {
+                let old_bytes = row.iter().find_map(|(n, v)| match v {
+                    Value::Bytes(b) if n == col => Some(b.clone()),
+                    _ => None,
+                });
+                if old_bytes.as_deref() != Some(bytes.as_slice()) {
+                    if let Some(old) = old_bytes {
+                        index_entry_delete(tree, oracle, txn, table, col, &old, &row_id)?;
+                    }
+                    index_entry_put(tree, oracle, txn, table, col, &bytes, &row_id)?;
+                }
+            }
             if let (Some(val), Some(catalog)) = (vector, vectors.as_deref_mut()) {
                 catalog.upsert(table, col, &row_id, &val);
             }
@@ -190,6 +245,7 @@ pub(crate) fn execute_delete(
     txn: Option<(&TxnManager, u64)>,
 ) -> Result<u64, EngineError> {
     let table = &del.table.value;
+    let indexed = SecondaryIndex::indexed_columns(tree, table);
     let rows: Vec<(String, RowMap)> = {
         let overlay = txn
             .map(|(mgr, sid)| TxnOverlayStore::for_session(mgr, sid, tree))
@@ -211,11 +267,19 @@ pub(crate) fn execute_delete(
         matched
     };
     let mut deleted = 0u64;
-    for (row_id, _row) in rows {
+    for (row_id, row) in rows {
         if let Some((mgr, sid)) = txn {
             delete_row_in_txn(mgr, sid, schema, table, &row_id)?;
         } else {
             delete_row(tree, oracle, table, &row_id)?;
+        }
+        for col in &indexed {
+            if let Some(old) = row.iter().find_map(|(n, v)| match v {
+                Value::Bytes(b) if n == col => Some(b.clone()),
+                _ => None,
+            }) {
+                index_entry_delete(tree, oracle, txn, table, col, &old, &row_id)?;
+            }
         }
         if let Some(ref mut catalog) = vectors {
             if let Some(table_schema) = schema.tables.get(table) {
@@ -362,8 +426,9 @@ fn scan_table<S: StorageEngine<Error = StorageError>>(
 ) -> Result<Vec<(String, RowMap)>, EngineError> {
     let mut prefix = table.as_bytes().to_vec();
     prefix.push(0);
+    let end = noedb_storage::prefix_end(&prefix);
     let mut grouped: BTreeMap<Vec<u8>, RowMap> = BTreeMap::new();
-    for (key, val) in StorageEngine::iter(store) {
+    for (key, val) in store.range(&prefix, &end) {
         if !key.starts_with(&prefix) {
             continue;
         }
@@ -391,7 +456,9 @@ fn delete_row(
     row_id: &str,
 ) -> Result<(), EngineError> {
     let prefix = row_prefix(table, row_id);
-    let keys: Vec<Vec<u8>> = StorageEngine::iter(tree)
+    let end = noedb_storage::prefix_end(&prefix);
+    let keys: Vec<Vec<u8>> = tree
+        .range(&prefix, &end)
         .filter_map(|(key, _)| key.starts_with(&prefix).then_some(key))
         .collect();
     for key in keys {

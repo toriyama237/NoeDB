@@ -18,7 +18,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "2.1.0"
+version = "2.2.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
@@ -32,20 +32,20 @@ keywords = ["database", "sql", "distributed", "raft", "lsm-tree"]
 # Internal crates - pinned via path so the workspace builds with a
 # single `cargo build --workspace`. Versions are kept in sync with
 # the workspace `version` above.
-noedb         = { path = "crates/noedb",          version = "=2.1.0" }
-noedb-lexer   = { path = "crates/noedb-lexer",    version = "=2.1.0" }
-noedb-ast     = { path = "crates/noedb-ast",      version = "=2.1.0" }
-noedb-parser  = { path = "crates/noedb-parser",   version = "=2.1.0" }
-noedb-planner = { path = "crates/noedb-planner",  version = "=2.1.0" }
-noedb-storage = { path = "crates/noedb-storage",  version = "=2.1.0" }
-noedb-raft    = { path = "crates/noedb-raft",     version = "=2.1.0" }
-noedb-engine  = { path = "crates/noedb-engine",   version = "=2.1.0" }
-noedb-protocol = { path = "crates/noedb-protocol", version = "=2.1.0" }
-noedb-tls     = { path = "crates/noedb-tls",      version = "=2.1.0" }
-noedb-grpc    = { path = "crates/noedb-grpc",     version = "=2.1.0" }
-noedb-txn     = { path = "crates/noedb-txn",      version = "=2.1.0" }
-noedb-metrics = { path = "crates/noedb-metrics",  version = "=2.1.0" }
-noedb-pool    = { path = "crates/noedb-pool",      version = "=2.1.0" }
+noedb         = { path = "crates/noedb",          version = "=2.2.0" }
+noedb-lexer   = { path = "crates/noedb-lexer",    version = "=2.2.0" }
+noedb-ast     = { path = "crates/noedb-ast",      version = "=2.2.0" }
+noedb-parser  = { path = "crates/noedb-parser",   version = "=2.2.0" }
+noedb-planner = { path = "crates/noedb-planner",  version = "=2.2.0" }
+noedb-storage = { path = "crates/noedb-storage",  version = "=2.2.0" }
+noedb-raft    = { path = "crates/noedb-raft",     version = "=2.2.0" }
+noedb-engine  = { path = "crates/noedb-engine",   version = "=2.2.0" }
+noedb-protocol = { path = "crates/noedb-protocol", version = "=2.2.0" }
+noedb-tls     = { path = "crates/noedb-tls",      version = "=2.2.0" }
+noedb-grpc    = { path = "crates/noedb-grpc",     version = "=2.2.0" }
+noedb-txn     = { path = "crates/noedb-txn",      version = "=2.2.0" }
+noedb-metrics = { path = "crates/noedb-metrics",  version = "=2.2.0" }
+noedb-pool    = { path = "crates/noedb-pool",      version = "=2.2.0" }
 
 tonic = { version = "0.13", default-features = false, features = ["transport", "codegen", "tls-ring", "prost", "router", "server"] }
 prost = "0.13"

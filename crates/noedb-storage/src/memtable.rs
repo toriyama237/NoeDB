@@ -126,6 +126,14 @@ impl StorageEngine for MemTable {
     fn iter(&self) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
         self.map.iter().map(|(k, v)| (k.clone(), v.clone()))
     }
+
+    fn range<'a>(
+        &'a self,
+        start: &'a [u8],
+        end: &'a [u8],
+    ) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + 'a {
+        MemTable::range(self, start, end)
+    }
 }
 
 impl<'a> IntoIterator for &'a MemTable {

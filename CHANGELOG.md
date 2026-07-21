@@ -6,6 +6,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-07-21
+
+Scan-architecture release: bounded range scans through the whole storage
+stack, secondary indexes kept consistent under DML, and a parsed-statement
+cache. National audit (50 009 employees): **22/22 PASS**, `IN` subquery
+2.8 s → 1.7 s, `NOT EXISTS` 3.5 s → 1.8 s, bulk seed 7.5 s → 6.4 s.
+
+### Performance
+- **Storage**: `StorageEngine::range(start, end)` — prefix-bounded scans with
+  efficient overrides everywhere:
+  - `SstReader::scan_range` seeks via the block index and never reads blocks
+    outside `[start, end)`;
+  - `LsmTree::range` / `range_visible` merge SSTs + memtable in one bounded,
+    MVCC-aware pass (scan windows close the internal-key prefix corner case);
+  - `MemTable`, `SnapshotStore`, `TxnOverlayStore` delegate to bounded
+    B-tree ranges.
+- **Planner / DML**: table scans, row-id loads, secondary-index build /
+  load / lookup, UNIQUE checks and row deletes all switched from full
+  `iter()` + filter to bounded `range()` — a query now touches only its
+  table's keyspace instead of the entire database.
+- **Engine**: 256-entry LRU parsed-statement cache (SQL text → AST) on the
+  execute path; repeated statements skip lexing/parsing entirely.
+  `LocalEngine::statement_cache_stats()` exposes hit/miss counters.
+
+### Fixed
+- **Secondary indexes stay consistent under DML** — `CREATE INDEX` used to be
+  a one-shot build, so later `INSERT` / `UPDATE` / `DELETE` silently diverged
+  and `IndexScan` returned stale or incomplete results:
+  - `INSERT` adds MVCC index entries for every indexed column;
+  - `UPDATE` tombstones the old-value entry and writes the new one;
+  - `DELETE` tombstones the removed row's entries;
+  - transactions buffer entry writes and expose them on `COMMIT`.
+- `SecondaryIndex::lookup` reads the duplicate-entry keyspace only; the
+  unmaintained point-key fast path (which could return rows for values they
+  no longer hold) was removed.
+
+### Added
+- Integration suites `index_maintenance.rs` (insert / update / delete / txn
+  commit through `IndexScan`) and `stmt_cache.rs` (AST-cache hits, freshness
+  after `UPDATE`); storage unit tests for `scan_range` and bounded `range`
+  equivalence across SSTs + memtable + MVCC.
+
+### Quality
+- `cargo clippy --workspace --all-targets`: **0 warnings**; full `rustfmt`.
+- Workspace suite: **330 tests, 0 failures**; national audit 22/22 PASS.
+
 ## [2.1.0] - 2026-07-21
 
 Enterprise hardening release: planner correctness and performance validated by

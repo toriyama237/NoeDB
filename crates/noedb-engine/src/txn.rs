@@ -38,6 +38,20 @@ pub(crate) fn commit_to_storage(
     Ok(())
 }
 
+/// Buffer a raw-key write (e.g. secondary-index entry) in the active transaction.
+pub(crate) fn put_key_in_txn(
+    manager: &TxnManager,
+    session_id: u64,
+    key: Vec<u8>,
+    value: Vec<u8>,
+) -> Result<(), EngineError> {
+    manager
+        .with_txn(session_id, |txn| {
+            txn.put(key, value);
+        })
+        .map_err(txn_err)
+}
+
 /// Buffer a cell write in the active transaction.
 pub(crate) fn put_row_in_txn(
     manager: &TxnManager,
@@ -122,6 +136,35 @@ impl StorageEngine for TxnOverlayStore<'_> {
         }
         merged.into_iter()
     }
+
+    fn range<'b>(
+        &'b self,
+        start: &'b [u8],
+        end: &'b [u8],
+    ) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + 'b {
+        let in_range = |k: &[u8]| k >= start && (end.is_empty() || k < end);
+        let mut merged: BTreeMap<Vec<u8>, Vec<u8>> = BTreeMap::new();
+        for (k, v) in self.base.range_visible(start, end, &self.view) {
+            merged.insert(k, v);
+        }
+        for (k, op) in self
+            .overlay
+            .range::<[u8], _>((std::ops::Bound::Included(start), std::ops::Bound::Unbounded))
+        {
+            if !in_range(k) {
+                break;
+            }
+            match op {
+                Some(v) => {
+                    merged.insert(k.clone(), v.clone());
+                }
+                None => {
+                    merged.remove(k);
+                }
+            }
+        }
+        merged.into_iter()
+    }
 }
 
 /// Buffer a tombstone for one cell in the active transaction.
@@ -191,6 +234,14 @@ impl StorageEngine for TxnOverlayStoreWithHook<'_> {
 
     fn iter(&self) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
         self.inner.iter()
+    }
+
+    fn range<'b>(
+        &'b self,
+        start: &'b [u8],
+        end: &'b [u8],
+    ) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + 'b {
+        self.inner.range(start, end)
     }
 }
 

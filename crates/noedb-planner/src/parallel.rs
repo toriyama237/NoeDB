@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use rayon::prelude::*;
 
-use noedb_storage::{StorageEngine, StorageError};
+use noedb_storage::{prefix_end, StorageEngine, StorageError};
 
 use crate::value::Value;
 
@@ -40,8 +40,10 @@ fn collect_cells<S: StorageEngine<Error = StorageError>>(
 ) -> Vec<Cell> {
     let mut prefix = table.as_bytes().to_vec();
     prefix.push(0);
+    let end = prefix_end(&prefix);
 
-    StorageEngine::iter(store)
+    store
+        .range(&prefix, &end)
         .filter_map(|(key, val)| {
             if !key.starts_with(&prefix) {
                 return None;
