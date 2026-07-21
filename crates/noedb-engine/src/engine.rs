@@ -148,6 +148,7 @@ pub struct LocalEngine {
     rate_limiter: RateLimiter,
     stmt_timeout_ms: u64,
     data_key: Option<crate::crypto::DataKey>,
+    stmt_cache: Mutex<crate::stmt_cache::StatementCache>,
 }
 
 impl LocalEngine {
@@ -198,6 +199,7 @@ impl LocalEngine {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0),
             data_key: crate::crypto::DataKey::from_env(),
+            stmt_cache: Mutex::new(crate::stmt_cache::StatementCache::default()),
         }))
     }
 
@@ -386,7 +388,7 @@ impl LocalEngine {
             self.memory
                 .gate_write(pressure, sql.len().saturating_mul(4096))?;
             let _mem = self.memory.try_reserve(sql.len().max(4096))?;
-            let stmt = noedb_parser::parse(sql)?;
+            let stmt = self.parse_cached(sql)?;
             deadline.check()?;
             let out = self.dispatch(session_id, stmt, sql);
             deadline.check()?;
@@ -401,6 +403,22 @@ impl LocalEngine {
             .lock()
             .save(&self.data_dir)
             .map_err(EngineError::from)
+    }
+
+    /// Parse `sql`, reusing the AST cache for repeated statements.
+    fn parse_cached(&self, sql: &str) -> Result<Statement, EngineError> {
+        if let Some(stmt) = self.stmt_cache.lock().get(sql) {
+            return Ok(stmt);
+        }
+        let stmt = noedb_parser::parse(sql)?;
+        self.stmt_cache.lock().insert(sql, stmt.clone());
+        Ok(stmt)
+    }
+
+    /// `(hits, misses)` of the parsed-statement cache.
+    #[must_use]
+    pub fn statement_cache_stats(&self) -> (u64, u64) {
+        self.stmt_cache.lock().stats()
     }
 
     fn dispatch(
