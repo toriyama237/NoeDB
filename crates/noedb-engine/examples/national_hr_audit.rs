@@ -340,7 +340,7 @@ fn main() {
     let report = Report {
         title: "NoeDB — Audit Banque Multinationale (80 agences, 50 009 employes)".into(),
         generated_at: humantime(),
-        noedb_version: "2.0.0".into(),
+        noedb_version: env!("CARGO_PKG_VERSION").into(),
         data_dir: dir.display().to_string(),
         agencies: AGENCIES,
         departments: DEPARTMENTS,
