@@ -157,6 +157,72 @@ impl MvccMemTable {
         })
     }
 
+    /// Bounded visible scan: latest non-deleted version per user key in
+    /// `[start, end)`, in one pass over the internal-key range.
+    ///
+    /// [`MvccMemTable::scan`] walks the whole table and re-resolves each
+    /// key; table scans over one prefix paid the cost of every other
+    /// table's versions. Internal keys are `user_key || suffix`, so a
+    /// 9-byte `0xFF` guard above `end` covers versions of user keys that
+    /// are proper prefixes of `end`; the exact filter runs per entry.
+    #[must_use]
+    pub fn scan_range(&self, view: &ReadView, start: &[u8], end: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
+        self.latest_in_range(view, start, end)
+            .into_iter()
+            .filter(|(_, ver)| !ver.deleted)
+            .map(|(k, ver)| (k.to_vec(), ver.value.clone()))
+            .collect()
+    }
+
+    /// Key-only variant of [`MvccMemTable::scan_range`] — no value copies.
+    #[must_use]
+    pub fn scan_range_keys(&self, view: &ReadView, start: &[u8], end: &[u8]) -> Vec<Vec<u8>> {
+        self.latest_in_range(view, start, end)
+            .into_iter()
+            .filter(|(_, ver)| !ver.deleted)
+            .map(|(k, _)| k.to_vec())
+            .collect()
+    }
+
+    /// Latest visible version per user key in `[start, end)` (borrowed).
+    fn latest_in_range(
+        &self,
+        view: &ReadView,
+        start: &[u8],
+        end: &[u8],
+    ) -> BTreeMap<&[u8], &Version> {
+        // Guard above `end`: internal keys append an 8-byte suffix, so
+        // versions of user keys that are proper prefixes of `end` can
+        // sort at or above it; 9 bytes of 0xFF dominate any suffix.
+        let mut guard = end.to_vec();
+        guard.extend_from_slice(&[0xFF; 9]);
+        let upper = if end.is_empty() {
+            Bound::Unbounded
+        } else {
+            Bound::Excluded(guard.as_slice())
+        };
+        let iter = self.data.range::<[u8], _>((Bound::Included(start), upper));
+
+        let mut latest: BTreeMap<&[u8], &Version> = BTreeMap::new();
+        for (ik, ver) in iter {
+            let user = decode_user_key(ik);
+            if user < start || (!end.is_empty() && user >= end) {
+                continue;
+            }
+            let writer = self.intents.get(ik).copied();
+            if !view.is_visible(ver, writer) {
+                continue;
+            }
+            let newer = latest
+                .get(user)
+                .is_none_or(|prev| ver.commit_ts > prev.commit_ts);
+            if newer {
+                latest.insert(user, ver);
+            }
+        }
+        latest
+    }
+
     /// Remove internal keys with `commit_ts < min_ts` (GC).
     pub fn prune_below(&mut self, min_ts: CommitTs) -> usize {
         let before = self.data.len();
