@@ -196,21 +196,25 @@ and runs 20 business SQL benchmarks plus constraint checks:
 cargo run --release -p noedb-engine --example national_hr_audit
 ```
 
-Latest run (v2.3, release build, commodity hardware):
+Latest run (v2.4, release build, commodity hardware):
 
 | Metric | Result |
 |---|---|
 | Bulk load (100 k rows, packed-row layout) | **1.8 s** (~60 k rows/s) |
-| `COUNT(*)` over 50 k rows | **250 ms** |
-| 20 business queries (3-way joins, aggregates, CTEs, subqueries) | **22 / 22 PASS, all ≤ 1 s** |
-| Correlated `NOT EXISTS` on 50 k × 50 k | **0.5 s** (was 329 s in v2.0) |
-| Full workspace test suite | **340+ tests, 0 failures** |
+| `COUNT(*)` over 50 k rows | **25 ms** (streaming aggregate; 250 ms in v2.3, 1.2 s in v2.2) |
+| Point read `WHERE pk = X` over 50 k rows | **< 1 ms** (`PkLookup`; 220 ms in v2.3) |
+| 20 business queries (3-way joins, aggregates, CTEs, subqueries) | **22 / 22 PASS** |
+| Correlated `NOT EXISTS` on 50 k × 50 k | **0.6 s** (was 329 s in v2.0) |
+| Full workspace test suite | **350+ tests, 0 failures** |
 
 For calibration: SQLite answers the same `COUNT(*)` in single-digit
-milliseconds. NoeDB's executor still materializes rows as
-`Vec<(String, Value)>`; closing that gap (typed columnar batches, streaming
-operators) is the v2.4 theme. The numbers above are honest, reproducible on
-your machine, and improving release over release.
+milliseconds — NoeDB is now within one order of magnitude on aggregates and
+at parity on primary-key point reads. Multi-way joins and `ORDER BY` over
+full tables still materialize rows as `Vec<(String, Value)>`; typed
+columnar batches for those operators are the next lever. The numbers above
+are honest, reproducible on your machine
+(`cargo run --release -p noedb-engine --example bench_queries`), and
+improving release over release.
 
 Micro-benchmarks (Criterion): `cargo bench -p noedb-lexer --bench lexer`
 (~1 M tokens / 21 ms), `cargo bench -p noedb-storage --bench lsm`,
@@ -243,7 +247,8 @@ cargo doc --no-deps                                       # documented public AP
 | **v2.1** | Planner performance (hash semi-join, top-k), UTF-8 SQL, audit tooling | ✅ shipped |
 | **v2.2** | Bounded range scans, secondary-index DML maintenance, statement cache | ✅ shipped |
 | **v2.3** | Packed row layout (one record per row), LSM read-order & tombstone fixes, realistic join costing | ✅ shipped |
-| v2.4 | Typed columnar batches, streaming executor, aggregate pushdown | 🔜 |
+| **v2.4** | Streaming aggregates, `PkLookup` point reads, key-only scans, `DROP TABLE` data purge | ✅ shipped |
+| v2.5 | Typed columnar batches for joins & sorts, aggregate pushdown | 🔜 |
 | v3.0 | Online backup/restore, point-in-time recovery, network fault-injection testing for Raft | planned |
 
 History: [`docs/sprint-plan-v2.md`](docs/sprint-plan-v2.md) ·

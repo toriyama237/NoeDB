@@ -6,6 +6,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-07-27
+
+Execution release: aggregates stream over storage instead of
+materializing tables, primary-key point reads become direct storage
+lookups, and `DROP TABLE` finally purges its data. Micro-benchmark
+(50 000 packed rows, min-of-N): `COUNT(*)` **250 ms → 25 ms**,
+`WHERE pk = X` point read **220 ms → < 1 ms**. National audit:
+`COUNT(*)` over 50 009 employees now ~40 ms, all 20 business queries
+still pass.
+
+### Performance — streaming execution (v2.4)
+- Streaming aggregate fast path: `Aggregate(SeqScan)` and
+  `Aggregate(Filter(SeqScan))` fold rows directly from the storage range
+  with the zero-copy `rowpack::iter_row` iterator — no `Vec<(String,
+  Value)>` materialization. Pure `COUNT(*)` counts distinct row ids via
+  key-only iteration (no value bytes are ever copied).
+- `PkLookup` physical plan: `WHERE pk = literal` on a single-column
+  primary key that is also the row key resolves through one storage
+  `get` instead of a table scan. The marker is persisted at
+  `CREATE TABLE` and visible in `EXPLAIN`.
+- `StorageEngine::range_keys`: key-only range scans through the whole
+  stack (LSM, MVCC memtable, snapshot store, txn overlay).
+- MVCC merge is now allocation-frugal: `merge_visible_fold` inspects
+  versions through borrowed slices (`decode_version_ref`) and copies
+  value bytes only for the winning version; `MvccMemTable` scans are
+  bounded single passes; `SnapshotStore::range` is a lazy 3-way merge
+  (txn overlay > MVCC memtable > base LSM) instead of materializing two
+  `BTreeMap`s.
+- Plan statistics load via a bounded range over the stats prefix — the
+  planner no longer full-scans the database before every query.
+
+### Fixed
+- **`DROP TABLE` purges storage**: dropping a table now tombstones its
+  rows, secondary-index entries, `ANALYZE` statistics and the PK marker.
+  Previously only the schema entry was removed, so re-creating a table
+  with the same name resurrected the old rows.
+- **Stale PK markers**: re-creating a table whose primary key moved off
+  the first column clears the old marker instead of routing point
+  lookups to the wrong storage key.
+
+### Added
+- `examples/bench_queries`: reproducible micro-benchmark (50 k rows,
+  min/median of N runs, cache-busting aliases).
+- `tests/v24_fast_paths`: equivalence suite pinning streaming aggregates
+  and `PkLookup` to generic executor semantics (empty tables, DML
+  visibility, GROUP BY, stale-marker regression).
+
 ## [2.3.0] - 2026-07-21
 
 Structural release: the data model itself changes. Rows are now stored as
