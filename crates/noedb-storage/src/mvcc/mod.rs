@@ -14,7 +14,7 @@ mod read_view;
 mod snapshot_store;
 mod version;
 
-pub use codec::{decode_or_legacy, decode_version, encode_version};
+pub use codec::{decode_or_legacy, decode_version, decode_version_ref, encode_version};
 pub use gc::{gc_versions, GcStats};
 pub use key::{decode_user_key, encode_internal_key, user_key_prefix_end};
 pub use memtable::MvccMemTable;

@@ -56,6 +56,17 @@ impl<'a> ExplainWriter<'a> {
                     "{pad}IndexScan(table={table}, index={column}, key={key}, rows≈{rows}, columns=[{cols}])"
                 ));
             }
+            PhysicalPlan::PkLookup {
+                table,
+                row_id,
+                columns,
+            } => {
+                let cols = display_columns(columns.as_ref(), Some(table));
+                self.lines.push(format!(
+                    "{pad}PkLookup(table={table}, row_id={:?}, rows≈1, columns=[{cols}])",
+                    String::from_utf8_lossy(row_id)
+                ));
+            }
             PhysicalPlan::Filter { input, .. } => {
                 self.lines.push(format!("{pad}Filter"));
                 self.write_plan(input, indent + 1);

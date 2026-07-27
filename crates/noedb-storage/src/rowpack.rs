@@ -77,6 +77,69 @@ pub fn decode_row(bytes: &[u8]) -> Option<Vec<(String, Vec<u8>)>> {
     Some(out)
 }
 
+/// Zero-copy iterator over the `(column, value)` pairs of a packed record.
+///
+/// Borrows directly from the record bytes — no `String` / `Vec`
+/// allocation per column. Used by streaming executors that must not
+/// materialize rows. Stops early on a truncated record.
+#[must_use]
+pub fn iter_row(bytes: &[u8]) -> PackedRowIter<'_> {
+    let count = if is_packed_row(bytes) {
+        usize::from(u16::from_le_bytes([bytes[4], bytes[5]]))
+    } else {
+        0
+    };
+    PackedRowIter {
+        bytes,
+        off: 6,
+        remaining: count,
+    }
+}
+
+/// Iterator state for [`iter_row`].
+#[derive(Debug)]
+pub struct PackedRowIter<'a> {
+    bytes: &'a [u8],
+    off: usize,
+    remaining: usize,
+}
+
+impl<'a> Iterator for PackedRowIter<'a> {
+    type Item = (&'a str, &'a [u8]);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 || self.off + 2 > self.bytes.len() {
+            return None;
+        }
+        let name_len = usize::from(u16::from_le_bytes([
+            self.bytes[self.off],
+            self.bytes[self.off + 1],
+        ]));
+        self.off += 2;
+        if self.off + name_len + 4 > self.bytes.len() {
+            self.remaining = 0;
+            return None;
+        }
+        let name = core::str::from_utf8(&self.bytes[self.off..self.off + name_len]).ok()?;
+        self.off += name_len;
+        let val_len = u32::from_le_bytes([
+            self.bytes[self.off],
+            self.bytes[self.off + 1],
+            self.bytes[self.off + 2],
+            self.bytes[self.off + 3],
+        ]) as usize;
+        self.off += 4;
+        if self.off + val_len > self.bytes.len() {
+            self.remaining = 0;
+            return None;
+        }
+        let val = &self.bytes[self.off..self.off + val_len];
+        self.off += val_len;
+        self.remaining -= 1;
+        Some((name, val))
+    }
+}
+
 /// Storage key of a packed row: `table\0row_id`.
 #[must_use]
 pub fn packed_row_key(table: &str, row_id: &str) -> Vec<u8> {
@@ -114,5 +177,21 @@ mod tests {
     fn truncated_record_is_rejected() {
         let packed = encode_row(&[("col".to_string(), b"value".to_vec())]);
         assert!(decode_row(&packed[..packed.len() - 2]).is_none());
+    }
+
+    #[test]
+    fn iter_row_is_zero_copy_and_matches_decode() {
+        let cols = vec![
+            ("id".to_string(), b"42".to_vec()),
+            ("name".to_string(), b"Ada".to_vec()),
+        ];
+        let packed = encode_row(&cols);
+        let seen: Vec<(String, Vec<u8>)> = iter_row(&packed)
+            .map(|(n, v)| (n.to_string(), v.to_vec()))
+            .collect();
+        assert_eq!(seen, cols);
+        // Truncated record: iterator stops without panicking.
+        assert!(iter_row(&packed[..packed.len() - 2]).count() < cols.len());
+        assert_eq!(iter_row(b"not packed").count(), 0);
     }
 }

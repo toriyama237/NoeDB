@@ -110,12 +110,17 @@ pub fn persist_table_stats(
 }
 
 /// Load all persisted statistics into a [`PlanStats`] snapshot.
+///
+/// Bounded to the stats keyspace: this runs on every statement, so it
+/// must never touch table data (it used to full-scan the whole database
+/// and dominated cold-query latency).
 #[must_use]
 pub fn load_plan_stats(store: &LsmTree) -> PlanStats {
     let mut stats = PlanStats::default();
     let mut tables: HashMap<String, TableStats> = HashMap::new();
 
-    for (key, val) in StorageEngine::iter(store) {
+    let end = noedb_storage::prefix_end(STATS_PREFIX);
+    for (key, val) in store.range(STATS_PREFIX, &end) {
         if !key.starts_with(STATS_PREFIX) {
             continue;
         }

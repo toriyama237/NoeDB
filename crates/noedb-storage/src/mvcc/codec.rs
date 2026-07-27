@@ -60,6 +60,30 @@ pub fn decode_or_legacy(bytes: &[u8]) -> Result<Version, StorageError> {
     }
 }
 
+/// Borrowed decode: `(commit_ts, deleted, value)` without copying the value.
+///
+/// Scan merges inspect every version but keep only the newest per key;
+/// decoding into an owned [`Version`] copied the payload for versions
+/// that were immediately discarded. Returns `None` for corrupt records.
+#[must_use]
+pub fn decode_version_ref(bytes: &[u8]) -> Option<(CommitTs, bool, &[u8])> {
+    if bytes.len() < MAGIC.len() + 1 + 8 + 1 + 4
+        || &bytes[..MAGIC.len()] != MAGIC
+        || bytes[MAGIC.len()] != FORMAT_V1
+    {
+        return None;
+    }
+    let mut off = MAGIC.len() + 1;
+    let commit_ts = CommitTs::from_le_bytes(bytes.get(off..off + 8)?.try_into().ok()?);
+    off += 8;
+    let deleted = bytes[off] != 0;
+    off += 1;
+    let val_len = u32::from_le_bytes(bytes.get(off..off + 4)?.try_into().ok()?) as usize;
+    off += 4;
+    let value = bytes.get(off..off + val_len)?;
+    Some((commit_ts, deleted, value))
+}
+
 fn read_u64(data: &[u8], off: &mut usize) -> Result<CommitTs, StorageError> {
     let slice = data
         .get(*off..*off + 8)

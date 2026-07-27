@@ -12,6 +12,7 @@ mod build;
 mod cast;
 mod cost;
 mod cte;
+mod ddl;
 mod eval;
 mod executor;
 mod explain;
@@ -23,11 +24,13 @@ mod lower;
 mod optimize;
 mod parallel;
 mod physical;
+mod pk;
 mod schema;
 mod setops;
 mod simd_pred;
 mod star;
 mod stats;
+mod stream_agg;
 mod subquery;
 mod value;
 mod window;
@@ -39,6 +42,7 @@ pub use cost::{
     estimate, index_beats_seq_scan, PlanStats, INDEX_LOOKUP_COST, SEQ_SCAN_ROW_COST,
     UNKNOWN_TABLE_ROWS,
 };
+pub use ddl::purge_table_data;
 pub use eval::{eval_expr, eval_predicate};
 pub use executor::{execute, ExecutionContext, Executor};
 pub use explain::explain;
@@ -47,6 +51,7 @@ pub use logical::{AggFunc, LogicalPlan};
 pub use lower::lower;
 pub use optimize::{index_wins, optimize, PlanContext};
 pub use physical::PhysicalPlan;
+pub use pk::{mark_row_id_column, row_id_column, unmark_row_id_column};
 pub use schema::QuerySchema;
 pub use simd_pred::{filter_eq_i64, filter_range_i64};
 pub use stats::{
@@ -295,6 +300,17 @@ mod tests {
         tree.put(&key, val).unwrap();
     }
 
+    fn put_packed(tree: &mut LsmTree, table: &str, row: &str, cols: &[(&str, &[u8])]) {
+        let key = noedb_storage::packed_row_key(table, row);
+        let record = noedb_storage::encode_row(
+            &cols
+                .iter()
+                .map(|(n, v)| ((*n).to_string(), v.to_vec()))
+                .collect::<Vec<_>>(),
+        );
+        tree.put(&key, &record).unwrap();
+    }
+
     #[test]
     fn plan_select_one_literal() {
         let stmt = noedb_parser::parse("SELECT 1").unwrap();
@@ -539,6 +555,176 @@ mod tests {
             text.contains("top_k=5"),
             "expected fused top-k in plan: {text}"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // v2.4: streaming aggregates + primary-key point lookup.
+
+    #[test]
+    fn streaming_count_star_matches_row_count_on_packed_rows() {
+        let (mut tree, dir) = temp_tree();
+        for i in 1..=37 {
+            put_packed(
+                &mut tree,
+                "emp",
+                &i.to_string(),
+                &[("id", i.to_string().as_bytes())],
+            );
+        }
+        let stmt = noedb_parser::parse("SELECT COUNT(*) FROM emp").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows[0].fields[0].1, Value::Integer(37));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn streaming_aggregate_with_predicate_and_group_by_on_packed_rows() {
+        let (mut tree, dir) = temp_tree();
+        let data = [("A", 10), ("A", 20), ("B", 5), ("B", 100), ("A", 1)];
+        for (i, (dept, salary)) in data.iter().enumerate() {
+            put_packed(
+                &mut tree,
+                "emp",
+                &i.to_string(),
+                &[
+                    ("dept", dept.as_bytes()),
+                    ("salary", salary.to_string().as_bytes()),
+                ],
+            );
+        }
+        let stmt = noedb_parser::parse(
+            "SELECT dept, SUM(salary) AS s FROM emp WHERE salary > 5 GROUP BY dept",
+        )
+        .unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        let mut got: Vec<(Vec<u8>, f64)> = rows
+            .iter()
+            .map(|r| {
+                let Value::Bytes(dept) = &r.fields[0].1 else {
+                    panic!("expected bytes")
+                };
+                let Value::Float(s) = &r.fields[1].1 else {
+                    panic!("expected float")
+                };
+                (dept.clone(), *s)
+            })
+            .collect();
+        got.sort_by(|a, b| a.0.cmp(&b.0));
+        // A: 10 + 20 = 30 (1 excluded by WHERE salary > 5); B: 100 (5 excluded).
+        assert_eq!(got, vec![(b"A".to_vec(), 30.0), (b"B".to_vec(), 100.0)]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn streaming_aggregate_matches_generic_path_with_cell_override() {
+        // Packed row plus a legacy cell for the same column: the cell must
+        // win, exactly like the row-materializing scan path.
+        let (mut tree, dir) = temp_tree();
+        put_packed(&mut tree, "emp", "1", &[("salary", b"10")]);
+        put_row(&mut tree, "emp", "1", "salary", b"999");
+        let stmt = noedb_parser::parse("SELECT SUM(salary) FROM emp").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows[0].fields[0].1, Value::Float(999.0));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn streaming_aggregate_empty_table_yields_one_zero_row() {
+        let (tree, dir) = temp_tree();
+        let stmt = noedb_parser::parse("SELECT COUNT(*) FROM emp").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields[0].1, Value::Integer(0));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn streaming_aggregate_falls_back_for_non_streamable_predicate() {
+        // `IN (SELECT …)` cannot be evaluated by the streaming pass; the
+        // generic path must still produce the right answer.
+        let (mut tree, dir) = temp_tree();
+        put_packed(&mut tree, "emp", "1", &[("dept", b"A")]);
+        put_packed(&mut tree, "emp", "2", &[("dept", b"B")]);
+        put_packed(&mut tree, "ok_depts", "1", &[("name", b"A")]);
+        let stmt = noedb_parser::parse(
+            "SELECT COUNT(*) FROM emp WHERE dept IN (SELECT name FROM ok_depts)",
+        )
+        .unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows[0].fields[0].1, Value::Integer(1));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pk_lookup_used_for_equality_on_marked_column() {
+        let (mut tree, dir) = temp_tree();
+        put_packed(&mut tree, "emp", "42", &[("id", b"42"), ("name", b"Ada")]);
+        mark_row_id_column(&mut tree, "emp", "id").unwrap();
+
+        let stmt = noedb_parser::parse("SELECT name FROM emp WHERE id = 42").unwrap();
+        let text = explain_sql(&stmt, &tree).unwrap();
+        assert!(
+            text.contains("PkLookup"),
+            "expected PkLookup in plan: {text}"
+        );
+
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields[0].1, Value::Bytes(b"Ada".to_vec()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pk_lookup_miss_returns_no_rows() {
+        let (mut tree, dir) = temp_tree();
+        put_packed(&mut tree, "emp", "42", &[("id", b"42"), ("name", b"Ada")]);
+        mark_row_id_column(&mut tree, "emp", "id").unwrap();
+
+        let stmt = noedb_parser::parse("SELECT name FROM emp WHERE id = 7").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert!(rows.is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn equality_on_unmarked_column_does_not_use_pk_lookup() {
+        // No marker persisted for `emp`: even though `id` happens to be a
+        // plausible primary key name, the planner must not assume it is
+        // the row-id column and must fall back to a full scan/filter.
+        let (mut tree, dir) = temp_tree();
+        put_packed(&mut tree, "emp", "1", &[("id", b"99"), ("name", b"Ada")]);
+        let stmt = noedb_parser::parse("SELECT name FROM emp WHERE id = 99").unwrap();
+        let text = explain_sql(&stmt, &tree).unwrap();
+        assert!(
+            !text.contains("PkLookup"),
+            "unexpected PkLookup in plan: {text}"
+        );
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields[0].1, Value::Bytes(b"Ada".to_vec()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn equality_on_non_pk_column_never_uses_pk_lookup_even_if_value_matches_a_row_id() {
+        // `emp` row-id is `id`; a row happens to exist whose id equals the
+        // *value* being searched for on `salary`. If the planner ever
+        // conflated "any equality on the row-id-shaped value" with
+        // "equality on the pk column", this would incorrectly return the
+        // wrong row.
+        let (mut tree, dir) = temp_tree();
+        mark_row_id_column(&mut tree, "emp", "id").unwrap();
+        put_packed(&mut tree, "emp", "1", &[("id", b"1"), ("salary", b"5000")]);
+        put_packed(
+            &mut tree,
+            "emp",
+            "5000",
+            &[("id", b"5000"), ("salary", b"1")],
+        );
+        let stmt = noedb_parser::parse("SELECT id FROM emp WHERE salary = 5000").unwrap();
+        let rows = execute_sql(&stmt, &tree).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fields[0].1, Value::Bytes(b"1".to_vec()));
         let _ = std::fs::remove_dir_all(dir);
     }
 }

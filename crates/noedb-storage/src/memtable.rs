@@ -106,6 +106,21 @@ impl MemTable {
                 .range::<[u8], _>((Bound::Included(start), Bound::Excluded(end))),
         }
     }
+
+    /// Borrowed variant of [`MemTable::range`] — no per-entry clone.
+    ///
+    /// Scan-heavy paths (MVCC merges) filter most entries out; cloning
+    /// key and value up front made every scan O(bytes) in allocations.
+    pub fn range_borrowed(&self, start: &[u8], end: &[u8]) -> impl Iterator<Item = (&[u8], &[u8])> {
+        self.map
+            .range::<[u8], _>((Bound::Included(start), Bound::Excluded(end)))
+            .map(|(k, v)| (k.as_slice(), v.as_slice()))
+    }
+
+    /// Borrowed variant of [`MemTable::iter`] — no per-entry clone.
+    pub fn iter_borrowed(&self) -> impl Iterator<Item = (&[u8], &[u8])> {
+        self.map.iter().map(|(k, v)| (k.as_slice(), v.as_slice()))
+    }
 }
 
 impl StorageEngine for MemTable {

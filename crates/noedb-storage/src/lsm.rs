@@ -351,13 +351,13 @@ impl LsmTree {
     fn merge_visible(
         &self,
         bounds: Option<(&[u8], &[u8])>,
-    ) -> std::collections::BTreeMap<Vec<u8>, crate::mvcc::Version> {
+    ) -> Vec<(Vec<u8>, crate::mvcc::Version)> {
         let view = crate::mvcc::ReadView::new(0, u64::MAX, std::collections::BTreeSet::new());
         self.merge_visible_at(&view, bounds)
     }
 
     /// Merge SSTs + active memtable into latest version per user key visible
-    /// at `view`.
+    /// at `view`, ascending by user key.
     ///
     /// With `bounds = Some((start, end))`, only internal keys near `[start,
     /// end)` are read (block-index seek per SST) and only user keys in
@@ -366,41 +366,82 @@ impl LsmTree {
         &self,
         view: &crate::mvcc::ReadView,
         bounds: Option<(&[u8], &[u8])>,
-    ) -> std::collections::BTreeMap<Vec<u8>, crate::mvcc::Version> {
-        let mut latest: std::collections::BTreeMap<Vec<u8>, crate::mvcc::Version> =
-            std::collections::BTreeMap::new();
+    ) -> Vec<(Vec<u8>, crate::mvcc::Version)> {
+        self.merge_visible_fold(view, bounds, &|value: &[u8]| value.to_vec())
+            .into_iter()
+            .map(|(k, (commit_ts, deleted, value))| {
+                (
+                    k,
+                    crate::mvcc::Version {
+                        commit_ts,
+                        value,
+                        deleted,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// Visible **user keys** (latest version not deleted) in `[start, end)`.
+    ///
+    /// Same MVCC resolution as [`LsmTree::range_visible`] but never copies
+    /// a value — `COUNT(*)`-style scans go from O(table bytes) to
+    /// O(key bytes).
+    pub fn range_visible_keys(
+        &self,
+        start: &[u8],
+        end: &[u8],
+        view: &crate::mvcc::ReadView,
+    ) -> impl Iterator<Item = Vec<u8>> {
+        self.merge_visible_fold(view, Some((start, end)), &|_| ())
+            .into_iter()
+            .filter_map(|(k, (_, deleted, ()))| (!deleted).then_some(k))
+    }
+
+    /// Core MVCC merge: newest visible version per user key, with the
+    /// winner's payload produced by `wrap` (identity copy for value
+    /// scans, `()` for key-only scans).
+    ///
+    /// Implementation: every visible candidate is appended to a flat
+    /// vector, then one `sort_unstable` + linear dedup keeps the newest
+    /// version per user key. Batched sorting is several times faster
+    /// than the per-entry `BTreeMap` probes this used to do (which
+    /// dominated `COUNT(*)`-style scans), and the output stays in
+    /// ascending user-key order.
+    fn merge_visible_fold<W>(
+        &self,
+        view: &crate::mvcc::ReadView,
+        bounds: Option<(&[u8], &[u8])>,
+        wrap: &impl Fn(&[u8]) -> W,
+    ) -> Vec<(Vec<u8>, (u64, bool, W))> {
+        let mut candidates: Vec<(Vec<u8>, u64, bool, W)> = Vec::new();
         let windows = bounds.map(|(start, end)| scan_windows(start, end));
 
-        let mut ingest = |ik: Vec<u8>, raw: Vec<u8>| {
+        let mut ingest = |ik: &[u8], raw: &[u8]| {
             let is_mvcc = raw.starts_with(b"MVCC") && ik.len() > 8;
-            let ver = if is_mvcc {
-                match crate::mvcc::decode_or_legacy(&raw) {
-                    Ok(v) => v,
-                    Err(_) => return,
+            let (commit_ts, deleted, value): (u64, bool, &[u8]) = if is_mvcc {
+                match crate::mvcc::decode_version_ref(raw) {
+                    Some(t) => t,
+                    None => return,
                 }
             } else {
-                crate::mvcc::Version::put(1, raw)
+                (1, false, raw)
             };
-            let user = if is_mvcc {
-                crate::mvcc::decode_user_key(&ik).to_vec()
+            let user: &[u8] = if is_mvcc {
+                crate::mvcc::decode_user_key(ik)
             } else {
                 ik
             };
             if let Some((start, end)) = bounds {
-                if user.as_slice() < start || (!end.is_empty() && user.as_slice() >= end) {
+                if user < start || (!end.is_empty() && user >= end) {
                     return;
                 }
             }
-            if !view.is_visible(&ver, None) {
+            // Inline of `ReadView::is_visible(ver, None)`.
+            if commit_ts == 0 || commit_ts > view.snapshot_ts {
                 return;
             }
-            let newer = match latest.get(&user) {
-                None => true,
-                Some(prev) => ver.commit_ts > prev.commit_ts,
-            };
-            if newer {
-                latest.insert(user, ver);
-            }
+            candidates.push((user.to_vec(), commit_ts, deleted, wrap(value)));
         };
 
         for path in self.level1.iter().chain(self.level0.iter()) {
@@ -411,28 +452,39 @@ impl LsmTree {
                 for (lo, hi) in windows {
                     if let Ok(scan) = reader.scan_range(lo, hi) {
                         for item in scan.flatten() {
-                            ingest(item.0, item.1);
+                            ingest(&item.0, &item.1);
                         }
                     }
                 }
             } else if let Ok(scan) = reader.scan() {
                 for item in scan.flatten() {
-                    ingest(item.0, item.1);
+                    ingest(&item.0, &item.1);
                 }
             }
         }
         if let Some(windows) = &windows {
             for (lo, hi) in windows {
-                for (k, v) in self.active.range(lo, hi) {
+                for (k, v) in self.active.range_borrowed(lo, hi) {
                     ingest(k, v);
                 }
             }
         } else {
-            for (k, v) in self.active.iter() {
+            for (k, v) in self.active.iter_borrowed() {
                 ingest(k, v);
             }
         }
-        latest
+
+        // Key ascending, then newest version first: dedup keeps index 0
+        // of each user-key run. Overlapping scan windows can also feed
+        // the same internal entry twice; dedup collapses those too.
+        candidates.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+        let mut out: Vec<(Vec<u8>, (u64, bool, W))> = Vec::with_capacity(candidates.len());
+        for (user, ts, deleted, value) in candidates {
+            if out.last().is_none_or(|(prev, _)| prev != &user) {
+                out.push((user, (ts, deleted, value)));
+            }
+        }
+        out
     }
 }
 
@@ -501,6 +553,15 @@ impl StorageEngine for LsmTree {
                     Some((k, ver.value))
                 }
             })
+    }
+
+    fn range_keys<'a>(
+        &'a self,
+        start: &'a [u8],
+        end: &'a [u8],
+    ) -> impl Iterator<Item = Vec<u8>> + 'a {
+        let view = crate::mvcc::ReadView::new(0, u64::MAX, std::collections::BTreeSet::new());
+        self.range_visible_keys(start, end, &view)
     }
 }
 
