@@ -535,7 +535,7 @@ impl LocalEngine {
                         unique: c.unique,
                     })
                     .collect();
-                let pk = if pk_from_table.is_empty() {
+                let pk: Vec<String> = if pk_from_table.is_empty() {
                     cols.iter()
                         .filter(|c| c.primary_key)
                         .map(|c| c.name.clone())
@@ -543,6 +543,21 @@ impl LocalEngine {
                 } else {
                     pk_from_table
                 };
+                // Row storage keys the packed record by the value of the
+                // *first* column (see `dml::execute_insert`). When that
+                // column is also the sole primary key, `WHERE pk = X` can
+                // skip straight to a storage `get` (v2.4 `PkLookup`).
+                {
+                    let mut tree = self.storage.write();
+                    if pk.len() == 1 && cols.first().is_some_and(|c| c.name == pk[0]) {
+                        noedb_planner::mark_row_id_column(&mut tree, &t.name.value, &pk[0])
+                            .map_err(EngineError::Storage)?;
+                    } else {
+                        // Clear any marker left by a previous same-name table.
+                        noedb_planner::unmark_row_id_column(&mut tree, &t.name.value)
+                            .map_err(EngineError::Storage)?;
+                    }
+                }
                 self.schema
                     .lock()
                     .create_table(&t.name.value, ts, cols.clone(), pk)?;
@@ -558,6 +573,13 @@ impl LocalEngine {
                 self.schema.lock().drop_table(&t.name.value)?;
                 self.vector_indexes.lock().drop_table(&t.name.value);
                 self.cache.lock().invalidate_table(&t.name.value);
+                {
+                    // Purge rows, index entries, stats and the PK marker so a
+                    // re-created table with the same name starts empty.
+                    let mut tree = self.storage.write();
+                    noedb_planner::purge_table_data(&mut tree, &t.name.value)
+                        .map_err(EngineError::Storage)?;
+                }
                 self.persist_schema()?;
                 self.audit_record(session_id, sql, 0)?;
                 Ok(empty_ok())

@@ -308,6 +308,15 @@ fn to_physical(plan: LogicalPlan, ctx: &PlanContext<'_>) -> PhysicalPlan {
         LogicalPlan::Filter { input, predicate } => {
             if let LogicalPlan::Scan { ref table, .. } = *input {
                 if let Some((column, key)) = extract_equality_predicate(&predicate) {
+                    if crate::pk::row_id_column(ctx.store, table).as_deref()
+                        == Some(column.as_str())
+                    {
+                        return PhysicalPlan::PkLookup {
+                            table: table.clone(),
+                            row_id: key,
+                            columns: None,
+                        };
+                    }
                     if SecondaryIndex::exists(ctx.store, table, &column) {
                         return PhysicalPlan::IndexScan {
                             table: table.clone(),
@@ -459,6 +468,7 @@ fn collect_columns(plan: &PhysicalPlan) -> Option<Vec<String>> {
     match plan {
         PhysicalPlan::SeqScan { .. }
         | PhysicalPlan::IndexScan { .. }
+        | PhysicalPlan::PkLookup { .. }
         | PhysicalPlan::CteScan { .. } => None,
         PhysicalPlan::Filter { input, predicate } => {
             let mut cols = collect_columns(input).unwrap_or_default();
@@ -601,6 +611,11 @@ fn apply_columns(plan: PhysicalPlan, columns: Option<Vec<String>>) -> PhysicalPl
             table,
             column,
             point_key,
+            columns,
+        },
+        PhysicalPlan::PkLookup { table, row_id, .. } => PhysicalPlan::PkLookup {
+            table,
+            row_id,
             columns,
         },
         PhysicalPlan::Filter { input, predicate } => PhysicalPlan::Filter {

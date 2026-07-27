@@ -44,6 +44,18 @@ pub trait StorageEngine {
             .skip_while(move |(k, _)| k.as_slice() < start)
             .take_while(move |(k, _)| k.as_slice() < end)
     }
+
+    /// Iterate live **keys** in `[start, end)` without materializing values.
+    ///
+    /// `COUNT(*)`-style scans only need row identity; backends with
+    /// versioned values override this to skip every payload copy.
+    fn range_keys<'a>(
+        &'a self,
+        start: &'a [u8],
+        end: &'a [u8],
+    ) -> impl Iterator<Item = Vec<u8>> + 'a {
+        self.range(start, end).map(|(k, _)| k)
+    }
 }
 
 /// Exclusive upper bound covering every key that starts with `prefix`.

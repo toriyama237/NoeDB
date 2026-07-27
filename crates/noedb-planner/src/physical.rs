@@ -16,6 +16,19 @@ pub enum PhysicalPlan {
         /// Column pruning (Week 26); `None` = all columns.
         columns: Option<Vec<String>>,
     },
+    /// Direct row fetch by storage `row_id` (v2.4).
+    ///
+    /// Emitted for `WHERE pk = literal` when `pk` is the table's
+    /// row-id-bearing primary key — a single storage `get` instead of a
+    /// full table scan, and without requiring a secondary index.
+    PkLookup {
+        /// Table name.
+        table: String,
+        /// Storage row id (primary-key value, encoded like the row's key).
+        row_id: Vec<u8>,
+        /// Columns to load for the matching row.
+        columns: Option<Vec<String>>,
+    },
     /// B-tree index point/range scan (Week 20).
     IndexScan {
         /// Table name.
