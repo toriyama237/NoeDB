@@ -76,6 +76,7 @@ pub fn estimate(plan: &PhysicalPlan, stats: &PlanStats) -> f64 {
         PhysicalPlan::IndexScan { table, column, .. } => {
             INDEX_LOOKUP_COST + stats.estimated_eq_rows(table, column) as f64 * SEQ_SCAN_ROW_COST
         }
+        PhysicalPlan::PkLookup { .. } => INDEX_LOOKUP_COST,
         PhysicalPlan::Filter { input, predicate } => {
             let out_rows = estimated_filter_rows(input, predicate, stats);
             estimate(input, stats) + out_rows as f64 * FILTER_ROW_COST
@@ -135,6 +136,7 @@ fn output_rows(plan: &PhysicalPlan, stats: &PlanStats) -> u64 {
     match plan {
         PhysicalPlan::SeqScan { table, .. } => stats.rows_for(table),
         PhysicalPlan::IndexScan { table, column, .. } => stats.estimated_eq_rows(table, column),
+        PhysicalPlan::PkLookup { .. } => 1,
         PhysicalPlan::Filter { input, predicate } => estimated_filter_rows(input, predicate, stats),
         PhysicalPlan::Limit { input, limit, .. } => output_rows(input, stats).min(*limit),
         PhysicalPlan::Project { input, .. }

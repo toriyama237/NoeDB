@@ -312,6 +312,18 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
                 rows: rows.into_iter(),
             })
         }
+        PhysicalPlan::PkLookup {
+            table,
+            row_id,
+            columns,
+        } => {
+            let rows = load_row_by_id(ctx.store, &table, &row_id, columns.as_deref())
+                .into_iter()
+                .collect::<Vec<_>>();
+            Ok(ExecState::IndexScan {
+                rows: rows.into_iter(),
+            })
+        }
         PhysicalPlan::IndexScan {
             table,
             column,
@@ -464,6 +476,15 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
             group_by,
             aggs,
         } => {
+            // Fast path: single-table aggregates stream over the storage
+            // range without materializing rows (v2.4).
+            if let Some(result) =
+                crate::stream_agg::try_streaming_aggregate(&input, &group_by, &aggs, ctx)
+            {
+                return Ok(ExecState::Aggregate {
+                    groups: result?.into_iter(),
+                });
+            }
             let rows = execute_to_rows(*input, ctx)?;
             let mut groups: HashMap<Vec<(String, Vec<u8>)>, HashMap<String, AggSlot>> =
                 HashMap::new();
@@ -478,30 +499,7 @@ fn build_state<S: StorageEngine<Error = StorageError>>(
                 let entry = groups.entry(key).or_default();
                 for (name, func) in &aggs {
                     let slot = entry.entry(name.clone()).or_default();
-                    match func {
-                        AggFunc::CountStar => slot.count_star += 1,
-                        AggFunc::CountCol(col) => {
-                            if !matches!(row_value(&row, col), Value::Null) {
-                                slot.count_col += 1;
-                            }
-                        }
-                        AggFunc::Sum(col) | AggFunc::Avg(col) => {
-                            if let Some(n) = numeric_value(&row_value(&row, col)) {
-                                slot.sum += n;
-                                slot.sum_count += 1;
-                            }
-                        }
-                        AggFunc::Min(col) => {
-                            if let Some(n) = numeric_value(&row_value(&row, col)) {
-                                slot.min = Some(slot.min.map_or(n, |m| m.min(n)));
-                            }
-                        }
-                        AggFunc::Max(col) => {
-                            if let Some(n) = numeric_value(&row_value(&row, col)) {
-                                slot.max = Some(slot.max.map_or(n, |m| m.max(n)));
-                            }
-                        }
-                    }
+                    slot.update(func, &row);
                 }
             }
             // SQL semantics: a global aggregate (no GROUP BY) over an empty
@@ -733,9 +731,9 @@ fn record_from_cells(items: &[SelectItem], cells: Vec<Value>) -> Record {
     Record { fields }
 }
 
-#[derive(Default)]
-struct AggSlot {
-    count_star: u64,
+#[derive(Default, Clone)]
+pub(crate) struct AggSlot {
+    pub(crate) count_star: u64,
     count_col: u64,
     sum: f64,
     sum_count: u64,
@@ -744,7 +742,35 @@ struct AggSlot {
 }
 
 impl AggSlot {
-    fn finish(self, func: &AggFunc) -> Value {
+    /// Fold one row into this accumulator for `func`.
+    pub(crate) fn update(&mut self, func: &AggFunc, row: &RowMap) {
+        match func {
+            AggFunc::CountStar => self.count_star += 1,
+            AggFunc::CountCol(col) => {
+                if !matches!(row_value(row, col), Value::Null) {
+                    self.count_col += 1;
+                }
+            }
+            AggFunc::Sum(col) | AggFunc::Avg(col) => {
+                if let Some(n) = numeric_value(&row_value(row, col)) {
+                    self.sum += n;
+                    self.sum_count += 1;
+                }
+            }
+            AggFunc::Min(col) => {
+                if let Some(n) = numeric_value(&row_value(row, col)) {
+                    self.min = Some(self.min.map_or(n, |m| m.min(n)));
+                }
+            }
+            AggFunc::Max(col) => {
+                if let Some(n) = numeric_value(&row_value(row, col)) {
+                    self.max = Some(self.max.map_or(n, |m| m.max(n)));
+                }
+            }
+        }
+    }
+
+    pub(crate) fn finish(self, func: &AggFunc) -> Value {
         match func {
             AggFunc::CountStar => {
                 Value::Integer(i64::try_from(self.count_star).unwrap_or(i64::MAX))
@@ -766,7 +792,7 @@ impl AggSlot {
     }
 }
 
-fn row_value(row: &RowMap, col: &str) -> Value {
+pub(crate) fn row_value(row: &RowMap, col: &str) -> Value {
     row.iter()
         .find(|(n, _)| column_name_matches(n, col))
         .map_or(Value::Null, |(_, v)| v.clone())
